@@ -22,6 +22,7 @@ import {
   type RecordItem,
 } from '../../api/record';
 import { compressImage } from '../../utils/imageCompress';
+import { displayPhotoUrl } from '../../utils/photo-url';
 
 const RESULT_LABEL: Record<string, string> = {
   pass: '合格',
@@ -672,7 +673,7 @@ export default function InspectionPage() {
                     {currentTpl.samplePhotos!.map((url) => (
                       <Image
                         key={url}
-                        src={url}
+                        src={displayPhotoUrl(url)}
                         width={88}
                         height={88}
                         fit="cover"
@@ -698,7 +699,7 @@ export default function InspectionPage() {
                       style={{ position: 'relative', width: 88, height: 88 }}
                     >
                       <Image
-                        src={url}
+                        src={displayPhotoUrl(url)}
                         width={88}
                         height={88}
                         fit="cover"

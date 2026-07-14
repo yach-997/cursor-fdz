@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { NavBar, Cell, Empty, Tag, Image, PullRefresh, Button } from 'react-vant';
 import { fetchRecord, type RecordItem } from '../../api/record';
+import { displayPhotoUrl } from '../../utils/photo-url';
 
 const AI_LABEL: Record<string, string> = {
   pass: '合格',
@@ -182,7 +183,7 @@ export default function ReportPage() {
                         {entry.photos.map((url) => (
                           <Image
                             key={url}
-                            src={url}
+                            src={displayPhotoUrl(url)}
                             width={72}
                             height={72}
                             fit="cover"

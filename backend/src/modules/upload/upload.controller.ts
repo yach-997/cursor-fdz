@@ -7,15 +7,19 @@ import {
   UseInterceptors,
   Body,
   BadRequestException,
+  Query,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import type { Response } from 'express';
 import { UploadService } from './upload.service';
 import { UploadPhotoMetaDto } from './dto/upload.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '../../common/enums';
 import { CurrentUserContext } from '../../common/interfaces';
+import { Public } from '../../common/decorators/public.decorator';
 
 const imageFilter = (
   _req: Express.Request,
@@ -33,6 +37,17 @@ const imageFilter = (
 @Controller('upload')
 export class UploadController {
   constructor(private readonly uploadService: UploadService) {}
+
+  @Get('image')
+  @Public()
+  async image(@Query('url') url: string, @Res() response: Response) {
+    if (!url) throw new BadRequestException('缺少图片地址');
+    const image = await this.uploadService.fetchPublicImage(url);
+    response.setHeader('Content-Type', image.contentType);
+    response.setHeader('Cache-Control', 'public, max-age=86400');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.send(image.bytes);
+  }
 
   /** 前端直传七牛用（本项目默认仍走服务端 /photo） */
   @Get('qiniu-token')

@@ -21,6 +21,7 @@ import {
   type RecordItem,
   type AuditTrailEvent,
 } from '../../api/record';
+import { displayPhotoUrl } from '../../utils/photo-url';
 
 const STATUS_MAP: Record<string, { color: string; text: string }> = {
   submitted: { color: 'processing', text: '待审核' },
@@ -271,7 +272,7 @@ export default function AuditPage() {
                       {(entry.photos || []).map((url) => (
                         <Image
                           key={url}
-                          src={url}
+                          src={displayPhotoUrl(url)}
                           width={96}
                           height={96}
                           style={{ objectFit: 'cover' }}

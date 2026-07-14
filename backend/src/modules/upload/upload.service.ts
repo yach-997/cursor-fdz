@@ -65,6 +65,74 @@ export class UploadService {
     return { list: results };
   }
 
+  /**
+   * 代理读取公开巡检图片，解决 HTTPS 页面无法加载七牛测试域名 HTTP 图片的问题。
+   * 仅允许当前配置的七牛域名和 MinIO 地址，避免成为任意 URL 代理。
+   */
+  async fetchPublicImage(input: string) {
+    let parsed: URL;
+    try {
+      parsed = new URL(input);
+    } catch {
+      throw new BadRequestException('图片地址无效');
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new BadRequestException('仅支持 HTTP(S) 图片地址');
+    }
+
+    const allowed = new Set<string>();
+    const qiniuDomain = (process.env.QINIU_DOMAIN || '').trim();
+    if (qiniuDomain) {
+      try {
+        allowed.add(new URL(qiniuDomain).host.toLowerCase());
+      } catch {
+        // 环境变量格式错误时不放行。
+      }
+    }
+    const minioHost = (process.env.MINIO_ENDPOINT || 'localhost').trim();
+    const minioPort = (process.env.MINIO_PORT || '9000').trim();
+    allowed.add(`${minioHost}:${minioPort}`.toLowerCase());
+
+    if (!allowed.has(parsed.host.toLowerCase())) {
+      throw new BadRequestException('该图片域名不允许代理');
+    }
+
+    const candidates = [parsed.toString()];
+    if (
+      parsed.protocol === 'https:' &&
+      parsed.hostname.toLowerCase().endsWith('.clouddn.com')
+    ) {
+      const fallback = new URL(parsed.toString());
+      fallback.protocol = 'http:';
+      candidates.push(fallback.toString());
+    }
+
+    let lastError: Error | null = null;
+    for (const url of candidates) {
+      try {
+        const resp = await fetch(url, {
+          signal: AbortSignal.timeout(15_000),
+          redirect: 'follow',
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const contentType = (resp.headers.get('content-type') || 'image/jpeg')
+          .split(';')[0]
+          .trim();
+        if (!contentType.startsWith('image/')) {
+          throw new Error(`响应不是图片: ${contentType}`);
+        }
+        const bytes = Buffer.from(await resp.arrayBuffer());
+        if (!bytes.length || bytes.length > 15 * 1024 * 1024) {
+          throw new Error('图片为空或超过 15MB');
+        }
+        return { bytes, contentType };
+      } catch (err) {
+        lastError = err as Error;
+      }
+    }
+    throw new BadRequestException(`图片读取失败: ${lastError?.message || '未知错误'}`);
+  }
+
   /** 前端直传七牛用 token */
   getQiniuToken() {
     if (!this.qiniu.isEnabled()) {

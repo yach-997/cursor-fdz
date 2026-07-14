@@ -83,6 +83,13 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
     };
     await this.recordRepo.save(record);
 
+    // 重新分析时清掉上一轮缓存，否则轮询会立即读到旧的失败结果。
+    const resultKey = `${RESULT_PREFIX}${dto.recordId}:${dto.templateEntryId}`;
+    if (this.redis.isReady) {
+      await this.redis.del(resultKey);
+    }
+    this.memoryResults.delete(resultKey);
+
     const job: AiJob = {
       recordId: dto.recordId,
       templateEntryId: dto.templateEntryId,

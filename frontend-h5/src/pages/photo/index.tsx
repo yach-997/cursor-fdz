@@ -1,6 +1,7 @@
 import { useMemo, useState, type CSSProperties } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { NavBar } from 'react-vant';
+import { displayPhotoUrl } from '../../utils/photo-url';
 
 /** 照片预览（自定义全屏，避免 react-vant ImagePreview closeIcon 崩溃） */
 export default function PhotoPreviewPage() {
@@ -56,7 +57,7 @@ export default function PhotoPreviewPage() {
         onClick={() => navigate(-1)}
       >
         <img
-          src={urls[index]}
+          src={displayPhotoUrl(urls[index])}
           alt=""
           style={{
             maxWidth: '100%',

@@ -198,6 +198,57 @@ async function handleQiniuToken(req: Request) {
   return ok({ token, domain, uploadUrl: Deno.env.get('QINIU_UPLOAD_URL') || 'https://upload-z2.qiniup.com' });
 }
 
+/** HTTPS 页面使用的七牛图片代理。仅放行配置的 bucket 域名。 */
+async function handleImageProxy(req: Request) {
+  const source = new URL(req.url).searchParams.get('url') || '';
+  const configuredDomain = Deno.env.get('QINIU_DOMAIN') || '';
+  let sourceUrl: URL;
+  let allowedHost = '';
+  try {
+    sourceUrl = new URL(source);
+    allowedHost = new URL(configuredDomain).host.toLowerCase();
+  } catch {
+    return fail('图片地址无效', 400, 400);
+  }
+  if (!['http:', 'https:'].includes(sourceUrl.protocol)) {
+    return fail('仅支持 HTTP(S) 图片', 400, 400);
+  }
+  if (!allowedHost || sourceUrl.host.toLowerCase() !== allowedHost) {
+    return fail('该图片域名不允许代理', 403, 403);
+  }
+
+  const candidates = [sourceUrl.toString()];
+  if (sourceUrl.protocol === 'https:' && sourceUrl.hostname.endsWith('.clouddn.com')) {
+    const fallback = new URL(sourceUrl);
+    fallback.protocol = 'http:';
+    candidates.push(fallback.toString());
+  }
+
+  for (const url of candidates) {
+    try {
+      const resp = await fetch(url, { redirect: 'follow' });
+      const type = (resp.headers.get('content-type') || '').split(';')[0];
+      if (!resp.ok || !type.startsWith('image/')) continue;
+      const bytes = await resp.arrayBuffer();
+      if (!bytes.byteLength || bytes.byteLength > 15 * 1024 * 1024) {
+        return fail('图片为空或超过 15MB', 400, 400);
+      }
+      return new Response(bytes, {
+        status: 200,
+        headers: {
+          ...cors,
+          'Content-Type': type,
+          'Cache-Control': 'public, max-age=86400',
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
+    } catch {
+      // 继续尝试七牛 HTTP 回退地址。
+    }
+  }
+  return fail('图片读取失败', 502, 502);
+}
+
 async function handleDeepSeek(req: Request) {
   const payload = await authUser(req);
   if (!payload) return fail('未登录', 401, 401);
@@ -425,6 +476,7 @@ Deno.serve(async (req) => {
     const method = req.method.toUpperCase();
 
     if (method === 'GET' && (path === '/health' || path === '/')) return handleHealth();
+    if (method === 'GET' && path === '/upload/image') return await handleImageProxy(req);
     if (method === 'POST' && path === '/auth/login') return await handleLogin(req);
     if (method === 'GET' && path === '/auth/me') return await handleMe(req);
     if (method === 'GET' && path === '/upload/qiniu-token') return await handleQiniuToken(req);

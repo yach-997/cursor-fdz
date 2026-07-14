@@ -37,7 +37,25 @@ export class VisionService {
       this.config.get<string>('VISION_MODEL') || 'Qwen/Qwen3-VL-8B-Instruct';
 
     const samples = (samplePhotoUrls || []).filter(Boolean).slice(0, 3);
-    const content: Array<Record<string, unknown>> = [
+
+    try {
+      // SiliconFlow 必须能直接下载图片。localhost/内网地址和证书异常的
+      // 七牛测试域名都无法由模型服务读取，因此在服务端转为 data URL。
+      const photoInput = await this.toImageDataUrl(photoUrl);
+      const sampleInputs = (
+        await Promise.all(
+          samples.map(async (url) => {
+            try {
+              return await this.toImageDataUrl(url);
+            } catch (err) {
+              this.logger.warn(`样本图读取失败，已跳过: ${(err as Error).message}`);
+              return null;
+            }
+          }),
+        )
+      ).filter((url): url is string => Boolean(url));
+
+      const content: Array<Record<string, unknown>> = [
       {
         type: 'text',
         text: [
@@ -53,19 +71,18 @@ export class VisionService {
       { type: 'text', text: '【现场照片】' },
       {
         type: 'image_url',
-        image_url: { url: this.toAbsoluteUrl(photoUrl) },
+        image_url: { url: photoInput },
       },
-    ];
+      ];
 
-    for (let i = 0; i < samples.length; i += 1) {
+    for (let i = 0; i < sampleInputs.length; i += 1) {
       content.push({ type: 'text', text: `【合格样本 ${i + 1}】` });
       content.push({
         type: 'image_url',
-        image_url: { url: this.toAbsoluteUrl(samples[i]) },
+        image_url: { url: sampleInputs[i] },
       });
     }
 
-    try {
       const resp = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -176,6 +193,52 @@ export class VisionService {
     if (publicBase && url.startsWith('/')) return `${publicBase}${url}`;
     if (publicBase) return `${publicBase}/${url}`;
     return url;
+  }
+
+  private async toImageDataUrl(input: string): Promise<string> {
+    if (/^data:image\//i.test(input)) return input;
+
+    const absolute = this.toAbsoluteUrl(input);
+    if (!/^https?:\/\//i.test(absolute)) {
+      throw new Error('图片地址不是可下载的 HTTP(S) 地址');
+    }
+
+    const candidates = [absolute];
+    // 七牛测试域名通常只支持 HTTP，其 HTTPS 证书会被 Node 和浏览器拒绝。
+    if (/^https:\/\/[^/]+\.clouddn\.com\//i.test(absolute)) {
+      candidates.push(absolute.replace(/^https:/i, 'http:'));
+    }
+
+    let lastError: Error | null = null;
+    for (const url of candidates) {
+      try {
+        const resp = await fetch(url, {
+          signal: AbortSignal.timeout(15_000),
+          redirect: 'follow',
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+        const contentType = (resp.headers.get('content-type') || 'image/jpeg')
+          .split(';')[0]
+          .trim();
+        if (!contentType.startsWith('image/')) {
+          throw new Error(`响应不是图片: ${contentType}`);
+        }
+
+        const contentLength = Number(resp.headers.get('content-length') || 0);
+        if (contentLength > 12 * 1024 * 1024) {
+          throw new Error('图片超过 12MB');
+        }
+        const bytes = Buffer.from(await resp.arrayBuffer());
+        if (!bytes.length || bytes.length > 12 * 1024 * 1024) {
+          throw new Error('图片为空或超过 12MB');
+        }
+        return `data:${contentType};base64,${bytes.toString('base64')}`;
+      } catch (err) {
+        lastError = err as Error;
+      }
+    }
+    throw new Error(`图片下载失败: ${lastError?.message || '未知错误'}`);
   }
 
   private parseJsonResult(raw: string): Omit<VisionCompareResult, 'provider'> | null {

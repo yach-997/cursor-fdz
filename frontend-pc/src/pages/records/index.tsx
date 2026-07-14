@@ -27,6 +27,7 @@ import { fetchDevices } from '../../api/device';
 import { downloadRecordsExport } from '../../api/stats';
 import type { SiteItem, DeviceItem } from '../../types';
 import { DEVICE_TYPE_LABEL } from '../../types';
+import { displayPhotoUrl } from '../../utils/photo-url';
 
 const STATUS_MAP: Record<string, { color: string; text: string }> = {
   submitted: { color: 'processing', text: '待审核' },
@@ -436,7 +437,7 @@ export default function RecordsPage() {
                     {(entry.photos || []).map((url) => (
                       <Image
                         key={url}
-                        src={url}
+                        src={displayPhotoUrl(url)}
                         width={120}
                         height={120}
                         style={{ objectFit: 'cover', borderRadius: 8 }}
@@ -484,7 +485,7 @@ export default function RecordsPage() {
                     {entry.finalResult || '-'}
                   </Tag>
                   {(entry.photos || []).slice(0, 1).map((url) => (
-                    <Image key={url} src={url} width={80} height={80} style={{ marginTop: 4 }} />
+                    <Image key={url} src={displayPhotoUrl(url)} width={80} height={80} style={{ marginTop: 4 }} />
                   ))}
                 </div>
               ))}

@@ -31,6 +31,7 @@ import { useAuthStore } from '../../stores/auth';
 import type { DeviceType, SiteItem } from '../../types';
 import { DEVICE_TYPE_LABEL } from '../../types';
 import { uploadImage } from '../../api/upload';
+import { displayPhotoUrl } from '../../utils/photo-url';
 
 const DEVICE_TABS: DeviceType[] = [
   'string_inverter',
@@ -274,7 +275,7 @@ export default function TemplatesPage() {
                 <Space wrap>
                   {entry.samplePhotos!.map((url) => (
                     <div key={url} style={{ position: 'relative' }}>
-                      <img src={url} alt="" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6 }} />
+                      <img src={displayPhotoUrl(url)} alt="" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6 }} />
                       <Button
                         size="small"
                         type="link"
