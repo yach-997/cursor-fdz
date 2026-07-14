@@ -27,6 +27,10 @@ export class MinioService implements OnModuleInit {
   }
 
   async onModuleInit() {
+    if (process.env.VERCEL || process.env.SERVERLESS === 'true') {
+      this.logger.log('Serverless 模式：跳过 MinIO 初始化');
+      return;
+    }
     try {
       const exists = await this.client.bucketExists(this.bucket);
       if (!exists) {

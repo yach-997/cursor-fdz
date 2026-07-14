@@ -74,6 +74,13 @@ import { HealthController } from './modules/health/health.controller';
             config.get<string>('DB_SSL') === 'true'
               ? { rejectUnauthorized: false }
               : undefined,
+          extra: {
+            max: Number(
+              config.get<string>('DB_POOL_MAX') ||
+                (process.env.VERCEL || process.env.SERVERLESS === 'true' ? 2 : 10),
+            ),
+            connectionTimeoutMillis: 10_000,
+          },
         };
 
         if (databaseUrl) {

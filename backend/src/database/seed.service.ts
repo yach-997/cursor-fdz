@@ -28,6 +28,10 @@ export class DatabaseSeedService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    if (process.env.VERCEL || process.env.SERVERLESS === 'true') {
+      this.logger.log('Serverless 模式：跳过启动种子，使用现有 Supabase 数据');
+      return;
+    }
     await this.seedAdmin();
     await this.migrateUserRoles();
     await this.seedTemplates();

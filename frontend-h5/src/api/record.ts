@@ -84,7 +84,9 @@ export async function analyzeAi(payload: {
   photoUrl: string;
   samplePhotoUrls?: string[];
 }) {
-  const { data } = await request.post<ApiResponse<{ queued: boolean }>>(
+  const { data } = await request.post<
+    ApiResponse<{ queued: boolean; completed?: boolean }>
+  >(
     '/ai/analyze',
     payload,
   );

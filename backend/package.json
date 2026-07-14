@@ -4,6 +4,7 @@
   "description": "智能设备巡检系统 - NestJS 后端",
   "scripts": {
     "build": "nest build",
+    "typecheck:vercel": "tsc -p tsconfig.vercel.json",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",

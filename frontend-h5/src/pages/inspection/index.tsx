@@ -312,13 +312,17 @@ export default function InspectionPage() {
           ids.includes(currentTpl.id) ? ids : [...ids, currentTpl.id],
         );
         try {
-          await analyzeAi({
+          const analysis = await analyzeAi({
             recordId: record.id,
             templateEntryId: currentTpl.id,
             photoUrl: uploaded.url,
             samplePhotoUrls: currentTpl.samplePhotos || [],
           });
-          Toast.info('已上传，AI 后台分析中，可点下一步');
+          Toast.info(
+            analysis.completed
+              ? '照片已上传，AI 分析完成'
+              : '已上传，AI 后台分析中，可点下一步',
+          );
           startPoll(record.id, currentTpl.id);
         } catch {
           setAnalyzingIds((ids) => ids.filter((id) => id !== currentTpl.id));

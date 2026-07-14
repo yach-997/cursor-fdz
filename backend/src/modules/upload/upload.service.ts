@@ -159,6 +159,9 @@ export class UploadService {
         this.logger.warn(`七牛上传失败，回退 MinIO: ${(err as Error).message}`);
       }
     }
+    if (process.env.VERCEL || process.env.SERVERLESS === 'true') {
+      throw new BadRequestException('Vercel 后端必须正确配置七牛云存储');
+    }
     return this.minio.putObject(objectName, buffer, contentType);
   }
 

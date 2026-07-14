@@ -27,6 +27,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit() {
+    if (process.env.VERCEL || process.env.SERVERLESS === 'true') {
+      this.logger.log('Serverless 模式：跳过 Redis 常驻连接');
+      return;
+    }
     try {
       await this.client.connect();
       this.ready = true;

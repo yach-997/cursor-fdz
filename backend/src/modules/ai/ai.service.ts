@@ -47,6 +47,10 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    if (process.env.VERCEL || process.env.SERVERLESS === 'true') {
+      this.logger.log('Serverless 模式：AI 将在请求内同步完成');
+      return;
+    }
     this.running = true;
     this.logger.log(
       this.vision.isEnabled()
@@ -97,6 +101,17 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
       samplePhotoUrls: dto.samplePhotoUrls || [],
       enqueuedAt: new Date().toISOString(),
     };
+
+    if (process.env.VERCEL || process.env.SERVERLESS === 'true') {
+      await this.processJob(job);
+      return {
+        queued: false,
+        completed: true,
+        recordId: dto.recordId,
+        templateEntryId: dto.templateEntryId,
+        message: 'AI 分析已完成',
+      };
+    }
 
     if (this.redis.isReady) {
       await this.redis.lPush(QUEUE_KEY, JSON.stringify(job));
