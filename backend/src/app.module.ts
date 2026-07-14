@@ -33,6 +33,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { DataScopeGuard } from './common/guards/data-scope.guard';
 import { DatabaseSeedService } from './database/seed.service';
+import { HealthController } from './modules/health/health.controller';
 
 @Module({
   imports: [
@@ -44,27 +45,50 @@ import { DatabaseSeedService } from './database/seed.service';
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        type: 'postgres' as const,
-        host: config.get<string>('DB_HOST', 'localhost'),
-        port: config.get<number>('DB_PORT', 5432),
-        username: config.get<string>('DB_USERNAME', 'inspection'),
-        password: config.get<string>('DB_PASSWORD', 'inspection123'),
-        database: config.get<string>('DB_DATABASE', 'inspection_db'),
-        entities: [
-          User,
-          Site,
-          SiteMember,
-          Device,
-          InspectionTemplate,
-          InspectionTask,
-          InspectionRecord,
-          AlertConfig,
-          AlertRecord,
-        ],
-        synchronize: config.get<string>('NODE_ENV') !== 'production',
-        logging: config.get<string>('NODE_ENV') === 'development',
-      }),
+      useFactory: (config: ConfigService) => {
+        const databaseUrl = config.get<string>('DATABASE_URL');
+        const syncFlag = config.get<string>('DB_SYNC', '');
+        const synchronize =
+          syncFlag === 'true'
+            ? true
+            : syncFlag === 'false'
+              ? false
+              : config.get<string>('NODE_ENV') !== 'production';
+
+        const base = {
+          type: 'postgres' as const,
+          entities: [
+            User,
+            Site,
+            SiteMember,
+            Device,
+            InspectionTemplate,
+            InspectionTask,
+            InspectionRecord,
+            AlertConfig,
+            AlertRecord,
+          ],
+          synchronize,
+          logging: config.get<string>('NODE_ENV') === 'development',
+          ssl:
+            config.get<string>('DB_SSL') === 'true'
+              ? { rejectUnauthorized: false }
+              : undefined,
+        };
+
+        if (databaseUrl) {
+          return { ...base, url: databaseUrl };
+        }
+
+        return {
+          ...base,
+          host: config.get<string>('DB_HOST', 'localhost'),
+          port: config.get<number>('DB_PORT', 5432),
+          username: config.get<string>('DB_USERNAME', 'inspection'),
+          password: config.get<string>('DB_PASSWORD', 'inspection123'),
+          database: config.get<string>('DB_DATABASE', 'inspection_db'),
+        };
+      },
     }),
     TypeOrmModule.forFeature([User, InspectionTemplate]),
     RedisModule,
@@ -81,6 +105,7 @@ import { DatabaseSeedService } from './database/seed.service';
     AlertModule,
     GeocodeModule,
   ],
+  controllers: [HealthController],
   providers: [
     DatabaseSeedService,
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

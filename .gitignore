@@ -21,6 +21,7 @@ redis-data/
 .tmp-docx/
 .vercel/
 **/.vercel/
+tools/
 *.pem
 *.key
 agent-transcripts/
