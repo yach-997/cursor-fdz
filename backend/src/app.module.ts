@@ -46,7 +46,15 @@ import { HealthController } from './modules/health/health.controller';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const databaseUrl = config.get<string>('DATABASE_URL');
+        const databaseUrl = (
+          process.env.DATABASE_URL || config.get<string>('DATABASE_URL') || ''
+        ).trim();
+        const isServerless = Boolean(
+          process.env.VERCEL || process.env.SERVERLESS === 'true',
+        );
+        if (isServerless && !databaseUrl) {
+          throw new Error('Vercel 环境缺少 DATABASE_URL 或该变量值为空');
+        }
         const syncFlag = config.get<string>('DB_SYNC', '');
         const synchronize =
           syncFlag === 'true'
@@ -77,7 +85,7 @@ import { HealthController } from './modules/health/health.controller';
           extra: {
             max: Number(
               config.get<string>('DB_POOL_MAX') ||
-                (process.env.VERCEL || process.env.SERVERLESS === 'true' ? 2 : 10),
+                (isServerless ? 2 : 10),
             ),
             connectionTimeoutMillis: 10_000,
           },
