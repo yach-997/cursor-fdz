@@ -2,19 +2,26 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { message } from 'antd';
 import type { ApiResponse } from '../types';
 
-/** 线上可设 VITE_API_BASE=https://your-api.example.com/api */
+/**
+ * 本地默认 /api（Vite 代理 Nest）
+ * 线上 Supabase Edge：VITE_API_BASE=https://xxxx.supabase.co/functions/v1/api
+ */
 const apiBase = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') || '/api';
+const supabaseAnon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || '';
 
 const request = axios.create({
   baseURL: apiBase,
   timeout: 30000,
 });
 
-/** 请求拦截：附加 JWT */
+/** 请求拦截：附加 JWT / Supabase apikey */
 request.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = localStorage.getItem('accessToken');
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
+  if (config.headers) {
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    if (supabaseAnon && apiBase.includes('supabase.co')) {
+      config.headers.apikey = supabaseAnon;
+    }
   }
   return config;
 });
