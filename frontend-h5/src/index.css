@@ -1,0 +1,63 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  background: #f7f8fa;
+  font-family: 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* 手机端内容区限宽，微信浏览器更稳 */
+#root {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+@supports (padding: env(safe-area-inset-bottom)) {
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+.tab-layout {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-layout__content {
+  flex: 1;
+  padding-bottom: 50px;
+}
+
+.login-page {
+  min-height: 100vh;
+  background: #e8f5ef;
+}
+
+.login-page__header {
+  padding: 64px 24px 32px;
+  color: #1a1a1a;
+}
+
+.login-page__header h1 {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+.login-page__header p {
+  color: #8a9490;
+  font-size: 14px;
+}
+
+/* 阳光下高对比度：按钮最小高度 48px */
+.rv-button {
+  min-height: 48px;
+}

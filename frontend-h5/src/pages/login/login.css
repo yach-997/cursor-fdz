@@ -1,0 +1,92 @@
+.h5-login-page {
+  --h5-bg: #e8f5ef;
+  --h5-green: #2f9b6a;
+  --h5-green-dark: #248556;
+
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse 90% 40% at 50% 0%, rgba(47, 155, 106, 0.15), transparent),
+    var(--h5-bg);
+  font-family: 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+}
+
+.h5-login-back,
+.login-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 16px 0;
+  padding: 10px 4px;
+  border: none;
+  background: transparent;
+  color: #8a9490;
+  font-size: 14px;
+  font-weight: 400;
+  font-family: inherit;
+  line-height: 1.4;
+  letter-spacing: 0;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.login-back__arrow {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.h5-login-back:active,
+.login-back:active {
+  color: var(--h5-green);
+}
+
+.h5-login-page__inner {
+  padding: 8px 20px 32px;
+}
+
+.h5-login-brand {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.h5-login-brand__logo {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px;
+  border-radius: 16px;
+  background: linear-gradient(145deg, var(--h5-green), var(--h5-green-dark));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 24px rgba(47, 155, 106, 0.28);
+}
+
+.h5-login-brand h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.h5-login-brand p {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: #8a9490;
+}
+
+.h5-login-card {
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(26, 80, 55, 0.06);
+}
+
+.h5-login-actions {
+  padding: 20px 16px 24px;
+}
+
+.h5-login-btn {
+  height: 48px !important;
+  font-size: 16px !important;
+  background: var(--h5-green) !important;
+  border-color: var(--h5-green) !important;
+}
