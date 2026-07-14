@@ -20,6 +20,7 @@ export interface RecordItem {
   deviceType: string;
   entries: RecordEntry[];
   status: string;
+  submittedAt?: string | null;
   rejectReason?: { reason: string; entryIds?: string[]; rejectedAt?: string } | null;
   task?: {
     id: string;
@@ -33,6 +34,7 @@ export interface RecordItem {
       description: string;
       isRequired: boolean;
       samplePhotos?: string[];
+      isOptionalModule?: boolean;
     }>;
   };
 }

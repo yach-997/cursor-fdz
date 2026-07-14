@@ -25,7 +25,7 @@ import {
 } from '../../api/task';
 import { fetchSites, fetchSiteMembers } from '../../api/site';
 import { fetchDevices } from '../../api/device';
-import type { SiteItem, DeviceItem } from '../../types';
+import type { SiteItem, DeviceItem, DeviceType } from '../../types';
 import { DEVICE_TYPE_LABEL } from '../../types';
 
 /** 对外展示的三种任务状态 */
@@ -107,7 +107,7 @@ export default function TasksPage() {
       fetchDevices({
         siteId: sid,
         limit: 200,
-        deviceType: deviceType || undefined,
+        deviceType: (deviceType as DeviceType | undefined) || undefined,
       }),
       fetchSiteMembers(sid, 'inspector'),
     ]);
