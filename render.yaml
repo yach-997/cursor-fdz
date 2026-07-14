@@ -1,5 +1,5 @@
-# Render Blueprint：https://dashboard.render.com → New → Blueprint → 选 yach-997/cursor-fdz
-# 带 sync: false 的变量会在部署向导里让你粘贴（切勿把密钥写进本文件）
+# Render Blueprint：只跑 Nest API；数据库用 Supabase Postgres
+# https://dashboard.render.com → New → Blueprint → 选 yach-997/cursor-fdz
 services:
   - type: web
     name: cursor-fdz-api
@@ -11,14 +11,14 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # 首次连 Supabase 建表+种子；稳定后可改 false
       - key: DB_SYNC
         value: 'true'
       - key: DB_SSL
         value: 'true'
+      # 粘贴 Supabase → Database → URI（见下方教学）
       - key: DATABASE_URL
-        fromDatabase:
-          name: cursor-fdz-db
-          property: connectionString
+        sync: false
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
@@ -65,9 +65,3 @@ services:
         sync: false
       - key: AMAP_WEB_KEY
         sync: false
-
-databases:
-  - name: cursor-fdz-db
-    plan: free
-    databaseName: inspection_db
-    user: inspection
