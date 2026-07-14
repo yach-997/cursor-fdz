@@ -1,5 +1,9 @@
-# Render Blueprint：只跑 Nest API；数据库用 Supabase Postgres
-# https://dashboard.render.com → New → Blueprint → 选 yach-997/cursor-fdz
+# 生产架构：
+#   手机/电脑 → Vercel(PC/H5) → Render Nest API → Postgres(推荐 Render；也可用 Neon)
+#                              └→ 七牛云（照片）
+#
+# 部署：https://dashboard.render.com → New → Blueprint → 选 yach-997/cursor-fdz
+# sync:false 的项在向导里粘贴，切勿写进本文件或提交 Git
 services:
   - type: web
     name: cursor-fdz-api
@@ -11,14 +15,15 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      # 首次连 Supabase 建表+种子；稳定后可改 false
+      # 首次部署建表+种子；登录正常后请在 Dashboard 改为 false
       - key: DB_SYNC
         value: 'true'
       - key: DB_SSL
         value: 'true'
-      # 粘贴 Supabase → Database → URI（见下方教学）
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: cursor-fdz-db
+          property: connectionString
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
@@ -35,6 +40,7 @@ services:
         value: 超级管理员
       - key: ADMIN_PHONE
         value: '13800000000'
+      # 未单独部署 Redis 时登录仍可用；AI 异步队列会降级
       - key: REDIS_HOST
         value: localhost
       - key: REDIS_PORT
@@ -65,3 +71,11 @@ services:
         sync: false
       - key: AMAP_WEB_KEY
         sync: false
+
+databases:
+  - name: cursor-fdz-db
+    # 若账号无 free 库额度，向导会提示升级或改 Neon（见清单说明）
+    plan: free
+    databaseName: inspection_db
+    user: inspection
+    postgresMajorVersion: '15'
