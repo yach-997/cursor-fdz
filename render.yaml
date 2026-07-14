@@ -1,5 +1,5 @@
-# Render Blueprint：一键部署 API + Postgres
-# 控制台：https://dashboard.render.com → New → Blueprint → 选本仓库
+# Render Blueprint：https://dashboard.render.com → New → Blueprint → 选 yach-997/cursor-fdz
+# 带 sync: false 的变量会在部署向导里让你粘贴（切勿把密钥写进本文件）
 services:
   - type: web
     name: cursor-fdz-api
@@ -33,14 +33,38 @@ services:
         value: admin123
       - key: ADMIN_REAL_NAME
         value: 超级管理员
+      - key: ADMIN_PHONE
+        value: '13800000000'
       - key: REDIS_HOST
         value: localhost
       - key: REDIS_PORT
         value: '6379'
-      # 下面几项请在 Render Dashboard 手动填（与本地 .env 一致，勿提交到 Git）
-      # QINIU_ACCESS_KEY / QINIU_SECRET_KEY / QINIU_BUCKET / QINIU_DOMAIN / QINIU_ZONE
-      # VISION_API_KEY / VISION_BASE_URL / VISION_MODEL
-      # AMAP_WEB_SERVICE_KEY / DEEPSEEK_API_KEY
+      - key: QINIU_ACCESS_KEY
+        sync: false
+      - key: QINIU_SECRET_KEY
+        sync: false
+      - key: QINIU_BUCKET
+        sync: false
+      - key: QINIU_DOMAIN
+        sync: false
+      - key: QINIU_ZONE
+        value: z2
+      - key: QINIU_UPLOAD_URL
+        value: https://upload-z2.qiniup.com
+      - key: VISION_API_KEY
+        sync: false
+      - key: VISION_BASE_URL
+        value: https://api.siliconflow.cn/v1
+      - key: VISION_MODEL
+        value: Qwen/Qwen3-VL-8B-Instruct
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_BASE_URL
+        value: https://api.deepseek.com
+      - key: AMAP_WEB_SERVICE_KEY
+        sync: false
+      - key: AMAP_WEB_KEY
+        sync: false
 
 databases:
   - name: cursor-fdz-db
