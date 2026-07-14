@@ -1,8 +1,21 @@
-﻿-- 光伏储能巡检：Supabase Postgres 初始结构（对齐 Nest/TypeORM）
+-- ============================================================
+-- 巡检系统：清空业务表后重建 + 种子（可整段在 SQL Editor 执行）
+-- 注意：会删除 public 下业务数据，不影响 auth.users
+-- ============================================================
+
 create extension if not exists "pgcrypto";
 
--- users
-create table if not exists public.users (
+-- 先删有外键依赖的表（顺序很重要）
+drop table if exists public.inspection_records cascade;
+drop table if exists public.inspection_tasks cascade;
+drop table if exists public.inspection_templates cascade;
+drop table if exists public.devices cascade;
+drop table if exists public.site_members cascade;
+drop table if exists public.sites cascade;
+drop table if exists public.users cascade;
+
+-- users（业务用户，不是 auth.users）
+create table public.users (
   id uuid primary key default gen_random_uuid(),
   username text not null unique,
   password text not null,
@@ -18,8 +31,7 @@ create table if not exists public.users (
   updated_at timestamptz not null default now()
 );
 
--- sites
-create table if not exists public.sites (
+create table public.sites (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   code text not null unique,
@@ -35,8 +47,7 @@ create table if not exists public.sites (
   created_at timestamptz not null default now()
 );
 
--- site_members
-create table if not exists public.site_members (
+create table public.site_members (
   id uuid primary key default gen_random_uuid(),
   site_id uuid not null references public.sites(id) on delete cascade,
   user_id uuid not null references public.users(id) on delete cascade,
@@ -46,8 +57,7 @@ create table if not exists public.site_members (
   unique (site_id, user_id)
 );
 
--- devices
-create table if not exists public.devices (
+create table public.devices (
   id uuid primary key default gen_random_uuid(),
   site_id uuid not null references public.sites(id) on delete restrict,
   serial_number text not null unique,
@@ -59,8 +69,7 @@ create table if not exists public.devices (
   created_at timestamptz not null default now()
 );
 
--- inspection_templates
-create table if not exists public.inspection_templates (
+create table public.inspection_templates (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   device_type text not null,
@@ -71,8 +80,7 @@ create table if not exists public.inspection_templates (
   created_at timestamptz not null default now()
 );
 
--- inspection_tasks
-create table if not exists public.inspection_tasks (
+create table public.inspection_tasks (
   id uuid primary key default gen_random_uuid(),
   site_id uuid not null references public.sites(id),
   device_id uuid not null references public.devices(id),
@@ -88,8 +96,7 @@ create table if not exists public.inspection_tasks (
   created_at timestamptz not null default now()
 );
 
--- inspection_records
-create table if not exists public.inspection_records (
+create table public.inspection_records (
   id uuid primary key default gen_random_uuid(),
   task_id uuid not null references public.inspection_tasks(id) on delete cascade,
   device_type text not null,
@@ -104,12 +111,11 @@ create table if not exists public.inspection_records (
   created_at timestamptz not null default now()
 );
 
-create index if not exists idx_tasks_site on public.inspection_tasks(site_id);
-create index if not exists idx_tasks_inspector on public.inspection_tasks(inspector_id);
-create index if not exists idx_records_task on public.inspection_records(task_id);
-create index if not exists idx_members_user on public.site_members(user_id);
+create index idx_tasks_site on public.inspection_tasks(site_id);
+create index idx_tasks_inspector on public.inspection_tasks(inspector_id);
+create index idx_records_task on public.inspection_records(task_id);
+create index idx_members_user on public.site_members(user_id);
 
--- API 走 Edge Function + service role；关闭 anon 直连写表（前端经 API）
 alter table public.users enable row level security;
 alter table public.sites enable row level security;
 alter table public.site_members enable row level security;
@@ -118,9 +124,8 @@ alter table public.inspection_templates enable row level security;
 alter table public.inspection_tasks enable row level security;
 alter table public.inspection_records enable row level security;
 
--- 演示数据（密码均为 bcrypt）
--- admin / admin123
--- xcy002 / 123456
+-- ========== 种子数据 ==========
+-- admin / admin123 ; xcy002 / 123456
 
 insert into public.users (id, username, password, real_name, phone, role, roles, status)
 values
@@ -143,8 +148,7 @@ values
     'inspector',
     '["inspector"]'::jsonb,
     'active'
-  )
-on conflict (username) do nothing;
+  );
 
 insert into public.sites (id, name, code, province, city, district, address, latitude, longitude, manager_id, status)
 values
@@ -173,14 +177,12 @@ values
     113.3889200,
     '11111111-1111-1111-1111-111111111111',
     'active'
-  )
-on conflict (code) do nothing;
+  );
 
 insert into public.site_members (site_id, user_id, member_role, status)
 values
   ('33333333-3333-3333-3333-333333333333', '22222222-2222-2222-2222-222222222222', 'inspector', 'active'),
-  ('44444444-4444-4444-4444-444444444444', '22222222-2222-2222-2222-222222222222', 'inspector', 'active')
-on conflict (site_id, user_id) do nothing;
+  ('44444444-4444-4444-4444-444444444444', '22222222-2222-2222-2222-222222222222', 'inspector', 'active');
 
 insert into public.devices (id, site_id, serial_number, device_type, model, status)
 values
@@ -199,42 +201,40 @@ values
     'energy_storage',
     'ESS-200',
     'active'
-  )
-on conflict (serial_number) do nothing;
+  );
 
 insert into public.inspection_templates (id, name, device_type, entries, is_global, site_id, version)
-select
-  '66666666-6666-6666-6666-666666666661',
-  '组串式逆变器巡检',
-  'string_inverter',
-  '[
-    {"id":"e1","name":"上传阳光云截图","description":"必检。请上传阳光云页面截图。","isRequired":true,"order":1,"samplePhotos":[],"checkType":"photo"},
-    {"id":"e2","name":"上传故障记录","description":"必检。上传故障/告警截图。","isRequired":true,"order":2,"samplePhotos":[],"checkType":"photo"},
-    {"id":"e3","name":"安装固定检查","description":"必检。检查安装是否牢固。","isRequired":true,"order":3,"samplePhotos":[],"checkType":"photo"}
-  ]'::jsonb,
-  true,
-  null,
-  1
-where not exists (
-  select 1 from public.inspection_templates t
-  where t.device_type = 'string_inverter' and t.is_global and t.site_id is null
-);
+values
+  (
+    '66666666-6666-6666-6666-666666666661',
+    '组串式逆变器巡检',
+    'string_inverter',
+    '[
+      {"id":"e1","name":"上传阳光云截图","description":"必检。请上传阳光云页面截图。","isRequired":true,"order":1,"samplePhotos":[],"checkType":"photo"},
+      {"id":"e2","name":"上传故障记录","description":"必检。上传故障/告警截图。","isRequired":true,"order":2,"samplePhotos":[],"checkType":"photo"},
+      {"id":"e3","name":"安装固定检查","description":"必检。检查安装是否牢固。","isRequired":true,"order":3,"samplePhotos":[],"checkType":"photo"}
+    ]'::jsonb,
+    true,
+    null,
+    1
+  ),
+  (
+    '66666666-6666-6666-6666-666666666662',
+    '储能系统巡检',
+    'energy_storage',
+    '[
+      {"id":"e1","name":"箱体检查","description":"必检。检查箱体外观。","isRequired":true,"order":1,"samplePhotos":[],"checkType":"photo"},
+      {"id":"e2","name":"电池箱检查","description":"必检。检查电池箱状态。","isRequired":true,"order":2,"samplePhotos":[],"checkType":"photo"},
+      {"id":"e3","name":"PCS 检查","description":"必检。检查 PCS 运行状态。","isRequired":true,"order":3,"samplePhotos":[],"checkType":"photo"}
+    ]'::jsonb,
+    true,
+    null,
+    1
+  );
 
-insert into public.inspection_templates (id, name, device_type, entries, is_global, site_id, version)
-select
-  '66666666-6666-6666-6666-666666666662',
-  '储能系统巡检',
-  'energy_storage',
-  '[
-    {"id":"e1","name":"箱体检查","description":"必检。检查箱体外观。","isRequired":true,"order":1,"samplePhotos":[],"checkType":"photo"},
-    {"id":"e2","name":"电池箱检查","description":"必检。检查电池箱状态。","isRequired":true,"order":2,"samplePhotos":[],"checkType":"photo"},
-    {"id":"e3","name":"PCS 检查","description":"必检。检查 PCS 运行状态。","isRequired":true,"order":3,"samplePhotos":[],"checkType":"photo"}
-  ]'::jsonb,
-  true,
-  null,
-  1
-where not exists (
-  select 1 from public.inspection_templates t
-  where t.device_type = 'energy_storage' and t.is_global and t.site_id is null
-);
-
+-- 验证
+select 'users' as t, count(*)::int as n from public.users
+union all select 'sites', count(*)::int from public.sites
+union all select 'site_members', count(*)::int from public.site_members
+union all select 'devices', count(*)::int from public.devices
+union all select 'templates', count(*)::int from public.inspection_templates;
