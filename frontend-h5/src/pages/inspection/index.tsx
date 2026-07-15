@@ -18,6 +18,8 @@ import {
   analyzeAi,
   fetchAiResult,
   fetchRecord,
+  checkTaskLocation,
+  type LocationVerification,
   type RecordEntry,
   type RecordItem,
 } from '../../api/record';
@@ -31,16 +33,32 @@ const RESULT_LABEL: Record<string, string> = {
   error: 'AI失败·待人工',
 };
 
-function getQuickGps(): Promise<string> {
-  if (!('geolocation' in navigator)) return Promise.resolve('');
-  return new Promise((resolve) => {
+interface LiveLocationProof {
+  gps: string;
+  accuracy: string;
+  capturedAt: string;
+}
+
+function getLiveLocation(): Promise<LiveLocationProof> {
+  if (!('geolocation' in navigator)) {
+    return Promise.reject(new Error('当前设备不支持定位'));
+  }
+  return new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(
       (position) =>
-        resolve(
-          `${position.coords.latitude.toFixed(6)},${position.coords.longitude.toFixed(6)}`,
-        ),
-      () => resolve(''),
-      { enableHighAccuracy: false, timeout: 1_800, maximumAge: 120_000 },
+        resolve({
+          gps: `${position.coords.latitude.toFixed(6)},${position.coords.longitude.toFixed(6)}`,
+          accuracy: String(Math.max(1, Math.round(position.coords.accuracy))),
+          capturedAt: new Date().toISOString(),
+        }),
+      (error) => {
+        const message =
+          error.code === error.PERMISSION_DENIED
+            ? '定位权限未开启，请在浏览器设置中允许定位'
+            : '现场定位失败，请到开阔处重新定位';
+        reject(new Error(message));
+      },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 30_000 },
     );
   });
 }
@@ -54,17 +72,46 @@ export default function InspectionPage() {
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [uploadSource, setUploadSource] = useState<'camera' | 'album' | null>(null);
+  const [uploadSource, setUploadSource] = useState<'camera' | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadNotice, setUploadNotice] = useState('');
+  const [locationStatus, setLocationStatus] = useState<
+    'checking' | 'verified' | 'blocked'
+  >('checking');
+  const [locationResult, setLocationResult] = useState<LocationVerification | null>(
+    null,
+  );
+  const [locationError, setLocationError] = useState('正在确认是否到达巡检现场…');
   const cameraRef = useRef<HTMLInputElement>(null);
-  const albumRef = useRef<HTMLInputElement>(null);
   const lastFileRef = useRef<File | null>(null);
+  const locationProofRef = useRef<LiveLocationProof | null>(null);
   const pollRefs = useRef<Record<string, number>>({});
   const activeEntryRef = useRef<string | undefined>(undefined);
   const rejectJumpedRef = useRef(false);
   /** 正在 AI 分析的条目，不阻塞其他条目 */
   const [analyzingIds, setAnalyzingIds] = useState<string[]>([]);
+
+  const verifyLocation = useCallback(async () => {
+    if (!taskId) throw new Error('缺少巡检任务');
+    setLocationStatus('checking');
+    setLocationError('正在获取高精度现场定位…');
+    try {
+      const proof = await getLiveLocation();
+      const result = await checkTaskLocation({ taskId, ...proof });
+      locationProofRef.current = proof;
+      setLocationResult(result);
+      setLocationStatus('verified');
+      setLocationError('');
+      return proof;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '现场定位校验失败';
+      locationProofRef.current = null;
+      setLocationResult(null);
+      setLocationStatus('blocked');
+      setLocationError(message);
+      throw error;
+    }
+  }, [taskId]);
 
   const allEntriesTpl = useMemo(
     () => task?.templateSnapshot || record?.task?.templateSnapshot || [],
@@ -186,6 +233,11 @@ export default function InspectionPage() {
       pollRefs.current = {};
     };
   }, [load]);
+
+  useEffect(() => {
+    if (!task?.id || !record?.id) return;
+    void verifyLocation().catch(() => undefined);
+  }, [task?.id, record?.id, verifyLocation]);
 
   useEffect(() => {
     rejectJumpedRef.current = false;
@@ -324,10 +376,10 @@ export default function InspectionPage() {
       .catch(() => undefined);
   };
 
-  const handleCapture = async (file: File, source: 'camera' | 'album') => {
+  const handleCapture = async (file: File) => {
     if (!record || !currentTpl || !taskId) return;
     lastFileRef.current = file;
-    setUploadSource(source);
+    setUploadSource('camera');
     setUploadProgress(0);
     setUploadNotice('正在优化照片并获取定位…');
     setUploading(true);
@@ -336,18 +388,31 @@ export default function InspectionPage() {
     const capturedEntryId = currentTpl.id;
     const capturedSamplePhotos = currentTpl.samplePhotos || [];
     try {
-      const [compressed, gps] = await Promise.all([
+      const currentProof = locationProofRef.current;
+      const proofPromise: Promise<LiveLocationProof> =
+        currentProof && Date.now() - Date.parse(currentProof.capturedAt) < 120_000
+          ? Promise.resolve(currentProof)
+          : verifyLocation();
+      const [compressed, proof] = await Promise.all([
         compressImage(file),
-        getQuickGps(),
+        proofPromise,
       ]);
 
       setUploadNotice('正在安全上传照片…');
-      const uploaded = await uploadPhoto(compressed, { taskId, gps }, (percent) => {
-        setUploadProgress(percent);
-        if (percent >= 99) {
-          setUploadNotice('照片已传送，云端正在添加水印并保存…');
-        }
-      });
+      const uploaded = await uploadPhoto(
+        compressed,
+        {
+          taskId,
+          ...proof,
+          photoTakenAt: new Date(file.lastModified || Date.now()).toISOString(),
+        },
+        (percent) => {
+          setUploadProgress(percent);
+          if (percent >= 99) {
+            setUploadNotice('照片已传送，云端正在添加水印并保存…');
+          }
+        },
+      );
       const photos = [...(currentEntry?.photos || []), uploaded.url];
       uploadCompleted = true;
       setUploadProgress(100);
@@ -481,6 +546,7 @@ export default function InspectionPage() {
       return;
     }
     try {
+      const proof = await verifyLocation();
       await Dialog.confirm({
         title: '提交报告',
         message:
@@ -488,6 +554,7 @@ export default function InspectionPage() {
             ? '照片已齐。提交后将进入管理员人工审核。'
             : '照片已齐。提交后 AI 将在后台继续分析，你可去做其他巡检，稍后再看报告结果。',
       });
+      setSaving(true);
       // 先落库再提交，避免本地有图但服务端未同步
       const saved = await saveDraft(
         record.id,
@@ -502,6 +569,7 @@ export default function InspectionPage() {
       setRecord(saved);
       const submitted = await submitRecord(saved.id, {
         enabledOptionalModuleIds: enabledOptionalIds,
+        ...proof,
       });
       localStorage.removeItem(`draft:${saved.id}`);
       localStorage.removeItem(`optmod:${saved.id}`);
@@ -510,6 +578,8 @@ export default function InspectionPage() {
       });
     } catch {
       /* cancel 或拦截器已提示 */
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -572,8 +642,90 @@ export default function InspectionPage() {
         <div style={{ padding: 12 }}>
           <Cell
             title={task.taskName}
-            label={`SN: ${task.device?.serialNumber || '-'} · 拍照后点下一步即可，AI 后台分析`}
+            label={`SN: ${task.device?.serialNumber || '-'} · 现场定位通过后拍照巡检`}
           />
+
+          <div
+            style={{
+              marginTop: 12,
+              padding: '14px 14px 13px',
+              borderRadius: 12,
+              border: `1px solid ${
+                locationStatus === 'verified'
+                  ? '#b8e2cf'
+                  : locationStatus === 'blocked'
+                    ? '#f2c2ba'
+                    : '#d9e4df'
+              }`,
+              background:
+                locationStatus === 'verified'
+                  ? '#eef9f4'
+                  : locationStatus === 'blocked'
+                    ? '#fff5f3'
+                    : '#f7faf8',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  display: 'grid',
+                  placeItems: 'center',
+                  borderRadius: 18,
+                  background:
+                    locationStatus === 'verified'
+                      ? '#16835f'
+                      : locationStatus === 'blocked'
+                        ? '#d95645'
+                        : '#80948a',
+                  color: '#fff',
+                  fontSize: 18,
+                  flexShrink: 0,
+                }}
+              >
+                {locationStatus === 'verified'
+                  ? '✓'
+                  : locationStatus === 'blocked'
+                    ? '!'
+                    : '⌖'}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, color: '#173d2f' }}>
+                  {locationStatus === 'verified'
+                    ? '已到达巡检现场'
+                    : locationStatus === 'blocked'
+                      ? '暂时无法开始拍照'
+                      : '正在校验现场位置'}
+                </div>
+                <div style={{ marginTop: 3, color: '#687a72', fontSize: 12 }}>
+                  {locationStatus === 'verified' && locationResult
+                    ? `距站点约 ${locationResult.distanceMeters} 米 · 定位精度约 ${locationResult.accuracyMeters} 米`
+                    : locationError}
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={locationStatus === 'checking'}
+                onClick={() => void verifyLocation().catch(() => undefined)}
+                style={{
+                  border: '1px solid #b8d4c7',
+                  borderRadius: 16,
+                  padding: '6px 10px',
+                  background: '#fff',
+                  color: '#16835f',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  opacity: locationStatus === 'checking' ? 0.55 : 1,
+                }}
+              >
+                {locationStatus === 'checking' ? '定位中' : '重新定位'}
+              </button>
+            </div>
+            <div style={{ marginTop: 10, color: '#7b8983', fontSize: 11, lineHeight: 1.5 }}>
+              巡检员须在站点 {locationResult?.radiusMeters || 500} 米范围内，拍照和提交时都会再次校验定位。
+            </div>
+          </div>
 
           {(task.record?.rejectReason || record.rejectReason)?.reason && (
             <div
@@ -844,18 +996,7 @@ export default function InspectionPage() {
                   style={{ display: 'none' }}
                   onChange={(e) => {
                     const f = e.target.files?.[0];
-                    if (f) void handleCapture(f, 'camera');
-                    e.target.value = '';
-                  }}
-                />
-                <input
-                  ref={albumRef}
-                  type="file"
-                  accept="image/*"
-                  style={{ display: 'none' }}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) void handleCapture(f, 'album');
+                    if (f) void handleCapture(f);
                     e.target.value = '';
                   }}
                 />
@@ -882,9 +1023,7 @@ export default function InspectionPage() {
                         (uploadNotice.includes('没有完成') || uploadNotice.includes('超时')) && (
                           <button
                             type="button"
-                            onClick={() =>
-                              void handleCapture(lastFileRef.current!, uploadSource || 'album')
-                            }
+                            onClick={() => void handleCapture(lastFileRef.current!)}
                             style={{
                               border: 'none',
                               borderRadius: 16,
@@ -926,23 +1065,22 @@ export default function InspectionPage() {
                     type="primary"
                     round
                     loading={uploading && uploadSource === 'camera'}
-                    disabled={uploading}
+                    disabled={uploading || locationStatus !== 'verified'}
                     style={{ flex: 1, height: 48 }}
                     onClick={() => cameraRef.current?.click()}
                   >
-                    拍照
+                    {locationStatus === 'verified' ? '现场拍照' : '定位通过后拍照'}
                   </Button>
-                  <Button
-                    round
-                    plain
-                    type="primary"
-                    loading={uploading && uploadSource === 'album'}
-                    disabled={uploading}
-                    style={{ flex: 1, height: 48 }}
-                    onClick={() => albumRef.current?.click()}
-                  >
-                    相册上传
-                  </Button>
+                </div>
+                <div
+                  style={{
+                    marginTop: 8,
+                    textAlign: 'center',
+                    color: '#88958f',
+                    fontSize: 11,
+                  }}
+                >
+                  为防止上传旧照片，巡检任务仅支持现场调用相机拍摄
                 </div>
               </Cell>
 

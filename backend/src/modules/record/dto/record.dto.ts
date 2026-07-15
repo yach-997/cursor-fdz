@@ -65,6 +65,18 @@ export class SubmitRecordDto {
   @IsArray()
   @IsString({ each: true })
   enabledOptionalModuleIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  gps?: string;
+
+  @IsOptional()
+  @IsString()
+  accuracy?: string;
+
+  @IsOptional()
+  @IsDateString()
+  capturedAt?: string;
 }
 
 export class CreateRecordDto {

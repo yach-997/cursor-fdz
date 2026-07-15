@@ -6,6 +6,7 @@ import { QiniuService } from './qiniu.service';
 import { UploadService } from './upload.service';
 import { UploadController } from './upload.controller';
 import { GeocodeModule } from '../geocode/geocode.module';
+import { LocationGuardService } from './location-guard.service';
 
 @Module({
   imports: [
@@ -13,7 +14,7 @@ import { GeocodeModule } from '../geocode/geocode.module';
     GeocodeModule,
   ],
   controllers: [UploadController],
-  providers: [MinioService, QiniuService, UploadService],
-  exports: [MinioService, QiniuService, UploadService],
+  providers: [MinioService, QiniuService, LocationGuardService, UploadService],
+  exports: [MinioService, QiniuService, LocationGuardService, UploadService],
 })
 export class UploadModule {}

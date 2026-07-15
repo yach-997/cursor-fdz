@@ -10,12 +10,18 @@ const { QueryRecordDto } = require('../dist/modules/record/dto/record.dto');
 const { QueryAlertDto } = require('../dist/modules/alert/dto/alert.dto');
 const { DateRangeQueryDto } = require('../dist/modules/stats/dto/stats.dto');
 const { QueryTaskDto } = require('../dist/modules/task/dto/task.dto');
-const { UploadPhotoMetaDto } = require('../dist/modules/upload/dto/upload.dto');
+const {
+  UploadPhotoMetaDto,
+  LocationCheckDto,
+} = require('../dist/modules/upload/dto/upload.dto');
 const { AnalyzeDto } = require('../dist/modules/ai/dto/ai.dto');
 const { RecordService } = require('../dist/modules/record/record.service');
 const { TemplateService } = require('../dist/modules/template/template.service');
 const { SiteService } = require('../dist/modules/site/site.service');
 const { GeocodeService } = require('../dist/modules/geocode/geocode.service');
+const {
+  LocationGuardService,
+} = require('../dist/modules/upload/location-guard.service');
 const { configureApp } = require('../dist/bootstrap');
 
 const seededUuid = '11111111-1111-1111-1111-111111111111';
@@ -33,6 +39,15 @@ function validateSeededIds() {
     [DateRangeQueryDto, { siteId: seededUuid, inspectorId: otherSeededUuid }],
     [QueryTaskDto, { siteId: seededUuid, inspectorId: otherSeededUuid }],
     [UploadPhotoMetaDto, { taskId: seededUuid }],
+    [
+      LocationCheckDto,
+      {
+        taskId: seededUuid,
+        gps: '30.0001,120.0001',
+        accuracy: '20',
+        capturedAt: new Date().toISOString(),
+      },
+    ],
     [AnalyzeDto, { recordId: seededUuid, templateEntryId: 'entry-1', photoUrl: 'x' }],
   ];
 
@@ -281,6 +296,69 @@ async function validateLandmarkGeocodeFallback() {
   assert.match(result.displayName, /宜宾市/);
 }
 
+async function validateInspectionLocationGuard() {
+  const task = {
+    id: seededUuid,
+    siteId: otherSeededUuid,
+    inspectorId: seededUuid,
+  };
+  const site = {
+    id: otherSeededUuid,
+    name: '现场测试站',
+    latitude: 30,
+    longitude: 120,
+  };
+  const service = new LocationGuardService(
+    { get: (_key, fallback) => fallback },
+    { findOne: async () => task },
+    { findOne: async () => site },
+  );
+  const inspector = {
+    id: seededUuid,
+    role: 'inspector',
+    realName: '现场巡检员',
+  };
+  const now = new Date().toISOString();
+  const onsite = await service.assertOnSite(
+    task.id,
+    {
+      gps: '30.0001,120.0001',
+      accuracy: '20',
+      capturedAt: now,
+      photoTakenAt: now,
+    },
+    inspector,
+    true,
+  );
+  assert.equal(onsite.verified, true);
+  assert.ok(onsite.distanceMeters < 500);
+
+  await assert.rejects(
+    () =>
+      service.assertOnSite(
+        task.id,
+        { gps: '30.02,120.02', accuracy: '20', capturedAt: now },
+        inspector,
+      ),
+    /超出 500 米巡检范围/,
+  );
+  await assert.rejects(
+    () =>
+      service.assertOnSite(
+        task.id,
+        {
+          gps: '30.0001,120.0001',
+          accuracy: '20',
+          capturedAt: now,
+          photoTakenAt: new Date(Date.now() - 11 * 60_000).toISOString(),
+        },
+        inspector,
+        true,
+      ),
+    /不是刚刚现场拍摄/,
+  );
+}
+
 async function main() {
   validateSeededIds();
   await validateCorsPolicy();
@@ -290,6 +368,7 @@ async function main() {
   await validatePrimaryManagerCanAlsoInspect();
   validateGeocodeRegionGuard();
   await validateLandmarkGeocodeFallback();
+  await validateInspectionLocationGuard();
   console.log('smoke tests passed');
 }
 

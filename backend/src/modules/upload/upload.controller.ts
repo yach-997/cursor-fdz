@@ -14,7 +14,7 @@ import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import { UploadService } from './upload.service';
-import { UploadPhotoMetaDto } from './dto/upload.dto';
+import { LocationCheckDto, UploadPhotoMetaDto } from './dto/upload.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '../../common/enums';
@@ -54,6 +54,16 @@ export class UploadController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   qiniuToken() {
     return this.uploadService.getQiniuToken();
+  }
+
+  /** 进入巡检、拍照前主动校验是否位于站点范围内。 */
+  @Post('location-check')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
+  checkLocation(
+    @Body() dto: LocationCheckDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.uploadService.checkLocation(dto, user);
   }
 
   @Post('photo')

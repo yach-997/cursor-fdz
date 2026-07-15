@@ -53,7 +53,12 @@ export async function saveDraft(id: string, entries: Partial<RecordEntry>[]) {
 
 export async function submitRecord(
   id: string,
-  payload?: { enabledOptionalModuleIds?: string[] },
+  payload?: {
+    enabledOptionalModuleIds?: string[];
+    gps?: string;
+    accuracy?: string;
+    capturedAt?: string;
+  },
 ) {
   const { data } = await request.put<ApiResponse<RecordItem>>(
     `/records/${id}/submit`,
@@ -64,13 +69,20 @@ export async function submitRecord(
 
 export async function uploadPhoto(
   file: File,
-  meta: { taskId?: string; gps?: string },
+  meta: {
+    taskId?: string;
+    gps?: string;
+    accuracy?: string;
+    capturedAt?: string;
+    photoTakenAt?: string;
+  },
   onProgress?: (percent: number) => void,
 ) {
   const form = new FormData();
   form.append('file', file);
-  if (meta.taskId) form.append('taskId', meta.taskId);
-  if (meta.gps) form.append('gps', meta.gps);
+  Object.entries(meta).forEach(([key, value]) => {
+    if (value) form.append(key, value);
+  });
   const { data } = await request.post<
     ApiResponse<{ url: string; watermark: Record<string, string> }>
   >('/upload/photo', form, {
@@ -81,6 +93,28 @@ export async function uploadPhoto(
       onProgress?.(Math.min(99, Math.round((event.loaded / event.total) * 100)));
     },
   });
+  return data.data;
+}
+
+export interface LocationVerification {
+  verified: boolean;
+  distanceMeters: number;
+  radiusMeters: number;
+  accuracyMeters: number;
+  checkedAt: string;
+  siteName: string;
+}
+
+export async function checkTaskLocation(payload: {
+  taskId: string;
+  gps: string;
+  accuracy: string;
+  capturedAt: string;
+}) {
+  const { data } = await request.post<ApiResponse<LocationVerification>>(
+    '/upload/location-check',
+    payload,
+  );
   return data.data;
 }
 

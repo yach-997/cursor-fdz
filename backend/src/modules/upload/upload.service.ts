@@ -9,6 +9,8 @@ import { QiniuService } from './qiniu.service';
 import { applyWatermark } from './watermark.util';
 import { UploadPhotoMetaDto } from './dto/upload.dto';
 import { GeocodeService } from '../geocode/geocode.service';
+import { UserRole } from '../../common/enums';
+import { LocationGuardService } from './location-guard.service';
 
 @Injectable()
 export class UploadService {
@@ -18,6 +20,7 @@ export class UploadService {
     private readonly minio: MinioService,
     private readonly qiniu: QiniuService,
     private readonly geocode: GeocodeService,
+    private readonly locationGuard: LocationGuardService,
     @InjectRepository(InspectionTask)
     private readonly taskRepo: Repository<InspectionTask>,
     @InjectRepository(Site)
@@ -37,6 +40,11 @@ export class UploadService {
       throw new BadRequestException('未收到图片文件');
     }
 
+    const location =
+      currentUser.role === UserRole.INSPECTOR
+        ? await this.verifyInspectorLocation(meta, currentUser, true)
+        : null;
+
     const watermarkMeta = await this.resolveWatermarkMeta(meta, currentUser);
     const stamped = await applyWatermark(file.buffer, watermarkMeta);
 
@@ -48,8 +56,16 @@ export class UploadService {
       objectName,
       size: stamped.length,
       watermark: watermarkMeta,
+      location,
       storage: this.qiniu.isEnabled() ? 'qiniu' : 'minio',
     };
+  }
+
+  async checkLocation(
+    meta: UploadPhotoMetaDto & { taskId: string },
+    currentUser: CurrentUserContext,
+  ) {
+    return this.locationGuard.assertOnSite(meta.taskId, meta, currentUser, false);
   }
 
   async uploadBatch(
@@ -211,5 +227,21 @@ export class UploadService {
       inspectorName,
       siteName,
     };
+  }
+
+  private verifyInspectorLocation(
+    meta: UploadPhotoMetaDto,
+    currentUser: CurrentUserContext,
+    requireFreshPhoto: boolean,
+  ) {
+    if (!meta.taskId) {
+      throw new BadRequestException('现场拍照缺少巡检任务信息');
+    }
+    return this.locationGuard.assertOnSite(
+      meta.taskId,
+      meta,
+      currentUser,
+      requireFreshPhoto,
+    );
   }
 }

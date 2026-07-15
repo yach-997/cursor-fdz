@@ -28,6 +28,7 @@ import {
   RejectRecordDto,
   SubmitRecordDto,
 } from './dto/record.dto';
+import { LocationGuardService } from '../upload/location-guard.service';
 
 @Injectable()
 export class RecordService {
@@ -38,6 +39,7 @@ export class RecordService {
     private readonly taskRepo: Repository<InspectionTask>,
     @InjectRepository(Device)
     private readonly deviceRepo: Repository<Device>,
+    private readonly locationGuard: LocationGuardService,
   ) {}
 
   async findAll(query: QueryRecordDto, currentUser: CurrentUserContext) {
@@ -269,6 +271,18 @@ export class RecordService {
     const task = await this.getTaskOrThrow(record.taskId);
     this.assertInspectorWrite(task, currentUser);
 
+    let locationSummary = '';
+    if (currentUser.role === UserRole.INSPECTOR) {
+      const verified = await this.locationGuard.assertOnSite(
+        task.id,
+        dto,
+        currentUser,
+        false,
+      );
+      locationSummary = `；现场定位已通过（距站点约 ${verified.distanceMeters} 米，精度约 ${verified.accuracyMeters} 米）`;
+    }
+    const withLocation = (summary: string) => `${summary}${locationSummary}`;
+
     if (
       record.status !== RecordStatus.DRAFT &&
       record.status !== RecordStatus.REJECTED
@@ -332,9 +346,11 @@ export class RecordService {
         at: new Date().toISOString(),
         by: currentUser.id,
         byName: currentUser.realName,
-        summary: isResubmit
-          ? '驳回后重新提交，等待管理员人工审核'
-          : '已提交，该任务未启用 AI，进入人工审核',
+        summary: withLocation(
+          isResubmit
+            ? '驳回后重新提交，等待管理员人工审核'
+            : '已提交，该任务未启用 AI，进入人工审核',
+        ),
         reason: prevReject?.reason,
         entryIds: prevReject?.entryIds,
       });
@@ -346,9 +362,11 @@ export class RecordService {
         at: new Date().toISOString(),
         by: currentUser.id,
         byName: currentUser.realName,
-        summary: isResubmit
-          ? '驳回后重新提交：AI 仍有不合格，进入审核'
-          : '提交报告：AI 有不合格项，进入审核',
+        summary: withLocation(
+          isResubmit
+            ? '驳回后重新提交：AI 仍有不合格，进入审核'
+            : '提交报告：AI 有不合格项，进入审核',
+        ),
         reason: prevReject?.reason,
         entryIds: prevReject?.entryIds,
       });
@@ -360,9 +378,11 @@ export class RecordService {
         at: new Date().toISOString(),
         by: currentUser.id,
         byName: currentUser.realName,
-        summary: isResubmit
-          ? '驳回后重新提交，等待 AI 分析完成后分流'
-          : '已提交，等待 AI 分析完成后自动分流',
+        summary: withLocation(
+          isResubmit
+            ? '驳回后重新提交，等待 AI 分析完成后分流'
+            : '已提交，等待 AI 分析完成后自动分流',
+        ),
         reason: prevReject?.reason,
         entryIds: prevReject?.entryIds,
       });
@@ -375,7 +395,7 @@ export class RecordService {
         at: new Date().toISOString(),
         by: currentUser.id,
         byName: currentUser.realName,
-        summary: isResubmit ? '驳回后重新提交' : '巡检员提交报告',
+        summary: withLocation(isResubmit ? '驳回后重新提交' : '巡检员提交报告'),
         reason: prevReject?.reason,
         entryIds: prevReject?.entryIds,
       });
