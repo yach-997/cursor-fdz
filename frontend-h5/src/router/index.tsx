@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { Loading } from 'react-vant';
 import AuthGuard from './AuthGuard';
 import TabLayout from '../layouts/TabLayout';
+import RouteErrorPage from '../components/RouteErrorPage';
 
 const LoginPage = lazy(() => import('../pages/login'));
 const SitesPage = lazy(() => import('../pages/sites'));
@@ -38,6 +39,9 @@ function Lazy({ children }: { children: React.ReactNode }) {
 /** H5 路由：登录 + 站点选择 + 底部 Tab */
 export const router = createBrowserRouter([
   {
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
     path: '/m/login',
     element: (
       <Lazy>
@@ -177,6 +181,8 @@ export const router = createBrowserRouter([
       },
     ],
   },
-  { path: '/', element: <Navigate to="/m" replace /> },
-  { path: '*', element: <Navigate to="/m" replace /> },
+      { path: '/', element: <Navigate to="/m" replace /> },
+      { path: '*', element: <Navigate to="/m" replace /> },
+    ],
+  },
 ]);
