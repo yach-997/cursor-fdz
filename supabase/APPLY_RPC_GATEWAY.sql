@@ -41,7 +41,7 @@ create or replace function public.app_login(p_username text, p_password text, p_
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   u public.users%rowtype;
@@ -58,7 +58,7 @@ begin
   if u.status <> 'active' then
     raise exception '账号已停用，请联系管理员' using errcode = '28000';
   end if;
-  if u.password is distinct from crypt(p_password, u.password) then
+  if u.password is distinct from extensions.crypt(p_password, u.password) then
     raise exception '用户名或密码错误' using errcode = '28000';
   end if;
 
@@ -426,11 +426,11 @@ revoke all on function public._session(text) from public, anon, authenticated;
 
 -- 密码改为 Postgres crypt，保证 RPC 校验与 bcryptjs 种子兼容
 update public.users
-set password = crypt('admin123', gen_salt('bf'))
+set password = extensions.crypt('admin123', extensions.gen_salt('bf'))
 where username = 'admin';
 
 update public.users
-set password = crypt('123456', gen_salt('bf'))
+set password = extensions.crypt('123456', extensions.gen_salt('bf'))
 where username = 'xcy002';
 
 select 'rpc_ready' as status;
