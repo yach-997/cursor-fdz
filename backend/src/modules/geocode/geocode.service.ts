@@ -83,7 +83,13 @@ export class GeocodeService {
       this.logger.warn('未配置 AMAP_WEB_SERVICE_KEY，无法调用高德地理编码');
     }
 
-    for (const text of candidates.map((c) => c.text)) {
+    // OSM 对「省市区 + 地标」整句的命中率较低，地标类先查抽取后的学校/园区名。
+    const nominatimQueries = [
+      ...(preferPoi ? poiKeywords : []),
+      ...candidates.map((c) => c.text),
+      ...(!preferPoi ? poiKeywords : []),
+    ];
+    for (const text of [...new Set(nominatimQueries)]) {
       const hit = await this.searchNominatim(`中国${text}`);
       if (this.acceptHit(hit, parsed)) return hit;
     }

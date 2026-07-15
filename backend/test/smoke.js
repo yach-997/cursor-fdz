@@ -257,6 +257,30 @@ function validateGeocodeRegionGuard() {
   assert.equal(service.acceptHit(wrong, expected), false);
 }
 
+async function validateLandmarkGeocodeFallback() {
+  const service = new GeocodeService({ get: () => '' });
+  service.searchNominatim = async (query) =>
+    query.includes('四川轻化工大学宜宾校区')
+      ? {
+          latitude: 28.8087877,
+          longitude: 104.6683398,
+          displayName: '四川轻化工大学宜宾校区, 翠屏区, 宜宾市, 四川省, 中国',
+          provider: 'nominatim',
+        }
+      : null;
+  service.searchOpenMeteo = async () => null;
+
+  const result = await service.geocode({
+    address: '四川省宜宾市翠屏区四川轻化工大学宜宾校区',
+    province: '四川省',
+    city: '宜宾市',
+    district: '翠屏区',
+    detail: '四川轻化工大学宜宾校区',
+  });
+  assert.equal(result.provider, 'nominatim');
+  assert.match(result.displayName, /宜宾市/);
+}
+
 async function main() {
   validateSeededIds();
   await validateCorsPolicy();
@@ -265,6 +289,7 @@ async function main() {
   await validateAiErrorFallsBackToAudit();
   await validatePrimaryManagerCanAlsoInspect();
   validateGeocodeRegionGuard();
+  await validateLandmarkGeocodeFallback();
   console.log('smoke tests passed');
 }
 
