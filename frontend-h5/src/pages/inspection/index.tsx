@@ -39,28 +39,72 @@ interface LiveLocationProof {
   capturedAt: string;
 }
 
-function getLiveLocation(): Promise<LiveLocationProof> {
+function getLiveLocation(onAccuracy?: (accuracy: number) => void): Promise<LiveLocationProof> {
   if (!('geolocation' in navigator)) {
     return Promise.reject(new Error('当前设备不支持定位'));
   }
   return new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(
-      (position) =>
-        resolve({
-          gps: `${position.coords.latitude.toFixed(6)},${position.coords.longitude.toFixed(6)}`,
-          accuracy: String(Math.max(1, Math.round(position.coords.accuracy))),
-          capturedAt: new Date().toISOString(),
-        }),
+    let settled = false;
+    let best: GeolocationPosition | null = null;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      navigator.geolocation.clearWatch(watchId);
+      if (error) {
+        reject(error);
+        return;
+      }
+      if (!best) {
+        reject(new Error('没有获取到有效定位，请检查手机定位服务'));
+        return;
+      }
+      const accuracy = Math.max(1, Math.round(best.coords.accuracy));
+      if (accuracy > 200) {
+        reject(
+          new Error(
+            `当前定位精度仅约 ${accuracy} 米。请使用带 GPS 的手机，并开启浏览器“精确位置”权限`,
+          ),
+        );
+        return;
+      }
+      resolve({
+        gps: `${best.coords.latitude.toFixed(6)},${best.coords.longitude.toFixed(6)}`,
+        accuracy: String(accuracy),
+        capturedAt: new Date().toISOString(),
+      });
+    };
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        if (!best || position.coords.accuracy < best.coords.accuracy) best = position;
+        const accuracy = Math.max(1, Math.round(position.coords.accuracy));
+        onAccuracy?.(accuracy);
+        // 已达到可靠精度就立即结束；否则继续等待 GPS 收敛。
+        if (accuracy <= 80) finish();
+      },
       (error) => {
+        if (error.code !== error.PERMISSION_DENIED && best) {
+          finish();
+          return;
+        }
         const message =
           error.code === error.PERMISSION_DENIED
             ? '定位权限未开启，请在浏览器设置中允许定位'
             : '现场定位失败，请到开阔处重新定位';
-        reject(new Error(message));
+        finish(new Error(message));
       },
-      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 30_000 },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 },
     );
+    const timer = window.setTimeout(() => finish(), 15_000);
   });
+}
+
+function requestErrorMessage(error: unknown, fallback: string) {
+  const candidate = error as {
+    message?: string;
+    response?: { data?: { message?: string } };
+  };
+  return candidate?.response?.data?.message || candidate?.message || fallback;
 }
 
 /** 巡检执行：要求提示 + 样本图 + 拍照/相册 + 异步AI + 必填校验提交 */
@@ -96,7 +140,13 @@ export default function InspectionPage() {
     setLocationStatus('checking');
     setLocationError('正在获取高精度现场定位…');
     try {
-      const proof = await getLiveLocation();
+      const proof = await getLiveLocation((accuracy) => {
+        setLocationError(
+          accuracy <= 200
+            ? `GPS 已连接，当前精度约 ${accuracy} 米，正在校验站点距离…`
+            : `正在提高定位精度，当前约 ${accuracy} 米…`,
+        );
+      });
       const result = await checkTaskLocation({ taskId, ...proof });
       locationProofRef.current = proof;
       setLocationResult(result);
@@ -104,7 +154,7 @@ export default function InspectionPage() {
       setLocationError('');
       return proof;
     } catch (error) {
-      const message = error instanceof Error ? error.message : '现场定位校验失败';
+      const message = requestErrorMessage(error, '现场定位校验失败');
       locationProofRef.current = null;
       setLocationResult(null);
       setLocationStatus('blocked');
@@ -723,7 +773,9 @@ export default function InspectionPage() {
               </button>
             </div>
             <div style={{ marginTop: 10, color: '#7b8983', fontSize: 11, lineHeight: 1.5 }}>
-              巡检员须在站点 {locationResult?.radiusMeters || 500} 米范围内，拍照和提交时都会再次校验定位。
+              {locationStatus === 'blocked'
+                ? '请在手机设置中打开定位服务，并给当前浏览器开启“精确位置”；到室外开阔处后点“重新定位”。电脑通常只有网络定位，不能用于现场巡检。'
+                : `巡检员须在站点 ${locationResult?.radiusMeters || 500} 米范围内，拍照和提交时都会再次校验定位。`}
             </div>
           </div>
 
