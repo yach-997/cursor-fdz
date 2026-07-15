@@ -296,6 +296,61 @@ async function validateLandmarkGeocodeFallback() {
   assert.match(result.displayName, /宜宾市/);
 }
 
+async function validateChineseTownGeocodeAndPoiPriority() {
+  const poiQueries = [];
+  const amapService = new GeocodeService({
+    get: (key) => (key === 'AMAP_WEB_SERVICE_KEY' ? 'test-key' : ''),
+  });
+  amapService.searchAmapPoi = async (query) => {
+    poiQueries.push(query);
+    return query === '卧龙湖二期伏电站'
+      ? {
+          latitude: 29.307395,
+          longitude: 104.751708,
+          displayName: '四川省自贡市自流井区卧龙湖二期',
+          provider: 'amap_poi',
+        }
+      : null;
+  };
+  amapService.searchAmapGeo = async () => null;
+
+  const amapResult = await amapService.geocode({
+    address: '四川省自贡市自流井区高峰',
+    province: '四川省',
+    city: '自贡市',
+    district: '自流井区',
+    detail: '高峰',
+    name: '卧龙湖二期伏电站',
+  });
+  assert.equal(poiQueries[0], '卧龙湖二期伏电站');
+  assert.equal(amapResult.provider, 'amap_poi');
+
+  const osmQueries = [];
+  const osmService = new GeocodeService({ get: () => '' });
+  osmService.searchNominatim = async (query) => {
+    osmQueries.push(query);
+    return query === '高峰,自流井区,自贡市,四川省,中国'
+      ? {
+          latitude: 29.3081183,
+          longitude: 104.7581671,
+          displayName: '高峰街道, 自流井区, 自贡市, 四川省, 中国',
+          provider: 'nominatim',
+        }
+      : null;
+  };
+  osmService.searchOpenMeteo = async () => null;
+
+  const osmResult = await osmService.geocode({
+    address: '四川省自贡市自流井区高峰',
+    province: '四川省',
+    city: '自贡市',
+    district: '自流井区',
+    detail: '高峰',
+  });
+  assert.equal(osmQueries[0], '高峰,自流井区,自贡市,四川省,中国');
+  assert.equal(osmResult.provider, 'nominatim');
+}
+
 async function validateInspectionLocationGuard() {
   const task = {
     id: seededUuid,
@@ -369,6 +424,7 @@ async function main() {
   await validatePrimaryManagerCanAlsoInspect();
   validateGeocodeRegionGuard();
   await validateLandmarkGeocodeFallback();
+  await validateChineseTownGeocodeAndPoiPriority();
   await validateInspectionLocationGuard();
   console.log('smoke tests passed');
 }

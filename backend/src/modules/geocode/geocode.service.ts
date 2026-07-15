@@ -84,13 +84,14 @@ export class GeocodeService {
     }
 
     // OSM 对「省市区 + 地标」整句的命中率较低，地标类先查抽取后的学校/园区名。
-    const nominatimQueries = [
-      ...(preferPoi ? poiKeywords : []),
-      ...candidates.map((c) => c.text),
-      ...(!preferPoi ? poiKeywords : []),
-    ];
+    const nominatimQueries = this.buildNominatimQueries(
+      parsed,
+      candidates.map((c) => c.text),
+      poiKeywords,
+      preferPoi,
+    );
     for (const text of [...new Set(nominatimQueries)]) {
-      const hit = await this.searchNominatim(`中国${text}`);
+      const hit = await this.searchNominatim(text);
       if (this.acceptHit(hit, parsed)) return hit;
     }
 
@@ -186,7 +187,9 @@ export class GeocodeService {
   }
 
   private buildPoiKeywords(query: GeocodeQuery) {
-    const raw = [query.detail, query.name, query.address]
+    // 站点名称通常比短地址更精确。例如「卧龙湖二期伏电站」应优先于
+    // 地址末尾的「高峰」，否则 POI 搜索可能误命中同名的高峰公园。
+    const raw = [query.name, query.detail, query.address]
       .map((s) => s?.trim())
       .filter(Boolean) as string[];
     const keys: string[] = [];
@@ -196,6 +199,44 @@ export class GeocodeService {
       if (landmark) keys.push(landmark);
     }
     return [...new Set(keys)];
+  }
+
+  /**
+   * Nominatim 对中文行政区地址使用「地点, 区县, 城市, 省, 中国」的结构化写法
+   * 命中率明显高于直接拼成一整句。结构化候选必须放在普通候选之前，避免
+   * 「四川省自贡市自流井区高峰」这类街道/乡镇地址被误判为无结果。
+   */
+  private buildNominatimQueries(
+    query: GeocodeQuery,
+    candidates: string[],
+    poiKeywords: string[],
+    preferPoi: boolean,
+  ) {
+    const province = query.province?.trim();
+    const city = query.city?.trim();
+    const district = query.district?.trim();
+    const detail = query.detail?.trim();
+    const regionParts = [district, city, province, '中国'].filter(Boolean);
+    const structured: string[] = [];
+
+    if (detail && regionParts.length > 1) {
+      structured.push([detail, ...regionParts].join(','));
+    }
+    if (query.name?.trim() && regionParts.length > 1) {
+      structured.push([query.name.trim(), ...regionParts].join(','));
+    }
+
+    const ordered = [
+      ...structured,
+      ...(preferPoi ? poiKeywords : []),
+      ...candidates,
+      ...(!preferPoi ? poiKeywords : []),
+    ];
+
+    return ordered
+      .map((text) => text.trim())
+      .filter(Boolean)
+      .map((text) => (text.includes('中国') ? text : `中国${text}`));
   }
 
   /** 是否像学校/园区等地标（优先 POI） */
@@ -279,7 +320,9 @@ export class GeocodeService {
       url.searchParams.set('output', 'JSON');
       if (city) url.searchParams.set('city', city);
 
-      const res = await fetch(url.toString());
+      const res = await fetch(url.toString(), {
+        signal: AbortSignal.timeout(3_000),
+      });
       if (!res.ok) return null;
 
       const data = (await res.json()) as {
@@ -340,7 +383,9 @@ export class GeocodeService {
         url.searchParams.set('citylimit', 'true');
       }
 
-      const res = await fetch(url.toString());
+      const res = await fetch(url.toString(), {
+        signal: AbortSignal.timeout(3_000),
+      });
       if (!res.ok) return null;
 
       const data = (await res.json()) as {
@@ -392,6 +437,7 @@ export class GeocodeService {
           'User-Agent': 'PVInspectionSystem/1.0 (contact@local.dev)',
           'Accept-Language': 'zh-CN,zh',
         },
+        signal: AbortSignal.timeout(3_000),
       });
       if (!res.ok) return null;
 
@@ -423,7 +469,9 @@ export class GeocodeService {
       url.searchParams.set('language', 'zh');
       url.searchParams.set('countryCode', 'CN');
 
-      const res = await fetch(url.toString());
+      const res = await fetch(url.toString(), {
+        signal: AbortSignal.timeout(3_000),
+      });
       if (!res.ok) return null;
 
       const data = (await res.json()) as {
