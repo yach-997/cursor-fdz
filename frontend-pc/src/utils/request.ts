@@ -4,10 +4,11 @@ import type { ApiResponse } from '../types';
 
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/$/, '') || '';
 const supabaseAnon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || '';
-const useRpc = !!(supabaseUrl && supabaseAnon);
+const configuredApi =
+  (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') || '';
+const useRpc = !configuredApi && !!(supabaseUrl && supabaseAnon);
 const apiBase =
-  (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') ||
-  (useRpc ? `${supabaseUrl}/rest/v1` : '/api');
+  configuredApi || (useRpc ? `${supabaseUrl}/rest/v1` : '/api');
 
 const request = axios.create({
   baseURL: apiBase,
@@ -82,7 +83,7 @@ async function dispatchRpc(config: AxiosRequestConfig) {
 }
 
 request.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
-  if (useRpc && !apiBase.includes('functions/v1')) {
+  if (useRpc) {
     const adapterResult = await dispatchRpc(config);
     config.adapter = async () =>
       ({
