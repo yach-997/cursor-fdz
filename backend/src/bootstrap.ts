@@ -17,7 +17,8 @@ export function configureApp(app: INestApplication) {
         callback(null, true);
         return;
       }
-      callback(new Error('该来源不在 CORS 白名单中'), false);
+      // 不授予跨域头即可由浏览器拦截；不要抛错，否则普通探测会被误报为 500。
+      callback(null, false);
     },
     credentials: true,
   });

@@ -14,6 +14,7 @@ const { UploadPhotoMetaDto } = require('../dist/modules/upload/dto/upload.dto');
 const { AnalyzeDto } = require('../dist/modules/ai/dto/ai.dto');
 const { RecordService } = require('../dist/modules/record/record.service');
 const { TemplateService } = require('../dist/modules/template/template.service');
+const { configureApp } = require('../dist/bootstrap');
 
 const seededUuid = '11111111-1111-1111-1111-111111111111';
 const otherSeededUuid = '33333333-3333-3333-3333-333333333333';
@@ -37,6 +38,28 @@ function validateSeededIds() {
     const dto = Object.assign(new Dto(), values);
     assert.deepEqual(validateSync(dto), [], `${Dto.name} should accept PostgreSQL UUIDs`);
   }
+}
+
+async function validateCorsPolicy() {
+  let corsOptions;
+  const app = {
+    setGlobalPrefix() {},
+    enableCors(options) {
+      corsOptions = options;
+    },
+    useGlobalPipes() {},
+  };
+  configureApp(app);
+
+  const check = (origin) =>
+    new Promise((resolve, reject) => {
+      corsOptions.origin(origin, (error, allowed) => {
+        if (error) reject(error);
+        else resolve(allowed);
+      });
+    });
+  assert.equal(await check('https://cursor-fdz-pc.vercel.app'), true);
+  assert.equal(await check('https://example.invalid'), false);
 }
 
 async function validateManualAuditFlow() {
@@ -181,6 +204,7 @@ async function validateAiErrorFallsBackToAudit() {
 
 async function main() {
   validateSeededIds();
+  await validateCorsPolicy();
   await validateManualAuditFlow();
   await validateTemplateScopeUpdate();
   await validateAiErrorFallsBackToAudit();
