@@ -116,7 +116,7 @@ export default function InspectionPage() {
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [uploadSource, setUploadSource] = useState<'camera' | null>(null);
+  const [uploadSource, setUploadSource] = useState<'camera' | 'gallery' | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadNotice, setUploadNotice] = useState('');
   const [locationStatus, setLocationStatus] = useState<
@@ -127,6 +127,7 @@ export default function InspectionPage() {
   );
   const [locationError, setLocationError] = useState('正在确认是否到达巡检现场…');
   const cameraRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
   const lastFileRef = useRef<File | null>(null);
   const locationProofRef = useRef<LiveLocationProof | null>(null);
   const pollRefs = useRef<Record<string, number>>({});
@@ -426,10 +427,10 @@ export default function InspectionPage() {
       .catch(() => undefined);
   };
 
-  const handleCapture = async (file: File) => {
+  const handleCapture = async (file: File, source: 'camera' | 'gallery') => {
     if (!record || !currentTpl || !taskId) return;
     lastFileRef.current = file;
-    setUploadSource('camera');
+    setUploadSource(source);
     setUploadProgress(0);
     setUploadNotice('正在优化照片并获取定位…');
     setUploading(true);
@@ -454,7 +455,8 @@ export default function InspectionPage() {
         {
           taskId,
           ...proof,
-          photoTakenAt: new Date(file.lastModified || Date.now()).toISOString(),
+          // 相册照片与现场拍照都以本次巡检上传时间登记；现场真实性由实时定位校验。
+          photoTakenAt: new Date().toISOString(),
         },
         (percent) => {
           setUploadProgress(percent);
@@ -1050,7 +1052,18 @@ export default function InspectionPage() {
                   style={{ display: 'none' }}
                   onChange={(e) => {
                     const f = e.target.files?.[0];
-                    if (f) void handleCapture(f);
+                    if (f) void handleCapture(f, 'camera');
+                    e.target.value = '';
+                  }}
+                />
+                <input
+                  ref={galleryRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void handleCapture(f, 'gallery');
                     e.target.value = '';
                   }}
                 />
@@ -1077,7 +1090,12 @@ export default function InspectionPage() {
                         (uploadNotice.includes('没有完成') || uploadNotice.includes('超时')) && (
                           <button
                             type="button"
-                            onClick={() => void handleCapture(lastFileRef.current!)}
+                            onClick={() =>
+                              void handleCapture(
+                                lastFileRef.current!,
+                                uploadSource || 'gallery',
+                              )
+                            }
                             style={{
                               border: 'none',
                               borderRadius: 16,
@@ -1116,6 +1134,16 @@ export default function InspectionPage() {
                 )}
                 <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                   <Button
+                    plain
+                    round
+                    loading={uploading && uploadSource === 'gallery'}
+                    disabled={uploading || locationStatus !== 'verified'}
+                    style={{ flex: 1, height: 48 }}
+                    onClick={() => galleryRef.current?.click()}
+                  >
+                    {locationStatus === 'verified' ? '从相册选择' : '定位通过后选择'}
+                  </Button>
+                  <Button
                     type="primary"
                     round
                     loading={uploading && uploadSource === 'camera'}
@@ -1134,7 +1162,7 @@ export default function InspectionPage() {
                     fontSize: 11,
                   }}
                 >
-                  为防止上传旧照片，巡检任务仅支持现场调用相机拍摄
+                  支持相册照片或现场拍照；上传时需处于站点允许范围内
                 </div>
               </Cell>
 
