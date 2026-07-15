@@ -33,7 +33,7 @@ const imageFilter = (
   cb(null, true);
 };
 
-/** 文件上传：水印后优先七牛，失败回退 MinIO */
+/** 文件上传：现场原图优先写入七牛，失败回退 MinIO */
 @Controller('upload')
 export class UploadController {
   constructor(private readonly uploadService: UploadService) {}

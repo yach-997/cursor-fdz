@@ -25,6 +25,7 @@ import {
 } from '../../api/record';
 import { compressImage } from '../../utils/imageCompress';
 import { displayPhotoUrl } from '../../utils/photo-url';
+import PhotoViewerOverlay from '../../components/PhotoViewerOverlay';
 import './inspection.css';
 
 const RESULT_LABEL: Record<string, string> = {
@@ -183,6 +184,10 @@ export default function InspectionPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadNotice, setUploadNotice] = useState('');
   const [pendingPreview, setPendingPreview] = useState('');
+  const [photoPreview, setPhotoPreview] = useState<{
+    urls: string[];
+    index: number;
+  } | null>(null);
   const [locationStatus, setLocationStatus] = useState<
     'checking' | 'verified' | 'blocked'
   >('checking');
@@ -547,7 +552,7 @@ export default function InspectionPage() {
         (percent) => {
           setUploadProgress(percent);
           if (percent >= 99) {
-            setUploadNotice('照片已传送，云端正在添加水印并保存…');
+            setUploadNotice('照片已传送，云端正在保存原图…');
           }
         },
       );
@@ -1096,7 +1101,7 @@ export default function InspectionPage() {
                 </div>
                 {(currentTpl.samplePhotos || []).length > 0 ? (
                   <div className="inspection-sample-grid">
-                    {currentTpl.samplePhotos!.map((url) => (
+                    {currentTpl.samplePhotos!.map((url, sampleIndex) => (
                       <Image
                         key={url}
                         src={displayPhotoUrl(url)}
@@ -1105,7 +1110,10 @@ export default function InspectionPage() {
                         fit="cover"
                         radius={12}
                         onClick={() =>
-                          navigate(`/m/photo?url=${encodeURIComponent(url)}&index=0`)
+                          setPhotoPreview({
+                            urls: currentTpl.samplePhotos || [],
+                            index: sampleIndex,
+                          })
                         }
                       />
                     ))}
@@ -1128,11 +1136,10 @@ export default function InspectionPage() {
                       key={`${url}-${idx}`}
                       url={url}
                       onClick={() =>
-                        navigate(
-                          `/m/photo?${(currentEntry?.photos || [])
-                            .map((photoUrl) => `url=${encodeURIComponent(photoUrl)}`)
-                            .join('&')}&index=${idx}`,
-                        )
+                        setPhotoPreview({
+                          urls: currentEntry?.photos || [],
+                          index: idx,
+                        })
                       }
                       onRemove={() => handleRemovePhoto(url)}
                     />
@@ -1355,6 +1362,13 @@ export default function InspectionPage() {
             </Button>
           )}
         </div>
+      )}
+      {photoPreview && (
+        <PhotoViewerOverlay
+          urls={photoPreview.urls}
+          initialIndex={photoPreview.index}
+          onClose={() => setPhotoPreview(null)}
+        />
       )}
     </div>
   );

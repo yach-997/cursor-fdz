@@ -84,7 +84,7 @@ export async function uploadPhoto(
     if (value) form.append(key, value);
   });
   const { data } = await request.post<
-    ApiResponse<{ url: string; watermark: Record<string, string> }>
+    ApiResponse<{ url: string; original: boolean }>
   >('/upload/photo', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 45_000,

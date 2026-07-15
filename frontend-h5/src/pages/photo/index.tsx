@@ -102,7 +102,7 @@ export default function PhotoPreviewPage() {
           textAlign: 'center',
         }}
       >
-        照片已嵌入时间 / 站点 / 设备 / 巡检员水印
+        现场原图预览
       </div>
     </div>
   );

@@ -1,14 +1,9 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
-import { InspectionTask, Site, Device, User } from '../../entities';
 import { CurrentUserContext } from '../../common/interfaces';
 import { MinioService } from './minio.service';
 import { QiniuService } from './qiniu.service';
-import { applyWatermark } from './watermark.util';
 import { UploadPhotoMetaDto } from './dto/upload.dto';
-import { GeocodeService } from '../geocode/geocode.service';
 import { UserRole } from '../../common/enums';
 import { LocationGuardService } from './location-guard.service';
 
@@ -19,16 +14,7 @@ export class UploadService {
   constructor(
     private readonly minio: MinioService,
     private readonly qiniu: QiniuService,
-    private readonly geocode: GeocodeService,
     private readonly locationGuard: LocationGuardService,
-    @InjectRepository(InspectionTask)
-    private readonly taskRepo: Repository<InspectionTask>,
-    @InjectRepository(Site)
-    private readonly siteRepo: Repository<Site>,
-    @InjectRepository(Device)
-    private readonly deviceRepo: Repository<Device>,
-    @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
   ) {}
 
   async uploadPhoto(
@@ -45,17 +31,19 @@ export class UploadService {
         ? await this.verifyInspectorLocation(meta, currentUser, true)
         : null;
 
-    const watermarkMeta = await this.resolveWatermarkMeta(meta, currentUser);
-    const stamped = await applyWatermark(file.buffer, watermarkMeta);
-
-    const objectName = `photos/${new Date().toISOString().slice(0, 10)}/${uuidv4()}.jpg`;
-    const url = await this.putStorage(objectName, stamped, 'image/jpeg');
+    const contentType = file.mimetype?.startsWith('image/')
+      ? file.mimetype
+      : 'image/jpeg';
+    const extension = this.imageExtension(contentType);
+    const objectName = `photos/${new Date().toISOString().slice(0, 10)}/${uuidv4()}.${extension}`;
+    // 现场照片直接写入云存储，不再做水印合成；AI 分析无覆盖的原始画面。
+    const url = await this.putStorage(objectName, file.buffer, contentType);
 
     return {
       url,
       objectName,
-      size: stamped.length,
-      watermark: watermarkMeta,
+      size: file.buffer.length,
+      original: true,
       location,
       storage: this.qiniu.isEnabled() ? 'qiniu' : 'minio',
     };
@@ -181,52 +169,12 @@ export class UploadService {
     return this.minio.putObject(objectName, buffer, contentType);
   }
 
-  private async resolveWatermarkMeta(
-    meta: UploadPhotoMetaDto,
-    currentUser: CurrentUserContext,
-  ) {
-    let serialNumber = meta.serialNumber || '-';
-    let siteName = meta.siteName || '-';
-    let inspectorName =
-      meta.inspectorName || currentUser.realName || currentUser.username;
-    let gps = meta.gps;
-
-    if (meta.taskId) {
-      const task = await this.taskRepo.findOne({ where: { id: meta.taskId } });
-      if (task) {
-        const [site, device, inspector] = await Promise.all([
-          this.siteRepo.findOne({ where: { id: task.siteId } }),
-          this.deviceRepo.findOne({ where: { id: task.deviceId } }),
-          this.userRepo.findOne({ where: { id: task.inspectorId } }),
-        ]);
-        if (site) siteName = site.name;
-        if (device) serialNumber = device.serialNumber;
-        if (inspector) inspectorName = inspector.realName;
-      }
-    }
-
-    // GPS 逆地理：写进水印更易读
-    if (gps && this.geocode.isAmapEnabled()) {
-      const parts = gps.split(/[,，\s]+/).map((x) => Number(x.trim()));
-      if (parts.length >= 2 && parts.every((n) => Number.isFinite(n))) {
-        // 前端传 lat,lng 或 lng,lat：国内常见 lat,lng
-        const [a, b] = parts;
-        const lat = Math.abs(a) <= 90 ? a : b;
-        const lng = Math.abs(a) <= 90 ? b : a;
-        const re = await this.geocode.regeo(lng, lat);
-        if (re?.displayName) {
-          gps = `${gps} · ${re.displayName}`;
-        }
-      }
-    }
-
-    return {
-      timestamp: new Date().toLocaleString('zh-CN', { hour12: false }),
-      gps,
-      serialNumber,
-      inspectorName,
-      siteName,
-    };
+  private imageExtension(contentType: string) {
+    if (contentType.includes('png')) return 'png';
+    if (contentType.includes('webp')) return 'webp';
+    if (contentType.includes('gif')) return 'gif';
+    if (contentType.includes('heic') || contentType.includes('heif')) return 'heic';
+    return 'jpg';
   }
 
   private verifyInspectorLocation(

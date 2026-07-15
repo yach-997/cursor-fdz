@@ -1,7 +1,7 @@
 import { IsDateString, IsOptional, IsString } from 'class-validator';
 import { IsPostgresUuid } from '../../../common/decorators/postgres-uuid.decorator';
 
-/** 拍照上传附加元数据（水印用） */
+/** 拍照上传附加元数据（现场定位校验用） */
 export class UploadPhotoMetaDto {
   @IsOptional()
   @IsPostgresUuid()

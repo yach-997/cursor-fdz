@@ -1,7 +1,7 @@
 import request from '../utils/request';
 import type { ApiResponse } from '../types';
 
-/** 上传图片（模板样本图等，可选站点名写入水印） */
+/** 上传图片（模板样本图、巡检原图等） */
 export async function uploadImage(
   file: File,
   meta?: { siteName?: string; serialNumber?: string },
