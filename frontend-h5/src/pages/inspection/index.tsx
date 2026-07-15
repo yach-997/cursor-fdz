@@ -25,6 +25,7 @@ import {
 } from '../../api/record';
 import { compressImage } from '../../utils/imageCompress';
 import { displayPhotoUrl } from '../../utils/photo-url';
+import './inspection.css';
 
 const RESULT_LABEL: Record<string, string> = {
   pass: '合格',
@@ -107,18 +108,81 @@ function requestErrorMessage(error: unknown, fallback: string) {
   return candidate?.response?.data?.message || candidate?.message || fallback;
 }
 
+function PhotoThumbnail({
+  url,
+  onClick,
+  onRemove,
+}: {
+  url: string;
+  onClick: () => void;
+  onRemove: () => void;
+}) {
+  const [attempt, setAttempt] = useState(0);
+  const [failed, setFailed] = useState(false);
+  const source = displayPhotoUrl(url);
+  const retrySource = attempt
+    ? `${source}${source.includes('?') ? '&' : '?'}_retry=${attempt}`
+    : source;
+
+  useEffect(() => {
+    setAttempt(0);
+    setFailed(false);
+  }, [url]);
+
+  return (
+    <div className="inspection-photo-thumb">
+      <button type="button" className="inspection-photo-open" onClick={onClick}>
+        <img
+          src={retrySource}
+          alt="巡检现场照片"
+          onLoad={() => setFailed(false)}
+          onError={() => {
+            if (attempt < 2) {
+              window.setTimeout(() => setAttempt((value) => value + 1), 800);
+            } else {
+              setFailed(true);
+            }
+          }}
+        />
+        {failed && (
+          <span className="inspection-photo-retry" onClick={() => {
+            setFailed(false);
+            setAttempt((value) => value + 1);
+          }}>
+            图片加载失败<br />点此重试
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        className="inspection-photo-remove"
+        aria-label="删除照片"
+        onClick={(event) => {
+          event.stopPropagation();
+          onRemove();
+        }}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
 /** 巡检执行：要求提示 + 样本图 + 拍照/相册 + 异步AI + 必填校验提交 */
 export default function InspectionPage() {
   const { taskId } = useParams();
   const navigate = useNavigate();
   const [task, setTask] = useState<TaskItem | null>(null);
   const [record, setRecord] = useState<RecordItem | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadSource, setUploadSource] = useState<'camera' | 'gallery' | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadNotice, setUploadNotice] = useState('');
+  const [pendingPreview, setPendingPreview] = useState('');
   const [locationStatus, setLocationStatus] = useState<
     'checking' | 'verified' | 'blocked'
   >('checking');
@@ -128,6 +192,7 @@ export default function InspectionPage() {
   const [locationError, setLocationError] = useState('正在确认是否到达巡检现场…');
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
+  const pendingPreviewRef = useRef('');
   const lastFileRef = useRef<File | null>(null);
   const locationProofRef = useRef<LiveLocationProof | null>(null);
   const pollRefs = useRef<Record<string, number>>({});
@@ -195,7 +260,17 @@ export default function InspectionPage() {
     setUploadNotice('');
     setUploadProgress(0);
     lastFileRef.current = null;
+    if (pendingPreviewRef.current) URL.revokeObjectURL(pendingPreviewRef.current);
+    pendingPreviewRef.current = '';
+    setPendingPreview('');
   }, [currentTpl?.id]);
+
+  useEffect(
+    () => () => {
+      if (pendingPreviewRef.current) URL.revokeObjectURL(pendingPreviewRef.current);
+    },
+    [],
+  );
 
   const leavePage = useCallback(
     async (saveFirst: boolean) => {
@@ -236,49 +311,56 @@ export default function InspectionPage() {
 
   const load = useCallback(async () => {
     if (!taskId) return;
-    let t = await fetchTask(taskId);
-    if (t.status === 'pending' || t.status === 'rejected') {
-      t = await startTask(taskId);
-    }
-    setTask(t);
-    if (t.record?.id) {
-      const r = await fetchRecord(t.record.id);
-      const cached = localStorage.getItem(`draft:${t.record.id}`);
-      if (cached) {
-        try {
-          const localEntries = JSON.parse(cached) as RecordEntry[];
-          r.entries = r.entries.map((e) => {
-            const local = localEntries.find((x) => x.templateEntryId === e.templateEntryId);
-            if (!local) return e;
-            return {
-              ...e,
-              photos: local.photos?.length ? local.photos : e.photos,
-              manualResult: local.manualResult || e.manualResult,
-              finalResult: local.finalResult ?? e.finalResult,
-              remark: local.remark || e.remark,
-            };
-          });
-        } catch {
-          /* ignore */
-        }
+    setLoading(true);
+    setLoadError('');
+    try {
+      let t = await fetchTask(taskId);
+      if (t.status === 'pending' || t.status === 'rejected') {
+        t = await startTask(taskId);
       }
-      const optCached = localStorage.getItem(`optmod:${t.record.id}`);
-      if (optCached) {
-        try {
-          const ids = JSON.parse(optCached) as string[];
-          if (Array.isArray(ids)) setEnabledOptionalIds(ids);
-        } catch {
-          /* ignore */
+      setTask(t);
+      if (t.record?.id) {
+        const r = await fetchRecord(t.record.id);
+        const cached = localStorage.getItem(`draft:${t.record.id}`);
+        if (cached) {
+          try {
+            const localEntries = JSON.parse(cached) as RecordEntry[];
+            r.entries = r.entries.map((e) => {
+              const local = localEntries.find((x) => x.templateEntryId === e.templateEntryId);
+              if (!local) return e;
+              return {
+                ...e,
+                photos: local.photos?.length ? local.photos : e.photos,
+                manualResult: local.manualResult || e.manualResult,
+                finalResult: local.finalResult ?? e.finalResult,
+                remark: local.remark || e.remark,
+              };
+            });
+          } catch {
+            /* ignore */
+          }
         }
+        const optCached = localStorage.getItem(`optmod:${t.record.id}`);
+        if (optCached) {
+          try {
+            const ids = JSON.parse(optCached) as string[];
+            if (Array.isArray(ids)) setEnabledOptionalIds(ids);
+          } catch {
+            /* ignore */
+          }
+        }
+        setRecord(r);
       }
-      setRecord(r);
+    } catch (error) {
+      setLoadError(requestErrorMessage(error, '巡检任务加载失败，请检查网络后重试'));
+      throw error;
+    } finally {
+      setLoading(false);
     }
   }, [taskId]);
 
   useEffect(() => {
-    load()
-      .then(() => undefined)
-      .catch(() => Toast.info('加载失败'));
+    void load().catch(() => undefined);
     return () => {
       Object.values(pollRefs.current).forEach((timer) => window.clearInterval(timer));
       pollRefs.current = {};
@@ -429,6 +511,10 @@ export default function InspectionPage() {
 
   const handleCapture = async (file: File, source: 'camera' | 'gallery') => {
     if (!record || !currentTpl || !taskId) return;
+    if (pendingPreviewRef.current) URL.revokeObjectURL(pendingPreviewRef.current);
+    const previewUrl = URL.createObjectURL(file);
+    pendingPreviewRef.current = previewUrl;
+    setPendingPreview(previewUrl);
     lastFileRef.current = file;
     setUploadSource(source);
     setUploadProgress(0);
@@ -469,6 +555,9 @@ export default function InspectionPage() {
       uploadCompleted = true;
       setUploadProgress(100);
       patchEntry({ photos });
+      if (pendingPreviewRef.current) URL.revokeObjectURL(pendingPreviewRef.current);
+      pendingPreviewRef.current = '';
+      setPendingPreview('');
       const entriesSnapshot = record.entries.map((entry) =>
         entry.templateEntryId === capturedEntryId ? { ...entry, photos } : entry,
       );
@@ -534,7 +623,7 @@ export default function InspectionPage() {
       setUploadNotice(
         message.includes('timeout')
           ? '网络响应超时，请点击重试，不会丢失已选照片'
-          : '上传没有完成，请检查网络后重试',
+          : '上传没有完成，照片仍保留在页面，请检查网络后重试',
       );
     } finally {
       if (!uploadCompleted) setUploading(false);
@@ -639,8 +728,9 @@ export default function InspectionPage() {
   const isAnalyzing = currentTpl ? analyzingIds.includes(currentTpl.id) : false;
 
   return (
-    <div style={{ paddingBottom: 96, minHeight: '100vh', background: '#f2f5f3' }}>
+    <div className="inspection-page">
       <div
+        className="inspection-header"
         style={{
           position: 'sticky',
           top: 0,
@@ -688,16 +778,39 @@ export default function InspectionPage() {
         </div>
       </div>
 
-      {!task || !record ? (
-        <Empty description="加载中..." />
+      {loadError && (!task || !record) ? (
+        <div className="inspection-load-state">
+          <div className="inspection-load-icon">!</div>
+          <h2>巡检任务暂时没加载出来</h2>
+          <p>{loadError}</p>
+          <Button
+            round
+            type="primary"
+            loading={loading}
+            onClick={() => void load().catch(() => undefined)}
+          >
+            重新加载
+          </Button>
+          <button type="button" className="inspection-load-back" onClick={onClickBack}>
+            返回任务列表
+          </button>
+        </div>
+      ) : !task || !record ? (
+        <div className="inspection-load-state is-loading">
+          <div className="inspection-loading-ring" />
+          <h2>正在准备巡检任务</h2>
+          <p>正在同步检查项和已上传照片…</p>
+        </div>
       ) : (
-        <div style={{ padding: 12 }}>
+        <div className="inspection-body">
           <Cell
+            className="inspection-task-summary"
             title={task.taskName}
             label={`SN: ${task.device?.serialNumber || '-'} · 现场定位通过后拍照巡检`}
           />
 
           <div
+            className={`inspection-location-card is-${locationStatus}`}
             style={{
               marginTop: 12,
               padding: '14px 14px 13px',
@@ -875,6 +988,7 @@ export default function InspectionPage() {
           )}
 
           <div
+            className="inspection-progress-card"
             style={{
               margin: '12px 0',
               padding: '12px 14px',
@@ -902,7 +1016,7 @@ export default function InspectionPage() {
                 }}
               />
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <div className="inspection-step-strip">
               {entriesTpl.map((e, idx) => {
                 const entry = record.entries.find((x) => x.templateEntryId === e.id);
                 const done = !!entry?.photos?.length;
@@ -916,6 +1030,7 @@ export default function InspectionPage() {
                     type="button"
                     onClick={() => setStep(idx)}
                     style={{
+                      flexShrink: 0,
                       border: needRedo ? '1px solid #ff4d4f' : 'none',
                       borderRadius: 12,
                       padding: '4px 10px',
@@ -934,7 +1049,11 @@ export default function InspectionPage() {
           </div>
 
           {currentTpl ? (
-            <Cell.Group inset title={`检查项 ${step + 1}/${entriesTpl.length}`}>
+            <Cell.Group
+              inset
+              className="inspection-current-card"
+              title={`检查项 ${step + 1}/${entriesTpl.length}`}
+            >
               <Cell
                 title={
                   <span>
@@ -970,17 +1089,21 @@ export default function InspectionPage() {
                 {currentTpl.description || '请按现场规范完成检查并拍照。'}
               </div>
 
-              <Cell title="合格样本参考">
+              <div className="inspection-media-section">
+                <div className="inspection-media-heading">
+                  <span>合格样本参考</span>
+                  <small>点击可查看大图</small>
+                </div>
                 {(currentTpl.samplePhotos || []).length > 0 ? (
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                  <div className="inspection-sample-grid">
                     {currentTpl.samplePhotos!.map((url) => (
                       <Image
                         key={url}
                         src={displayPhotoUrl(url)}
-                        width={88}
-                        height={88}
+                        width="100%"
+                        height="100%"
                         fit="cover"
-                        radius={6}
+                        radius={12}
                         onClick={() =>
                           navigate(`/m/photo?url=${encodeURIComponent(url)}&index=0`)
                         }
@@ -988,61 +1111,44 @@ export default function InspectionPage() {
                     ))}
                   </div>
                 ) : (
-                  <div style={{ marginTop: 8, color: '#999', fontSize: 13 }}>
+                  <div className="inspection-media-empty">
                     暂无样本图，请按检查要求拍照
                   </div>
                 )}
-              </Cell>
+              </div>
 
-              <Cell title="现场照片">
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+              <div className="inspection-media-section inspection-photo-section">
+                <div className="inspection-media-heading">
+                  <span>现场照片</span>
+                  <small>{(currentEntry?.photos || []).length} 张已保存</small>
+                </div>
+                <div className="inspection-photo-grid">
                   {(currentEntry?.photos || []).map((url, idx) => (
-                    <div
+                    <PhotoThumbnail
                       key={`${url}-${idx}`}
-                      style={{ position: 'relative', width: 88, height: 88 }}
-                    >
-                      <Image
-                        src={displayPhotoUrl(url)}
-                        width={88}
-                        height={88}
-                        fit="cover"
-                        radius={6}
-                        onClick={() =>
-                          navigate(
-                            `/m/photo?${(currentEntry?.photos || [])
-                              .map((u) => `url=${encodeURIComponent(u)}`)
-                              .join('&')}&index=${idx}`,
-                          )
-                        }
-                      />
-                      <button
-                        type="button"
-                        aria-label="删除照片"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemovePhoto(url);
-                        }}
-                        style={{
-                          position: 'absolute',
-                          top: -6,
-                          right: -6,
-                          width: 22,
-                          height: 22,
-                          border: 'none',
-                          borderRadius: 11,
-                          background: 'rgba(0,0,0,.65)',
-                          color: '#fff',
-                          fontSize: 14,
-                          lineHeight: '22px',
-                          padding: 0,
-                          cursor: 'pointer',
-                          zIndex: 2,
-                        }}
-                      >
-                        ×
-                      </button>
-                    </div>
+                      url={url}
+                      onClick={() =>
+                        navigate(
+                          `/m/photo?${(currentEntry?.photos || [])
+                            .map((photoUrl) => `url=${encodeURIComponent(photoUrl)}`)
+                            .join('&')}&index=${idx}`,
+                        )
+                      }
+                      onRemove={() => handleRemovePhoto(url)}
+                    />
                   ))}
+                  {pendingPreview && (
+                    <div className="inspection-photo-thumb is-pending">
+                      <img src={pendingPreview} alt="待上传照片预览" />
+                      <span>{uploading ? `${Math.max(1, uploadProgress)}%` : '待重试'}</span>
+                    </div>
+                  )}
+                  {!pendingPreview && !(currentEntry?.photos || []).length && (
+                    <div className="inspection-photo-placeholder">
+                      <strong>＋</strong>
+                      <span>添加第一张照片</span>
+                    </div>
+                  )}
                 </div>
                 <input
                   ref={cameraRef}
@@ -1069,6 +1175,7 @@ export default function InspectionPage() {
                 />
                 {uploadNotice && (
                   <div
+                    className="inspection-upload-notice"
                     style={{
                       marginTop: 12,
                       padding: '10px 12px',
@@ -1132,13 +1239,13 @@ export default function InspectionPage() {
                     )}
                   </div>
                 )}
-                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <div className="inspection-upload-actions">
                   <Button
                     plain
                     round
                     loading={uploading && uploadSource === 'gallery'}
                     disabled={uploading || locationStatus !== 'verified'}
-                    style={{ flex: 1, height: 48 }}
+                    className="inspection-gallery-button"
                     onClick={() => galleryRef.current?.click()}
                   >
                     {locationStatus === 'verified' ? '从相册选择' : '定位通过后选择'}
@@ -1148,25 +1255,19 @@ export default function InspectionPage() {
                     round
                     loading={uploading && uploadSource === 'camera'}
                     disabled={uploading || locationStatus !== 'verified'}
-                    style={{ flex: 1, height: 48 }}
+                    className="inspection-camera-button"
                     onClick={() => cameraRef.current?.click()}
                   >
                     {locationStatus === 'verified' ? '现场拍照' : '定位通过后拍照'}
                   </Button>
                 </div>
-                <div
-                  style={{
-                    marginTop: 8,
-                    textAlign: 'center',
-                    color: '#88958f',
-                    fontSize: 11,
-                  }}
-                >
+                <div className="inspection-upload-tip">
                   支持相册照片或现场拍照；上传时需处于站点允许范围内
                 </div>
-              </Cell>
+              </div>
 
               <div
+                className="inspection-ai-note"
                 style={{
                   margin: '0 16px 12px',
                   padding: 10,
@@ -1199,59 +1300,62 @@ export default function InspectionPage() {
         </div>
       )}
 
-      <div
-        style={{
-          position: 'fixed',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 100,
-          maxWidth: 640,
-          margin: '0 auto',
-          display: 'flex',
-          gap: 8,
-          padding: '10px 12px calc(10px + env(safe-area-inset-bottom))',
-          background: '#fff',
-          borderTop: '1px solid #e8eeea',
-        }}
-      >
-        <Button
-          round
-          style={{ height: 48, flex: 1 }}
-          disabled={step <= 0}
-          onClick={() => {
-            if (uploading) {
-              Toast.info('照片正在上传，请稍候');
-              return;
-            }
-            setStep((s) => s - 1);
+      {task && record && currentTpl && (
+        <div
+          className="inspection-bottom-actions"
+          style={{
+            position: 'fixed',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 100,
+            maxWidth: 640,
+            margin: '0 auto',
+            display: 'flex',
+            gap: 8,
+            padding: '10px 12px calc(10px + env(safe-area-inset-bottom))',
+            background: '#fff',
+            borderTop: '1px solid #e8eeea',
           }}
         >
-          上一步
-        </Button>
-        {step < entriesTpl.length - 1 ? (
           <Button
             round
-            type="primary"
-            disabled={uploading}
-            style={{ height: 48, flex: 1.4 }}
-            onClick={goNext}
+            style={{ height: 48, flex: 1 }}
+            disabled={step <= 0 || uploading || saving}
+            onClick={() => {
+              if (uploading) {
+                Toast.info('照片正在上传，请稍候');
+                return;
+              }
+              setStep((s) => s - 1);
+            }}
           >
-            下一步
+            上一步
           </Button>
-        ) : (
-          <Button
-            round
-            type="primary"
-            disabled={uploading}
-            style={{ height: 48, flex: 1.4 }}
-            loading={saving}
-            onClick={() => void handleSubmit()}
-          >
-            提交报告
-          </Button>
-        )}
-      </div>
+          {step < entriesTpl.length - 1 ? (
+            <Button
+              round
+              type="primary"
+              disabled={uploading || saving}
+              style={{ height: 48, flex: 1.4 }}
+              onClick={goNext}
+            >
+              下一步
+            </Button>
+          ) : (
+            <Button
+              round
+              type="primary"
+              disabled={uploading || saving}
+              style={{ height: 48, flex: 1.4 }}
+              loading={saving}
+              onClick={() => void handleSubmit()}
+            >
+              提交报告
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

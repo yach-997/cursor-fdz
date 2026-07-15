@@ -13,6 +13,11 @@ export async function applyWatermark(
   imageBuffer: Buffer,
   meta: WatermarkMeta,
 ): Promise<Buffer> {
+  // 先修正手机照片的 EXIF 方向，并读取真实输出尺寸。小图直接叠加固定水印会触发
+  // sharp 的 “Image to composite must have same dimensions or smaller”。
+  const normalized = await sharp(imageBuffer)
+    .rotate()
+    .toBuffer({ resolveWithObject: true });
   const lines = [
     meta.timestamp,
     meta.gps || 'GPS:未知',
@@ -39,11 +44,22 @@ export async function applyWatermark(
     ${textSvg}
   </svg>`;
 
-  return sharp(imageBuffer)
-    .rotate()
+  const maxOverlayWidth = Math.max(1, normalized.info.width - 12);
+  const maxOverlayHeight = Math.max(1, normalized.info.height - 12);
+  const overlay = await sharp(Buffer.from(svg))
+    .resize({
+      width: maxOverlayWidth,
+      height: maxOverlayHeight,
+      fit: 'inside',
+      withoutEnlargement: true,
+    })
+    .png()
+    .toBuffer();
+
+  return sharp(normalized.data)
     .composite([
       {
-        input: Buffer.from(svg),
+        input: overlay,
         gravity: 'southeast',
       },
     ])
