@@ -117,9 +117,18 @@ body {
   backdrop-filter: blur(18px);
 }
 
-.rv-tabbar-item { color: #8b9c95; }
+.rv-tabbar-item { color: #8b9c95; transition: color 0.2s ease; }
 .rv-tabbar-item--active { color: var(--h5-green); font-weight: 600; }
-.rv-tabbar-item__icon { margin-bottom: 3px; }
+.rv-tabbar-item__icon {
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  min-height: 26px;
+  margin-bottom: 3px;
+  border-radius: 12px;
+}
+.rv-tabbar-item__icon svg { width: 23px; height: 23px; }
+.rv-tabbar-item--active .rv-tabbar-item__icon { background: rgba(22, 131, 95, 0.09); }
 
 .rv-cell-group--inset {
   overflow: hidden;

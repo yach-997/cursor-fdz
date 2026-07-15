@@ -1,6 +1,12 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Tabbar } from 'react-vant';
-import { useMemo } from 'react';
+import { HomeO, OrdersO, UserO } from '@react-vant/icons';
+import { useMemo, type ComponentType } from 'react';
+
+// @react-vant/icons 的旧类型声明与当前 React 类型不兼容，运行时组件正常。
+const HomeIcon = HomeO as unknown as ComponentType;
+const TasksIcon = OrdersO as unknown as ComponentType;
+const UserIcon = UserO as unknown as ComponentType;
 
 /** 底部 Tab 导航布局（首页 / 任务 / 我的） */
 export default function TabLayout() {
@@ -33,13 +39,13 @@ export default function TabLayout() {
           fixed
           placeholder
         >
-          <Tabbar.Item name="/m" icon="home-o">
+          <Tabbar.Item name="/m" icon={<HomeIcon />}>
             首页
           </Tabbar.Item>
-          <Tabbar.Item name="/m/tasks" icon="orders-o">
+          <Tabbar.Item name="/m/tasks" icon={<TasksIcon />}>
             任务
           </Tabbar.Item>
-          <Tabbar.Item name="/m/my" icon="user-o">
+          <Tabbar.Item name="/m/my" icon={<UserIcon />}>
             我的
           </Tabbar.Item>
         </Tabbar>

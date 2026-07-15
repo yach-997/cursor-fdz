@@ -72,7 +72,7 @@ export default function LoginPage() {
       <div className="h5-login-page__inner">
         <div className="h5-login-brand">
           <div className="h5-login-brand__logo" aria-hidden>光</div>
-          <div className="h5-login-brand__eyebrow">FIELD INSPECTION</div>
+          <div className="h5-login-brand__eyebrow">现场巡检端</div>
           <h1>光伏储能巡检</h1>
           <p>现场任务、照片与报告，随时掌握</p>
         </div>
