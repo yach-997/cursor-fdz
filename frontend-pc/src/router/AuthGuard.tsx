@@ -12,6 +12,10 @@ export default function AuthGuard({ children, roles }: AuthGuardProps) {
   const location = useLocation();
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
+  const hydrated = useAuthStore((s) => s.hydrated);
+
+  // 刷新页面时先等待 localStorage 会话恢复，避免误判未登录并跳转。
+  if (!hydrated) return null;
 
   if (!token) {
     return <Navigate to="/login" state={{ from: location }} replace />;

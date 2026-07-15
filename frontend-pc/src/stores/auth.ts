@@ -5,6 +5,7 @@ import { loginApi, logoutApi, getMeApi } from '../api/auth';
 interface AuthState {
   token: string | null;
   user: UserInfo | null;
+  hydrated: boolean;
   loading: boolean;
   login: (username: string, password: string, remember?: boolean) => Promise<UserInfo>;
   logout: () => Promise<void>;
@@ -16,6 +17,7 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set) => ({
   token: null,
   user: null,
+  hydrated: false,
   loading: false,
 
   hydrate: () => {
@@ -23,11 +25,13 @@ export const useAuthStore = create<AuthState>((set) => ({
     const userStr = localStorage.getItem('userInfo');
     if (token && userStr) {
       try {
-        set({ token, user: JSON.parse(userStr) });
+        set({ token, user: JSON.parse(userStr), hydrated: true });
+        return;
       } catch {
         localStorage.removeItem('userInfo');
       }
     }
+    set({ token: null, user: null, hydrated: true });
   },
 
   login: async (username, password, remember = false) => {
