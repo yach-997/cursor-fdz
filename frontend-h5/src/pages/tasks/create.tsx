@@ -96,9 +96,9 @@ export default function CreateTaskPage() {
 
   return (
     <div>
-      <NavBar title="创建巡检任务" leftText="返回" onClickLeft={() => navigate(-1)} />
+      <NavBar title="临时新建巡检" leftText="返回" onClickLeft={() => navigate(-1)} />
       <div style={{ padding: '10px 16px', fontSize: 13, color: '#888' }}>
-        填写任务名称、所属区域/现场、设备序列号；匹配后自动带出设备类型。
+        适用于突发检查或尚未分配任务的现场。填写任务名称、所属区域/现场和设备序列号，匹配后自动带出设备类型。
       </div>
       <Form>
         <Field

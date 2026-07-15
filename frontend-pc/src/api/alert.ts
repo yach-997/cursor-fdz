@@ -26,6 +26,7 @@ export interface AlertConfigItem {
   id: string;
   siteId: string;
   failRateThreshold: number;
+  passRateThreshold: number;
   overdueDays: number;
   enabled: boolean;
   notifyEmails?: string[] | null;
@@ -47,7 +48,7 @@ export async function fetchAlertConfigs(siteId?: string) {
 
 export async function saveAlertConfig(payload: {
   siteId: string;
-  failRateThreshold?: number;
+  passRateThreshold?: number;
   overdueDays?: number;
   enabled?: boolean;
   notifyEmails?: string[];

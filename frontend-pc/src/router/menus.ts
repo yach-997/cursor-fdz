@@ -76,6 +76,13 @@ export const menuConfig: MenuConfig[] = [
     roles: ['super_admin', 'site_manager'],
   },
   {
+    key: 'monitoring',
+    path: '/monitoring',
+    label: '运维监控',
+    icon: 'SafetyCertificateOutlined',
+    roles: ['super_admin', 'site_manager'],
+  },
+  {
     key: 'settings',
     path: '/settings',
     label: '系统设置',

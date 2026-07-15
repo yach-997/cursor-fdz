@@ -11,5 +11,11 @@
       "src": "/(.*)",
       "dest": "api.ts"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/alerts/scheduled/run",
+      "schedule": "0 * * * *"
+    }
   ]
 }

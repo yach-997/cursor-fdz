@@ -12,6 +12,7 @@ import {
   AuditOutlined,
   BarChartOutlined,
   AlertOutlined,
+  SafetyCertificateOutlined,
   SettingOutlined,
   UserOutlined,
   LogoutOutlined,
@@ -35,6 +36,7 @@ const iconMap: Record<string, React.ReactNode> = {
   AuditOutlined: <AuditOutlined />,
   BarChartOutlined: <BarChartOutlined />,
   AlertOutlined: <AlertOutlined />,
+  SafetyCertificateOutlined: <SafetyCertificateOutlined />,
   SettingOutlined: <SettingOutlined />,
 };
 

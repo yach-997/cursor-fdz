@@ -70,17 +70,40 @@ export class StatsService {
     const inProgress = tasks.filter((t) => t.status === TaskStatus.IN_PROGRESS).length;
 
     const byDateMap = new Map<string, { total: number; completed: number }>();
+    const bySiteMap = new Map<string, { total: number; completed: number }>();
     for (const t of tasks) {
       const key = (t.plannedDate || t.createdAt).toISOString().slice(0, 10);
       const cur = byDateMap.get(key) || { total: 0, completed: 0 };
       cur.total += 1;
-      if (t.status === TaskStatus.APPROVED) cur.completed += 1;
+      if (t.status === TaskStatus.APPROVED || t.status === TaskStatus.ARCHIVED) {
+        cur.completed += 1;
+      }
       byDateMap.set(key, cur);
+
+      const siteStat = bySiteMap.get(t.siteId) || { total: 0, completed: 0 };
+      siteStat.total += 1;
+      if (t.status === TaskStatus.APPROVED || t.status === TaskStatus.ARCHIVED) {
+        siteStat.completed += 1;
+      }
+      bySiteMap.set(t.siteId, siteStat);
     }
 
     const byDate = [...byDateMap.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, v]) => ({ date, ...v }));
+    const completionSiteIds = [...bySiteMap.keys()];
+    const completionSites = completionSiteIds.length
+      ? await this.siteRepo.findBy({ id: In(completionSiteIds) })
+      : [];
+    const completionSiteNames = new Map(completionSites.map((site) => [site.id, site.name]));
+    const bySite = [...bySiteMap.entries()].map(([siteId, value]) => ({
+      siteId,
+      siteName: completionSiteNames.get(siteId) || siteId.slice(0, 8),
+      ...value,
+      completionRate: value.total
+        ? Number(((value.completed / value.total) * 100).toFixed(1))
+        : 0,
+    }));
 
     return {
       totalTasks: total,
@@ -89,6 +112,7 @@ export class StatsService {
       inProgressTasks: inProgress,
       completionRate: total ? Number(((completed / total) * 100).toFixed(1)) : 0,
       byDate,
+      bySite,
     };
   }
 
@@ -108,9 +132,12 @@ export class StatsService {
     );
 
     let totalEntries = 0;
+    let passEntries = 0;
     let failEntries = 0;
     const byDeviceType = new Map<string, { total: number; fail: number }>();
     const byEntryName = new Map<string, number>();
+    const byDateMap = new Map<string, { total: number; pass: number; fail: number }>();
+    const bySiteMap = new Map<string, { total: number; pass: number; fail: number }>();
     const inspectorMap = new Map<
       string,
       { total: number; pass: number; fail: number }
@@ -123,16 +150,29 @@ export class StatsService {
       const task = await this.taskRepo.findOne({ where: { id: rec.taskId } });
       const snapshot = task?.templateSnapshot || [];
       const nameMap = new Map(snapshot.map((e) => [e.id, e.name]));
+      const dateKey = (rec.submittedAt || rec.createdAt).toISOString().slice(0, 10);
+      const dateStat = byDateMap.get(dateKey) || { total: 0, pass: 0, fail: 0 };
+      const siteStat = task
+        ? bySiteMap.get(task.siteId) || { total: 0, pass: 0, fail: 0 }
+        : null;
 
       for (const entry of rec.entries) {
         totalEntries += 1;
         byDeviceType.get(dt)!.total += 1;
+        dateStat.total += 1;
+        if (siteStat) siteStat.total += 1;
         const final = entry.finalResult;
         if (final === CheckResult.FAIL) {
           failEntries += 1;
           byDeviceType.get(dt)!.fail += 1;
           const name = nameMap.get(entry.templateEntryId) || entry.templateEntryId;
           byEntryName.set(name, (byEntryName.get(name) || 0) + 1);
+          dateStat.fail += 1;
+          if (siteStat) siteStat.fail += 1;
+        } else if (final === CheckResult.PASS) {
+          passEntries += 1;
+          dateStat.pass += 1;
+          if (siteStat) siteStat.pass += 1;
         }
 
         if (task?.inspectorId && final) {
@@ -147,7 +187,15 @@ export class StatsService {
           inspectorMap.set(task.inspectorId, stat);
         }
       }
+      byDateMap.set(dateKey, dateStat);
+      if (task && siteStat) bySiteMap.set(task.siteId, siteStat);
     }
+
+    const defectSiteIds = [...bySiteMap.keys()];
+    const defectSites = defectSiteIds.length
+      ? await this.siteRepo.findBy({ id: In(defectSiteIds) })
+      : [];
+    const defectSiteNames = new Map(defectSites.map((site) => [site.id, site.name]));
 
     const inspectorIds = [...inspectorMap.keys()];
     const users = inspectorIds.length
@@ -173,6 +221,22 @@ export class StatsService {
       failRate: totalEntries
         ? Number(((failEntries / totalEntries) * 100).toFixed(1))
         : 0,
+      passRate: totalEntries
+        ? Number(((passEntries / totalEntries) * 100).toFixed(1))
+        : 0,
+      byDate: [...byDateMap.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, value]) => ({
+          date,
+          ...value,
+          passRate: value.total ? Number(((value.pass / value.total) * 100).toFixed(1)) : 0,
+        })),
+      bySite: [...bySiteMap.entries()].map(([siteId, value]) => ({
+        siteId,
+        siteName: defectSiteNames.get(siteId) || siteId.slice(0, 8),
+        ...value,
+        passRate: value.total ? Number(((value.pass / value.total) * 100).toFixed(1)) : 0,
+      })),
       byDeviceType: [...byDeviceType.entries()].map(([deviceType, v]) => ({
         deviceType,
         total: v.total,

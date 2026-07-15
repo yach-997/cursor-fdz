@@ -16,6 +16,7 @@ import {
   Site,
   InspectionTask,
   InspectionRecord,
+  User,
 } from '../../entities';
 import { UserRole, TaskStatus, RecordStatus, CheckResult, CommonStatus } from '../../common/enums';
 import { CurrentUserContext } from '../../common/interfaces';
@@ -44,6 +45,8 @@ export class AlertService {
     private readonly taskRepo: Repository<InspectionTask>,
     @InjectRepository(InspectionRecord)
     private readonly recordRepo: Repository<InspectionRecord>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
   ) {}
 
   async findAll(query: QueryAlertDto, currentUser: CurrentUserContext) {
@@ -79,7 +82,7 @@ export class AlertService {
     }
     const where = siteIds.length ? { siteId: In(siteIds) } : {};
     const configs = await this.configRepo.find({ where: where as any });
-    return { list: configs };
+    return { list: configs.map((config) => this.toConfigView(config)) };
   }
 
   async upsertConfig(dto: UpsertAlertConfigDto, currentUser: CurrentUserContext) {
@@ -88,14 +91,19 @@ export class AlertService {
     if (!config) {
       config = this.configRepo.create({
         siteId: dto.siteId,
-        failRateThreshold: dto.failRateThreshold ?? DEFAULT_FAIL_THRESHOLD,
+        failRateThreshold:
+          dto.passRateThreshold !== undefined
+            ? 100 - dto.passRateThreshold
+            : dto.failRateThreshold ?? DEFAULT_FAIL_THRESHOLD,
         overdueDays: dto.overdueDays ?? DEFAULT_OVERDUE_DAYS,
         enabled: dto.enabled !== false,
         notifyEmails: dto.notifyEmails ?? null,
         webhookUrl: dto.webhookUrl ?? null,
       });
     } else {
-      if (dto.failRateThreshold !== undefined) {
+      if (dto.passRateThreshold !== undefined) {
+        config.failRateThreshold = 100 - dto.passRateThreshold;
+      } else if (dto.failRateThreshold !== undefined) {
         config.failRateThreshold = dto.failRateThreshold;
       }
       if (dto.overdueDays !== undefined) config.overdueDays = dto.overdueDays;
@@ -103,7 +111,7 @@ export class AlertService {
       if (dto.notifyEmails !== undefined) config.notifyEmails = dto.notifyEmails;
       if (dto.webhookUrl !== undefined) config.webhookUrl = dto.webhookUrl;
     }
-    return this.configRepo.save(config);
+    return this.toConfigView(await this.configRepo.save(config));
   }
 
   async resolve(id: string, currentUser: CurrentUserContext) {
@@ -131,6 +139,8 @@ export class AlertService {
 
   /** 启动后延迟执行一次 */
   async onModuleInitScan() {
+    // 云函数由 Vercel Cron 触发，避免每次冷启动重复扫描。
+    if (process.env.VERCEL || process.env.SERVERLESS === 'true') return;
     setTimeout(() => void this.runScheduledChecks(), 15000);
   }
 
@@ -172,12 +182,21 @@ export class AlertService {
     }
     if (!total) return;
     const rate = (fail / total) * 100;
-    if (rate >= threshold) {
+    const passRate = 100 - rate;
+    const passThreshold = 100 - threshold;
+    if (passRate < passThreshold) {
       await this.createAlertIfNew(siteId, AlertType.HIGH_FAIL_RATE, {
-        title: '不合格率偏高',
-        message: `近30天条目不合格率 ${rate.toFixed(1)}%，已超过阈值 ${threshold}%`,
+        title: '巡检合格率低于阈值',
+        message: `近30天巡检条目合格率 ${passRate.toFixed(1)}%，低于预警阈值 ${passThreshold}%`,
         severity: rate >= threshold * 1.5 ? AlertSeverity.CRITICAL : AlertSeverity.WARNING,
-        metadata: { failRate: rate, threshold, total, fail },
+        metadata: {
+          passRate,
+          passRateThreshold: passThreshold,
+          failRate: rate,
+          total,
+          fail,
+          recordIds: records.map((record) => record.id),
+        },
       });
     }
   }
@@ -209,11 +228,43 @@ export class AlertService {
       where: { siteId, status: TaskStatus.SUBMITTED },
     });
     if (!tasks.length) return;
+    const taskIds = tasks.map((task) => task.id);
+    const records = await this.recordRepo
+      .createQueryBuilder('record')
+      .where('record.task_id IN (:...taskIds)', { taskIds })
+      .andWhere('record.status = :status', { status: RecordStatus.SUBMITTED })
+      .getMany();
+    const aiErrorCount = records.reduce(
+      (total, record) =>
+        total +
+        (record.entries || []).filter((entry) => entry.aiResult?.status === CheckResult.ERROR)
+          .length,
+      0,
+    );
+    if (aiErrorCount >= 3) {
+      await this.createAlertIfNew(siteId, AlertType.PENDING_AUDIT, {
+        title: 'AI 图像判断持续失败',
+        message: `当前有 ${aiErrorCount} 个检查条目 AI 判断失败，已转人工审核，请运维人员检查模型服务`,
+        severity: AlertSeverity.CRITICAL,
+        metadata: {
+          subtype: 'ai_failure',
+          aiErrorCount,
+          recordIds: records
+            .filter((record) =>
+              (record.entries || []).some(
+                (entry) => entry.aiResult?.status === CheckResult.ERROR,
+              ),
+            )
+            .map((record) => record.id),
+        },
+      });
+      return;
+    }
     await this.createAlertIfNew(siteId, AlertType.PENDING_AUDIT, {
       title: '待审核报告积压',
       message: `当前有 ${tasks.length} 份报告等待审核`,
       severity: AlertSeverity.INFO,
-      metadata: { count: tasks.length },
+      metadata: { count: tasks.length, aiErrorCount },
     });
   }
 
@@ -272,10 +323,16 @@ export class AlertService {
     await this.sendNotifications(siteId, saved);
   }
 
-  /** 通过 Webhook / 邮件列表发送预警通知（邮件仅记录日志，需配置 SMTP 后扩展） */
+  /** 通过 Webhook / 邮件通知运维人员与站点负责人。 */
   private async sendNotifications(siteId: string, alert: AlertRecord) {
     const config = await this.configRepo.findOne({ where: { siteId } });
     if (!config) return;
+
+    const site = await this.siteRepo.findOne({ where: { id: siteId } });
+    const manager = site?.managerId
+      ? await this.userRepo.findOne({ where: { id: site.managerId } })
+      : null;
+    const recipients = [...new Set([...(config.notifyEmails || []), manager?.email].filter(Boolean))] as string[];
 
     const payload = {
       siteId,
@@ -284,6 +341,8 @@ export class AlertService {
       message: alert.message,
       severity: alert.severity,
       createdAt: alert.createdAt,
+      alertId: alert.id,
+      siteName: site?.name || '',
     };
 
     if (config.webhookUrl) {
@@ -301,10 +360,34 @@ export class AlertService {
       }
     }
 
-    if (config.notifyEmails?.length) {
-      this.logger.log(
-        `预警邮件待发送 → ${config.notifyEmails.join(', ')} | ${alert.title}: ${alert.message}`,
-      );
+    if (recipients.length) {
+      const apiKey = (process.env.RESEND_API_KEY || '').trim();
+      const from = (process.env.ALERT_FROM_EMAIL || 'alerts@inspection.local').trim();
+      if (!apiKey) {
+        this.logger.warn(`未配置 RESEND_API_KEY，预警邮件未发送 → ${recipients.join(', ')}`);
+        return;
+      }
+      try {
+        const response = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from,
+            to: recipients,
+            subject: `【巡检预警】${site?.name || '站点'} - ${alert.title}`,
+            html: `<h2>${alert.title}</h2><p>${alert.message}</p><p>站点：${site?.name || siteId}</p><p>触发时间：${new Date(alert.createdAt).toLocaleString('zh-CN')}</p>`,
+          }),
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!response.ok) {
+          this.logger.warn(`预警邮件发送失败 HTTP ${response.status}`);
+        }
+      } catch (error) {
+        this.logger.warn(`预警邮件发送异常: ${(error as Error).message}`);
+      }
     }
   }
 
@@ -317,6 +400,13 @@ export class AlertService {
       ...a,
       siteName: siteMap.get(a.siteId) || '',
     }));
+  }
+
+  private toConfigView(config: AlertConfig) {
+    return {
+      ...config,
+      passRateThreshold: 100 - config.failRateThreshold,
+    };
   }
 
   private scopeSiteIds(siteId: string | undefined, currentUser: CurrentUserContext) {

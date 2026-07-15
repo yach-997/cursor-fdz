@@ -354,18 +354,21 @@ export class RecordService {
         reason: prevReject?.reason,
         entryIds: prevReject?.entryIds,
       });
-    } else if (fail) {
+    } else if (fail || this.hasAiError(record.entries)) {
       record.status = RecordStatus.SUBMITTED;
       task.status = TaskStatus.SUBMITTED;
+      const aiError = this.hasAiError(record.entries);
       this.pushTrail(record, {
         action: isResubmit ? 'resubmitted' : 'submitted',
         at: new Date().toISOString(),
         by: currentUser.id,
         byName: currentUser.realName,
         summary: withLocation(
-          isResubmit
-            ? '驳回后重新提交：AI 仍有不合格，进入审核'
-            : '提交报告：AI 有不合格项，进入审核',
+          aiError
+            ? 'AI 判断失败或异常，已转管理员人工审核'
+            : isResubmit
+              ? '驳回后重新提交：AI 仍有不合格，进入审核'
+              : '提交报告：AI 有不合格项，进入审核',
         ),
         reason: prevReject?.reason,
         entryIds: prevReject?.entryIds,
@@ -520,9 +523,9 @@ export class RecordService {
         aiResult.status === CheckResult.PASS ||
         aiResult.status === CheckResult.FAIL
       ) {
-        next.finalResult = aiResult.status as CheckResult.PASS | CheckResult.FAIL;
-        if (e.manualResult === CheckResult.PENDING) {
-          next.manualResult = aiResult.status as CheckResult.PASS | CheckResult.FAIL;
+        // 人工结论优先：巡检员已经确认后，后到的 AI 结果不能覆盖人工判断。
+        if (!e.manualResult || e.manualResult === CheckResult.PENDING) {
+          next.finalResult = aiResult.status as CheckResult.PASS | CheckResult.FAIL;
         }
       }
       return next;

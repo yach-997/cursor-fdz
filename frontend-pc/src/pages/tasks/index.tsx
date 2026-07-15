@@ -43,6 +43,7 @@ const STATUS_GROUP_OPTIONS = [
   { value: 'not_started', label: '未开始' },
   { value: 'in_progress', label: '进行中' },
   { value: 'completed', label: '已完成' },
+  { value: 'archived', label: '已归档' },
 ];
 
 const DEVICE_TYPE_OPTIONS = Object.entries(DEVICE_TYPE_LABEL).map(([value, label]) => ({
@@ -87,7 +88,7 @@ export default function TasksPage() {
         startDate: dateRange?.[0]?.format('YYYY-MM-DD'),
         endDate: dateRange?.[1]?.format('YYYY-MM-DD'),
       });
-      setData(res.list.filter((t) => t.status !== 'archived'));
+      setData(res.list);
       setTotal(res.total);
     } finally {
       setLoading(false);
@@ -237,7 +238,7 @@ export default function TasksPage() {
               编辑
             </Button>
           )}
-          {['pending', 'in_progress', 'rejected'].includes(record.status) && (
+          {['pending', 'in_progress', 'rejected', 'approved'].includes(record.status) && (
             <Popconfirm
               title="确认归档该任务？归档后不再出现在常规列表中。"
               onConfirm={async () => {

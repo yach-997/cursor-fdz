@@ -445,9 +445,10 @@ export class TaskService {
     if (
       task.status !== TaskStatus.PENDING &&
       task.status !== TaskStatus.IN_PROGRESS &&
-      task.status !== TaskStatus.REJECTED
+      task.status !== TaskStatus.REJECTED &&
+      task.status !== TaskStatus.APPROVED
     ) {
-      throw new BadRequestException('已提交的任务不可归档，请联系管理员');
+      throw new BadRequestException('待审核任务不可归档，请先完成审核');
     }
 
     task.status = TaskStatus.ARCHIVED;

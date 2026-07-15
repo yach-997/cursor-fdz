@@ -39,6 +39,13 @@ export interface CompletionStats {
   inProgressTasks: number;
   completionRate: number;
   byDate: Array<{ date: string; total: number; completed: number }>;
+  bySite: Array<{
+    siteId: string;
+    siteName: string;
+    total: number;
+    completed: number;
+    completionRate: number;
+  }>;
 }
 
 export interface DefectStats {
@@ -46,6 +53,16 @@ export interface DefectStats {
   totalEntries: number;
   failCount: number;
   failRate: number;
+  passRate: number;
+  byDate: Array<{ date: string; total: number; pass: number; fail: number; passRate: number }>;
+  bySite: Array<{
+    siteId: string;
+    siteName: string;
+    total: number;
+    pass: number;
+    fail: number;
+    passRate: number;
+  }>;
   byDeviceType: Array<{
     deviceType: string;
     total: number;

@@ -16,6 +16,7 @@ const RecordsPage = lazy(() => import('../pages/records'));
 const AuditPage = lazy(() => import('../pages/audit'));
 const AnalysisPage = lazy(() => import('../pages/analysis'));
 const AlertsPage = lazy(() => import('../pages/alerts'));
+const MonitoringPage = lazy(() => import('../pages/monitoring'));
 const SettingsPage = lazy(() => import('../pages/settings'));
 const ForbiddenPage = lazy(() => import('../pages/forbidden'));
 
@@ -161,6 +162,16 @@ export const router = createBrowserRouter([
           <AuthGuard roles={['super_admin', 'site_manager']}>
             <Lazy>
               <AlertsPage />
+            </Lazy>
+          </AuthGuard>
+        ),
+      },
+      {
+        path: 'monitoring',
+        element: (
+          <AuthGuard roles={['super_admin', 'site_manager']}>
+            <Lazy>
+              <MonitoringPage />
             </Lazy>
           </AuthGuard>
         ),

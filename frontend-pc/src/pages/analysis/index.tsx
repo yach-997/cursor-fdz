@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Card, Col, Row, Select, DatePicker, Space, Button, Input } from 'antd';
+import { Card, Col, Row, Select, DatePicker, Space, Button, Input, Table, Tag } from 'antd';
 import ReactECharts from 'echarts-for-react';
 import dayjs from 'dayjs';
 import {
@@ -9,6 +9,7 @@ import {
   type DefectStats,
 } from '../../api/stats';
 import { fetchSites, fetchSiteMembers } from '../../api/site';
+import { fetchInspectorPool } from '../../api/user';
 import { DEVICE_TYPE_LABEL } from '../../types';
 import type { SiteItem } from '../../types';
 
@@ -30,8 +31,9 @@ export default function AnalysisPage() {
 
   useEffect(() => {
     if (!siteId) {
-      setInspectors([]);
-      setInspectorId(undefined);
+      fetchInspectorPool({ limit: 100 }).then((result) => {
+        setInspectors(result.list.map((user) => ({ value: user.id, label: user.realName })));
+      });
       return;
     }
     fetchSiteMembers(siteId, 'inspector').then((members) => {
@@ -112,6 +114,31 @@ export default function AnalysisPage() {
     ],
   };
 
+  const passRateTrendOption = {
+    tooltip: { trigger: 'axis' as const },
+    xAxis: {
+      type: 'category' as const,
+      data: defects?.byDate.map((item) => item.date.slice(5)) || [],
+    },
+    yAxis: { type: 'value' as const, min: 0, max: 100, name: '合格率%' },
+    series: [
+      {
+        name: '合格率',
+        type: 'line' as const,
+        smooth: true,
+        data: defects?.byDate.map((item) => item.passRate) || [],
+        itemStyle: { color: '#16835f' },
+        areaStyle: { color: 'rgba(22, 131, 95, .12)' },
+        label: { show: true, formatter: '{c}%' },
+      },
+    ],
+  };
+
+  const siteRows = (completion?.bySite || []).map((item) => {
+    const quality = defects?.bySite.find((row) => row.siteId === item.siteId);
+    return { ...item, passRate: quality?.passRate ?? 0, fail: quality?.fail ?? 0 };
+  });
+
   const deviceTypeOption = {
     tooltip: { trigger: 'item' as const },
     series: [
@@ -180,7 +207,6 @@ export default function AnalysisPage() {
           style={{ width: 120 }}
           value={inspectorId}
           onChange={setInspectorId}
-          disabled={!siteId}
           options={inspectors}
         />
         <DatePicker.RangePicker value={range} onChange={(v) => setRange(v as typeof range)} />
@@ -201,12 +227,12 @@ export default function AnalysisPage() {
           </Card>
         </Col>
         <Col xs={24} sm={8}>
-          <Card title="条目不合格率">
-            <div style={{ fontSize: 36, fontWeight: 700, color: '#ff4d4f' }}>
-              {defects?.failRate ?? 0}%
+          <Card title="巡检合格率">
+            <div style={{ fontSize: 36, fontWeight: 700, color: '#16835f' }}>
+              {defects?.passRate ?? 0}%
             </div>
             <div style={{ color: '#888', marginTop: 8 }}>
-              {defects?.failCount ?? 0} / {defects?.totalEntries ?? 0} 检查项不合格
+              不合格 {defects?.failCount ?? 0} / 共 {defects?.totalEntries ?? 0} 个检查项
             </div>
           </Card>
         </Col>
@@ -230,6 +256,11 @@ export default function AnalysisPage() {
           </Card>
         </Col>
         <Col xs={24} lg={12}>
+          <Card title="巡检合格率历史趋势">
+            <ReactECharts option={passRateTrendOption} style={{ height: 300 }} />
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
           <Card title="设备类型缺陷分布">
             <ReactECharts option={deviceTypeOption} style={{ height: 300 }} />
           </Card>
@@ -240,6 +271,32 @@ export default function AnalysisPage() {
           </Card>
         </Col>
       </Row>
+
+      <Card title="各现场巡检完成率与合格率" style={{ marginTop: 16 }}>
+        <Table
+          rowKey="siteId"
+          pagination={false}
+          dataSource={siteRows}
+          columns={[
+            { title: '现场', dataIndex: 'siteName' },
+            { title: '任务数', dataIndex: 'total', width: 100 },
+            { title: '已完成', dataIndex: 'completed', width: 100 },
+            {
+              title: '完成率',
+              dataIndex: 'completionRate',
+              width: 120,
+              render: (value: number) => <Tag color={value >= 90 ? 'success' : 'warning'}>{value}%</Tag>,
+            },
+            {
+              title: '合格率',
+              dataIndex: 'passRate',
+              width: 120,
+              render: (value: number) => <Tag color={value >= 75 ? 'success' : 'error'}>{value}%</Tag>,
+            },
+            { title: '不合格条目', dataIndex: 'fail', width: 120 },
+          ]}
+        />
+      </Card>
     </div>
   );
 }

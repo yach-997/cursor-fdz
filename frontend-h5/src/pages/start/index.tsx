@@ -111,7 +111,17 @@ export default function StartWizardPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f2f5f3', paddingBottom: 24 }}>
-      <NavBar title="开始巡检" leftText="返回" onClickLeft={onBack} />
+      <NavBar
+        title="执行待办任务"
+        leftText="返回"
+        rightText="临时新建"
+        onClickLeft={onBack}
+        onClickRight={() => navigate('/m/tasks/create')}
+      />
+
+      <div style={{ margin: '12px 16px 0', padding: 12, borderRadius: 12, background: '#eaf6f1', color: '#47685c', fontSize: 12, lineHeight: 1.65 }}>
+        这里用于执行管理员或站长已分配的待办任务；突发检查或现场漏建任务时，可点右上角“临时新建”。
+      </div>
 
       <div style={{ padding: '12px 16px', fontSize: 13, color: '#666' }}>
         {step === 'region' && '第 1 步：选择所在地区'}
@@ -191,9 +201,14 @@ export default function StartWizardPage() {
           ) : tasks.length === 0 ? (
             <div style={{ padding: 16 }}>
               <Empty description="暂无匹配任务" />
-              <Button block round style={{ marginTop: 12 }} onClick={() => setStep('device')}>
-                重选设备类型
-              </Button>
+              <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+                <Button block round onClick={() => setStep('device')}>
+                  重选设备类型
+                </Button>
+                <Button block round type="primary" onClick={() => navigate('/m/tasks/create')}>
+                  临时新建巡检任务
+                </Button>
+              </div>
             </div>
           ) : (
             <Cell.Group inset>

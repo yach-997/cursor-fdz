@@ -78,7 +78,7 @@ export default function HomePage() {
             </div>
             <button type="button" className="home-start" onClick={() => navigate('/m/start')}>
               <span className="home-start__icon">✓</span>
-              <span><b>开始巡检</b><small>选择设备并进入现场检查</small></span>
+              <span><b>开始巡检</b><small>执行待办任务，或临时新建巡检</small></span>
               <i>›</i>
             </button>
           </section>

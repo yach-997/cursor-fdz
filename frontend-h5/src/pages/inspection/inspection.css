@@ -249,6 +249,43 @@
 
 .inspection-ai-note { border: 1px solid rgba(61, 125, 177, .08); }
 
+.inspection-manual-check {
+  margin: 0 16px 14px;
+  padding: 14px;
+  border: 1px solid #e1ebe6;
+  border-radius: 14px;
+  background: #fbfdfc;
+}
+
+.inspection-manual-check__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.inspection-manual-check__heading strong { display: block; color: #203b31; font-size: 14px; }
+.inspection-manual-check__heading span { display: block; margin-top: 4px; color: #84938d; font-size: 11px; }
+
+.inspection-manual-check__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 13px;
+}
+
+.inspection-manual-check__actions .rv-button { height: 42px; font-weight: 700; }
+.inspection-manual-check__actions .is-pass {
+  color: #fff;
+  border-color: #16835f;
+  background: #16835f;
+}
+.inspection-manual-check__actions .is-fail {
+  color: #fff;
+  border-color: #d65a4a;
+  background: #d65a4a;
+}
+
 .inspection-bottom-actions {
   box-shadow: 0 -10px 30px rgba(24, 73, 55, .08);
   backdrop-filter: blur(18px);

@@ -9,6 +9,9 @@ import {
   HttpCode,
   HttpStatus,
   OnModuleInit,
+  Headers,
+  UnauthorizedException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { AlertService } from './alert.service';
 import {
@@ -21,6 +24,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '../../common/enums';
 import { CurrentUserContext } from '../../common/interfaces';
 import { ParsePostgresUuidPipe } from '../../common/pipes/parse-postgres-uuid.pipe';
+import { Public } from '../../common/decorators/public.decorator';
 
 /** 预警中心 API */
 @Controller('alerts')
@@ -44,6 +48,21 @@ export class AlertController implements OnModuleInit {
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.alertService.getConfigs(query, user);
+  }
+
+  /** Vercel Cron 每小时触发；配置 CRON_SECRET 后校验 Bearer 令牌。 */
+  @Public()
+  @Get('scheduled/run')
+  async runScheduled(@Headers('authorization') authorization?: string) {
+    const secret = (process.env.CRON_SECRET || '').trim();
+    if (!secret && process.env.NODE_ENV === 'production') {
+      throw new ServiceUnavailableException('定时任务密钥尚未配置');
+    }
+    if (secret && authorization !== `Bearer ${secret}`) {
+      throw new UnauthorizedException('定时任务令牌无效');
+    }
+    await this.alertService.runScheduledChecks();
+    return { ok: true, checkedAt: new Date().toISOString() };
   }
 
   @Post('config')

@@ -27,6 +27,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { StatsModule } from './modules/stats/stats.module';
 import { AlertModule } from './modules/alert/alert.module';
 import { GeocodeModule } from './modules/geocode/geocode.module';
+import { SystemModule } from './modules/system/system.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -119,6 +120,7 @@ import { HealthController } from './modules/health/health.controller';
     StatsModule,
     AlertModule,
     GeocodeModule,
+    SystemModule,
   ],
   controllers: [HealthController],
   providers: [

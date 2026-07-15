@@ -60,6 +60,10 @@ export class MinioService implements OnModuleInit {
     }
   }
 
+  isConfigured() {
+    return this.configured;
+  }
+
   /** 上传 Buffer，返回公开访问 URL */
   async putObject(
     objectName: string,

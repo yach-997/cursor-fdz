@@ -191,7 +191,7 @@ export default function TasksPage() {
         className="tasks-page__create"
         onClick={() => navigate('/m/tasks/create')}
       >
-        新建巡检任务
+        临时新建巡检
       </button>
 
       <PullRefresh onRefresh={load}>

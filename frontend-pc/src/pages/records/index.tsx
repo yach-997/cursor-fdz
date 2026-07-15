@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Button,
   DatePicker,
@@ -24,6 +25,7 @@ import {
 } from '../../api/record';
 import { fetchSites, fetchSiteMembers } from '../../api/site';
 import { fetchDevices } from '../../api/device';
+import { fetchInspectorPool } from '../../api/user';
 import { downloadRecordsExport } from '../../api/stats';
 import type { SiteItem, DeviceItem } from '../../types';
 import { DEVICE_TYPE_LABEL } from '../../types';
@@ -54,11 +56,14 @@ function trailColor(action: string) {
 
 /** 历史查询：所有已提交报告（AI 合格/不合格）+ 操作追溯 */
 export default function RecordsPage() {
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<RecordItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [siteId, setSiteId] = useState<string>();
+  const [siteId, setSiteId] = useState<string | undefined>(
+    searchParams.get('siteId') || undefined,
+  );
   const [deviceId, setDeviceId] = useState<string>();
   const [status, setStatus] = useState<string>();
   const [keyword, setKeyword] = useState('');
@@ -98,8 +103,9 @@ export default function RecordsPage() {
     } else {
       setDevices([]);
       setDeviceId(undefined);
-      setInspectors([]);
-      setInspectorId(undefined);
+      fetchInspectorPool({ limit: 100 }).then((result) => {
+        setInspectors(result.list.map((user) => ({ value: user.id, label: user.realName })));
+      });
     }
   }, [siteId]);
 
@@ -309,7 +315,6 @@ export default function RecordsPage() {
           style={{ width: 120 }}
           value={inspectorId}
           onChange={setInspectorId}
-          disabled={!siteId}
           options={inspectors}
         />
         <Select

@@ -25,9 +25,10 @@ import {
 } from '../../api/alert';
 import { fetchSites } from '../../api/site';
 import type { SiteItem } from '../../types';
+import { useNavigate } from 'react-router-dom';
 
 const TYPE_LABEL: Record<string, string> = {
-  high_fail_rate: '不合格率偏高',
+  high_fail_rate: '合格率预警',
   overdue_task: '任务超期',
   pending_audit: '待审积压',
   data_archived: '数据归档',
@@ -41,6 +42,7 @@ const SEV_COLOR: Record<string, string> = {
 
 /** 预警中心：阈值配置 + 预警记录 */
 export default function AlertsPage() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<AlertItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -78,7 +80,7 @@ export default function AlertsPage() {
       const cfg = configs[0];
       form.setFieldsValue({
         siteId: sid,
-        failRateThreshold: cfg?.failRateThreshold ?? 25,
+        passRateThreshold: cfg?.passRateThreshold ?? 75,
         overdueDays: cfg?.overdueDays ?? 3,
         enabled: cfg?.enabled ?? true,
         notifyEmails: cfg?.notifyEmails || [],
@@ -130,21 +132,25 @@ export default function AlertsPage() {
     {
       title: '操作',
       width: 100,
-      render: (_, row) =>
-        row.status === 'open' ? (
-          <Button
-            type="link"
-            onClick={async () => {
-              await resolveAlert(row.id);
-              message.success('已标记处理');
-              load();
-            }}
-          >
-            处理
+      render: (_, row) => (
+        <Space size={0}>
+          <Button type="link" onClick={() => navigate(`/records?siteId=${row.siteId}`)}>
+            查看明细
           </Button>
-        ) : (
-          '-'
-        ),
+          {row.status === 'open' && (
+            <Button
+              type="link"
+              onClick={async () => {
+                await resolveAlert(row.id);
+                message.success('已标记处理');
+                load();
+              }}
+            >
+              处理
+            </Button>
+          )}
+        </Space>
+      ),
     },
   ];
 
@@ -153,7 +159,7 @@ export default function AlertsPage() {
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={24}>
           <Card size="small" title="预警说明">
-            系统每小时自动扫描：不合格率超阈值、任务超期、待审积压；超过 3 个月的记录自动归档。
+            系统每小时自动扫描：合格率低于阈值、任务超期、待审积压；巡检记录和照片至少保留 3 个月，超期后仅归档、不删除。
           </Card>
         </Col>
       </Row>
@@ -214,8 +220,13 @@ export default function AlertsPage() {
               options={sites.map((s) => ({ label: s.name, value: s.id }))}
             />
           </Form.Item>
-          <Form.Item name="failRateThreshold" label="不合格率阈值 (%)" rules={[{ required: true }]}>
-            <InputNumber min={1} max={100} style={{ width: '100%' }} />
+          <Form.Item
+            name="passRateThreshold"
+            label="合格率预警阈值 (%)"
+            tooltip="近30天合格率低于该数值时触发预警"
+            rules={[{ required: true }]}
+          >
+            <InputNumber min={1} max={99} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="overdueDays" label="任务超期天数" rules={[{ required: true }]}>
             <InputNumber min={1} max={90} style={{ width: '100%' }} />
@@ -223,7 +234,7 @@ export default function AlertsPage() {
           <Form.Item name="enabled" label="启用预警" valuePropName="checked">
             <Switch />
           </Form.Item>
-          <Form.Item name="notifyEmails" label="通知邮箱（回车添加）">
+          <Form.Item name="notifyEmails" label="运维人员 / 站点联系人邮箱（回车添加）">
             <Select mode="tags" placeholder="admin@example.com" tokenSeparators={[',', ' ']} />
           </Form.Item>
           <Form.Item name="webhookUrl" label="Webhook 地址">

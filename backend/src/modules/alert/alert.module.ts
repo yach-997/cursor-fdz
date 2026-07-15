@@ -6,6 +6,7 @@ import {
   Site,
   InspectionTask,
   InspectionRecord,
+  User,
 } from '../../entities';
 import { AlertService } from './alert.service';
 import { AlertController } from './alert.controller';
@@ -18,6 +19,7 @@ import { AlertController } from './alert.controller';
       Site,
       InspectionTask,
       InspectionRecord,
+      User,
     ]),
   ],
   controllers: [AlertController],

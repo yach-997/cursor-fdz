@@ -23,6 +23,13 @@ export class UpsertAlertConfigDto {
   @Max(100)
   failRateThreshold?: number;
 
+  /** 客户侧统一使用“合格率低于阈值”口径；服务内部会换算为不合格率。 */
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(99)
+  passRateThreshold?: number;
+
   @IsOptional()
   @IsNumber()
   @Min(1)
