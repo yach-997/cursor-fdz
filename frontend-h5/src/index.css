@@ -20,6 +20,7 @@ body,
   --h5-ink: #18382d;
   --h5-muted: #74877f;
   --h5-line: rgba(22, 78, 59, 0.09);
+  --rv-tabbar-z-index: 100;
   color: var(--h5-ink);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -50,7 +51,7 @@ body {
 
 .tab-layout__content {
   flex: 1;
-  padding-bottom: 64px;
+  padding-bottom: calc(76px + env(safe-area-inset-bottom));
 }
 
 .login-page {
@@ -108,16 +109,26 @@ body {
 .rv-nav-bar__text, .rv-nav-bar__arrow { color: var(--h5-green); }
 
 .rv-tabbar {
+  z-index: 100 !important;
   left: 50% !important;
   width: min(100%, 640px) !important;
+  min-height: 58px;
+  padding-bottom: env(safe-area-inset-bottom);
   transform: translateX(-50%);
   border-top: 1px solid var(--h5-line);
   background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 -10px 30px rgba(21, 65, 50, 0.06);
   backdrop-filter: blur(18px);
+  isolation: isolate;
 }
 
-.rv-tabbar-item { color: #8b9c95; transition: color 0.2s ease; }
+.rv-tabbar-item {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  color: #8b9c95;
+  transition: color 0.2s ease;
+}
 .rv-tabbar-item--active { color: var(--h5-green); font-weight: 600; }
 .rv-tabbar-item__icon {
   display: grid;
