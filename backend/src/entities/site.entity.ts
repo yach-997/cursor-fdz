@@ -42,6 +42,10 @@ export class Site {
   @Column({ type: 'decimal', precision: 10, scale: 7 })
   longitude: number;
 
+  /** 巡检员允许拍照/提交的站点围栏半径（米） */
+  @Column({ name: 'inspection_radius_meters', type: 'int', default: 500 })
+  inspectionRadiusMeters: number;
+
   @Column({ name: 'manager_id', type: 'uuid', nullable: true })
   managerId: string | null;
 

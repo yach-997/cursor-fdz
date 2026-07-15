@@ -60,6 +60,7 @@ export interface SiteItem {
   address: string;
   latitude: number;
   longitude: number;
+  inspectionRadiusMeters: number;
   managerId: string | null;
   status: CommonStatus;
   createdAt: string;

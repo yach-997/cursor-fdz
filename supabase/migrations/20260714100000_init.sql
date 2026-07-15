@@ -29,6 +29,7 @@ create table if not exists public.sites (
   address text not null default '',
   latitude numeric(10,7) not null default 0,
   longitude numeric(10,7) not null default 0,
+  inspection_radius_meters integer not null default 500 check (inspection_radius_meters between 50 and 5000),
   manager_id uuid references public.users(id) on delete set null,
   status text not null default 'active',
   deleted_at timestamptz,

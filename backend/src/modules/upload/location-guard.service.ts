@@ -51,7 +51,7 @@ export class LocationGuardService {
       return {
         verified: true,
         distanceMeters: 0,
-        radiusMeters: this.radiusMeters,
+        radiusMeters: this.defaultRadiusMeters,
         accuracyMeters: 0,
         checkedAt: new Date().toISOString(),
         siteName: '',
@@ -94,27 +94,32 @@ export class LocationGuardService {
       );
     }
 
+    const siteRadius = Number(site.inspectionRadiusMeters);
+    const radiusMeters =
+      Number.isFinite(siteRadius) && siteRadius >= 50 && siteRadius <= 5000
+        ? siteRadius
+        : this.defaultRadiusMeters;
     const distance = Math.round(
       this.distanceMeters(current.latitude, current.longitude, siteLat, siteLng),
     );
-    const allowedDistance = this.radiusMeters + Math.min(accuracy, 50);
+    const allowedDistance = radiusMeters + Math.min(accuracy, 50);
     if (distance > allowedDistance) {
       throw new ForbiddenException(
-        `当前位置距「${site.name}」约 ${distance} 米，超出 ${this.radiusMeters} 米巡检范围`,
+        `当前位置距「${site.name}」约 ${distance} 米，超出 ${radiusMeters} 米巡检范围`,
       );
     }
 
     return {
       verified: true,
       distanceMeters: distance,
-      radiusMeters: this.radiusMeters,
+      radiusMeters,
       accuracyMeters: Math.round(accuracy),
       checkedAt: new Date().toISOString(),
       siteName: site.name,
     };
   }
 
-  private get radiusMeters() {
+  private get defaultRadiusMeters() {
     const configured = Number(this.config.get('INSPECTION_RADIUS_METERS', 500));
     return Number.isFinite(configured) && configured >= 50 ? configured : 500;
   }

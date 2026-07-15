@@ -95,7 +95,7 @@ export default function SitesPage() {
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ status: 'active' });
+    form.setFieldsValue({ status: 'active', inspectionRadiusMeters: 500 });
     setModalOpen(true);
   };
 
@@ -103,6 +103,7 @@ export default function SitesPage() {
     setEditing(record);
     form.setFieldsValue({
       ...record,
+      inspectionRadiusMeters: record.inspectionRadiusMeters || 500,
       fullAddress: composeFullAddress(record),
     });
     setModalOpen(true);
@@ -119,6 +120,7 @@ export default function SitesPage() {
         ...values,
         latitude: Number(values.latitude),
         longitude: Number(values.longitude),
+        inspectionRadiusMeters: Number(values.inspectionRadiusMeters || 500),
       };
       delete payload.fullAddress;
       if (editing) {
@@ -253,6 +255,12 @@ export default function SitesPage() {
       ellipsis: true,
     },
     { title: '地址', dataIndex: 'address', ellipsis: true },
+    {
+      title: '巡检范围',
+      dataIndex: 'inspectionRadiusMeters',
+      width: 110,
+      render: (value) => `${Number(value || 500)} 米`,
+    },
     {
       title: '正站长',
       dataIndex: ['manager', 'realName'],

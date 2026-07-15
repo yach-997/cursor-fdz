@@ -307,6 +307,7 @@ async function validateInspectionLocationGuard() {
     name: '现场测试站',
     latitude: 30,
     longitude: 120,
+    inspectionRadiusMeters: 300,
   };
   const service = new LocationGuardService(
     { get: (_key, fallback) => fallback },
@@ -340,7 +341,7 @@ async function validateInspectionLocationGuard() {
         { gps: '30.02,120.02', accuracy: '20', capturedAt: now },
         inspector,
       ),
-    /超出 500 米巡检范围/,
+    /超出 300 米巡检范围/,
   );
   await assert.rejects(
     () =>

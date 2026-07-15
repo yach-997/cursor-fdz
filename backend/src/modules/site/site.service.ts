@@ -4,9 +4,10 @@ import {
   BadRequestException,
   ForbiddenException,
   ConflictException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull, In } from 'typeorm';
+import { Repository, IsNull, In, DataSource } from 'typeorm';
 import { Site, Device, User, SiteMember } from '../../entities';
 import { CommonStatus, SiteMemberRole, UserRole } from '../../common/enums';
 import { CurrentUserContext } from '../../common/interfaces';
@@ -21,7 +22,7 @@ import {
 } from './dto/site.dto';
 
 @Injectable()
-export class SiteService {
+export class SiteService implements OnModuleInit {
   constructor(
     @InjectRepository(Site)
     private readonly siteRepo: Repository<Site>,
@@ -31,7 +32,25 @@ export class SiteService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(SiteMember)
     private readonly siteMemberRepo: Repository<SiteMember>,
+    private readonly dataSource: DataSource,
   ) {}
+
+  /** 兼容关闭 DB_SYNC 的线上数据库；幂等执行，不影响已有站点。 */
+  async onModuleInit() {
+    const columns = (await this.dataSource.query(
+      `SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'sites'
+         AND column_name = 'inspection_radius_meters'`,
+    )) as unknown[];
+    if (!columns.length) {
+      await this.dataSource.query(
+        `ALTER TABLE sites
+         ADD COLUMN inspection_radius_meters integer NOT NULL DEFAULT 500`,
+      );
+    }
+  }
 
   /** 分页查询站点列表（含数据隔离） */
   async findAll(query: QuerySiteDto, currentUser: CurrentUserContext) {
@@ -132,6 +151,7 @@ export class SiteService {
       address: dto.address,
       latitude: dto.latitude,
       longitude: dto.longitude,
+      inspectionRadiusMeters: dto.inspectionRadiusMeters ?? 500,
       managerId: dto.managerId || null,
       status: CommonStatus.ACTIVE,
     });
@@ -174,6 +194,9 @@ export class SiteService {
       ...(dto.address !== undefined && { address: dto.address }),
       ...(dto.latitude !== undefined && { latitude: dto.latitude }),
       ...(dto.longitude !== undefined && { longitude: dto.longitude }),
+      ...(dto.inspectionRadiusMeters !== undefined && {
+        inspectionRadiusMeters: dto.inspectionRadiusMeters,
+      }),
       ...(dto.managerId !== undefined && { managerId: dto.managerId }),
       ...(dto.status !== undefined && { status: dto.status }),
     });
@@ -550,6 +573,7 @@ export class SiteService {
       address: site.address,
       latitude: Number(site.latitude),
       longitude: Number(site.longitude),
+      inspectionRadiusMeters: Number(site.inspectionRadiusMeters || 500),
       managerId: site.managerId,
       status: site.status,
       createdAt: site.createdAt,

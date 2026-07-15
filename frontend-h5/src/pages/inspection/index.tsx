@@ -775,7 +775,9 @@ export default function InspectionPage() {
             <div style={{ marginTop: 10, color: '#7b8983', fontSize: 11, lineHeight: 1.5 }}>
               {locationStatus === 'blocked'
                 ? '请在手机设置中打开定位服务，并给当前浏览器开启“精确位置”；到室外开阔处后点“重新定位”。电脑通常只有网络定位，不能用于现场巡检。'
-                : `巡检员须在站点 ${locationResult?.radiusMeters || 500} 米范围内，拍照和提交时都会再次校验定位。`}
+                : locationResult
+                  ? `本站点允许范围为 ${locationResult.radiusMeters} 米，拍照和提交时都会再次校验定位。`
+                  : '正在读取本站点配置的巡检范围…'}
             </div>
           </div>
 

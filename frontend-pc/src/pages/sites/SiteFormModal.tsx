@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Button, Form, Input, Modal, Select, Space, Tag, message } from 'antd';
+import { Button, Form, Input, InputNumber, Modal, Select, Space, Tag, message } from 'antd';
 import { AimOutlined, EnvironmentOutlined, SearchOutlined } from '@ant-design/icons';
 import type { FormInstance } from 'antd';
 import MapPicker from '../../components/MapPicker';
@@ -292,6 +292,23 @@ export default function SiteFormModal({
         </Form.Item>
         <Form.Item name="longitude" hidden rules={[{ required: true, message: '请定位站点' }]}>
           <Input type="hidden" />
+        </Form.Item>
+
+        <Form.Item
+          name="inspectionRadiusMeters"
+          label="巡检定位范围"
+          initialValue={500}
+          rules={[{ required: true, message: '请设置巡检定位范围' }]}
+          extra="巡检员只有在这个范围内才能现场拍照和提交报告。建议普通站点 300–500 米，大型园区可适当放宽。"
+        >
+          <InputNumber
+            min={50}
+            max={5000}
+            step={50}
+            precision={0}
+            addonAfter="米"
+            style={{ width: '100%' }}
+          />
         </Form.Item>
 
         {editing && (

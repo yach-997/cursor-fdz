@@ -6,6 +6,9 @@ import {
   IsEnum,
   IsLatitude,
   IsLongitude,
+  IsInt,
+  Min,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CommonStatus } from '../../../common/enums';
@@ -49,6 +52,13 @@ export class CreateSiteDto {
   longitude: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(50, { message: '巡检范围不能小于50米' })
+  @Max(5000, { message: '巡检范围不能大于5000米' })
+  inspectionRadiusMeters?: number;
+
+  @IsOptional()
   @IsPostgresUuid({ message: '站长ID格式不正确' })
   managerId?: string;
 }
@@ -90,6 +100,13 @@ export class UpdateSiteDto {
   @IsNumber()
   @IsLongitude({ message: '经度格式不正确' })
   longitude?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(50, { message: '巡检范围不能小于50米' })
+  @Max(5000, { message: '巡检范围不能大于5000米' })
+  inspectionRadiusMeters?: number;
 
   @IsOptional()
   @IsPostgresUuid()
