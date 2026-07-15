@@ -67,19 +67,31 @@ export class QiniuService {
     putExtra.mimeType = contentType;
 
     await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (error) reject(error);
+        else resolve();
+      };
+      const timer = setTimeout(
+        () => finish(new Error('七牛上传超时，请检查存储区域和网络配置')),
+        20_000,
+      );
       formUploader.putStream(
         token,
         objectName,
         Readable.from(buffer),
         putExtra,
         (err, body, info) => {
-          if (err) return reject(err);
+          if (err) return finish(err);
           if (info.statusCode !== 200) {
-            return reject(
+            return finish(
               new Error(`七牛上传失败: ${info.statusCode} ${JSON.stringify(body)}`),
             );
           }
-          resolve();
+          finish();
         },
       );
     });

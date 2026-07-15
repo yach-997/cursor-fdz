@@ -112,7 +112,9 @@ export class GeocodeService {
       url.searchParams.set('extensions', 'base');
       url.searchParams.set('output', 'JSON');
 
-      const res = await fetch(url.toString());
+      const res = await fetch(url.toString(), {
+        signal: AbortSignal.timeout(1_500),
+      });
       if (!res.ok) return null;
 
       const data = (await res.json()) as {

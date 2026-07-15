@@ -65,6 +65,7 @@ export async function submitRecord(
 export async function uploadPhoto(
   file: File,
   meta: { taskId?: string; gps?: string },
+  onProgress?: (percent: number) => void,
 ) {
   const form = new FormData();
   form.append('file', file);
@@ -74,6 +75,11 @@ export async function uploadPhoto(
     ApiResponse<{ url: string; watermark: Record<string, string> }>
   >('/upload/photo', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 45_000,
+    onUploadProgress: (event) => {
+      if (!event.total) return;
+      onProgress?.(Math.min(99, Math.round((event.loaded / event.total) * 100)));
+    },
   });
   return data.data;
 }

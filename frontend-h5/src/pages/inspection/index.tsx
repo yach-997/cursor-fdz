@@ -31,6 +31,20 @@ const RESULT_LABEL: Record<string, string> = {
   error: 'AI失败·待人工',
 };
 
+function getQuickGps(): Promise<string> {
+  if (!('geolocation' in navigator)) return Promise.resolve('');
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) =>
+        resolve(
+          `${position.coords.latitude.toFixed(6)},${position.coords.longitude.toFixed(6)}`,
+        ),
+      () => resolve(''),
+      { enableHighAccuracy: false, timeout: 1_800, maximumAge: 120_000 },
+    );
+  });
+}
+
 /** 巡检执行：要求提示 + 样本图 + 拍照/相册 + 异步AI + 必填校验提交 */
 export default function InspectionPage() {
   const { taskId } = useParams();
@@ -40,9 +54,14 @@ export default function InspectionPage() {
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadSource, setUploadSource] = useState<'camera' | 'album' | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadNotice, setUploadNotice] = useState('');
   const cameraRef = useRef<HTMLInputElement>(null);
   const albumRef = useRef<HTMLInputElement>(null);
-  const pollRef = useRef<number | null>(null);
+  const lastFileRef = useRef<File | null>(null);
+  const pollRefs = useRef<Record<string, number>>({});
+  const activeEntryRef = useRef<string | undefined>(undefined);
   const rejectJumpedRef = useRef(false);
   /** 正在 AI 分析的条目，不阻塞其他条目 */
   const [analyzingIds, setAnalyzingIds] = useState<string[]>([]);
@@ -73,12 +92,17 @@ export default function InspectionPage() {
     (e) => e.templateEntryId === currentTpl?.id,
   );
 
+  useEffect(() => {
+    activeEntryRef.current = currentTpl?.id;
+    setUploadNotice('');
+    setUploadProgress(0);
+    lastFileRef.current = null;
+  }, [currentTpl?.id]);
+
   const leavePage = useCallback(
     async (saveFirst: boolean) => {
-      if (pollRef.current) {
-        window.clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
+      Object.values(pollRefs.current).forEach((timer) => window.clearInterval(timer));
+      pollRefs.current = {};
       try {
         Toast.clear();
       } catch {
@@ -158,7 +182,8 @@ export default function InspectionPage() {
       .then(() => undefined)
       .catch(() => Toast.info('加载失败'));
     return () => {
-      if (pollRef.current) window.clearInterval(pollRef.current);
+      Object.values(pollRefs.current).forEach((timer) => window.clearInterval(timer));
+      pollRefs.current = {};
     };
   }, [load]);
 
@@ -213,12 +238,14 @@ export default function InspectionPage() {
   };
 
   const startPoll = (recordId: string, templateEntryId: string) => {
-    if (pollRef.current) window.clearInterval(pollRef.current);
+    const previous = pollRefs.current[templateEntryId];
+    if (previous) window.clearInterval(previous);
     let tries = 0;
-    pollRef.current = window.setInterval(async () => {
+    pollRefs.current[templateEntryId] = window.setInterval(async () => {
       tries += 1;
       if (tries > 24) {
-        if (pollRef.current) window.clearInterval(pollRef.current);
+        window.clearInterval(pollRefs.current[templateEntryId]);
+        delete pollRefs.current[templateEntryId];
         setAnalyzingIds((ids) => ids.filter((id) => id !== templateEntryId));
         // 超时按待人工，不阻塞
         setRecord((prev) => {
@@ -244,7 +271,8 @@ export default function InspectionPage() {
       try {
         const res = await fetchAiResult(templateEntryId, recordId);
         if (res.aiResult && res.aiResult.status !== 'pending') {
-          if (pollRef.current) window.clearInterval(pollRef.current);
+          window.clearInterval(pollRefs.current[templateEntryId]);
+          delete pollRefs.current[templateEntryId];
           setAnalyzingIds((ids) => ids.filter((id) => id !== templateEntryId));
           const fresh = await fetchRecord(recordId);
           setRecord(fresh);
@@ -296,60 +324,103 @@ export default function InspectionPage() {
       .catch(() => undefined);
   };
 
-  const handleCapture = async (file: File) => {
+  const handleCapture = async (file: File, source: 'camera' | 'album') => {
     if (!record || !currentTpl || !taskId) return;
+    lastFileRef.current = file;
+    setUploadSource(source);
+    setUploadProgress(0);
+    setUploadNotice('正在优化照片并获取定位…');
     setUploading(true);
+    let uploadCompleted = false;
+    const capturedRecordId = record.id;
+    const capturedEntryId = currentTpl.id;
+    const capturedSamplePhotos = currentTpl.samplePhotos || [];
     try {
-      const compressed = await compressImage(file);
-      let gps = '';
-      try {
-        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
-        });
-        gps = `${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`;
-      } catch {
-        gps = '';
-      }
+      const [compressed, gps] = await Promise.all([
+        compressImage(file),
+        getQuickGps(),
+      ]);
 
-      const uploaded = await uploadPhoto(compressed, { taskId, gps });
-      const photos = [...(currentEntry?.photos || []), uploaded.url];
-      await persistPhotos(photos);
-
-      // 异步 AI：不 await 完成，可继续其它条目
-      if (task?.aiEnabled !== false) {
-        setAnalyzingIds((ids) =>
-          ids.includes(currentTpl.id) ? ids : [...ids, currentTpl.id],
-        );
-        try {
-          const analysis = await analyzeAi({
-            recordId: record.id,
-            templateEntryId: currentTpl.id,
-            photoUrl: uploaded.url,
-            samplePhotoUrls: currentTpl.samplePhotos || [],
-          });
-          Toast.info(
-            analysis.completed
-              ? '照片已上传，AI 分析完成'
-              : '已上传，AI 后台分析中，可点下一步',
-          );
-          startPoll(record.id, currentTpl.id);
-        } catch {
-          setAnalyzingIds((ids) => ids.filter((id) => id !== currentTpl.id));
-          patchEntry({
-            aiResult: {
-              status: 'error',
-              confidence: 0,
-              reason: 'AI 入队失败，稍后可在报告中查看',
-            },
-          });
+      setUploadNotice('正在安全上传照片…');
+      const uploaded = await uploadPhoto(compressed, { taskId, gps }, (percent) => {
+        setUploadProgress(percent);
+        if (percent >= 99) {
+          setUploadNotice('照片已传送，云端正在添加水印并保存…');
         }
-      } else {
-        Toast.success('照片已上传');
-      }
-    } catch {
-      /* 拦截器 */
-    } finally {
+      });
+      const photos = [...(currentEntry?.photos || []), uploaded.url];
+      uploadCompleted = true;
+      setUploadProgress(100);
+      patchEntry({ photos });
+      const entriesSnapshot = record.entries.map((entry) =>
+        entry.templateEntryId === capturedEntryId ? { ...entry, photos } : entry,
+      );
+      localStorage.setItem(`draft:${capturedRecordId}`, JSON.stringify(entriesSnapshot));
       setUploading(false);
+      setUploadNotice('照片已上传，可以继续下一步；正在后台保存…');
+
+      // 草稿和 AI 在后台继续，不再阻塞现场操作。
+      void (async () => {
+        try {
+          const saved = await saveDraft(
+            capturedRecordId,
+            entriesSnapshot.map((entry) => ({
+              templateEntryId: entry.templateEntryId,
+              photos: entry.photos,
+              manualResult: entry.manualResult,
+              finalResult: entry.finalResult,
+              remark: entry.remark,
+            })),
+          );
+          setRecord((latest) => {
+            if (!latest) return saved;
+            const savedEntry = saved.entries.find(
+              (entry) => entry.templateEntryId === capturedEntryId,
+            );
+            return {
+              ...latest,
+              entries: latest.entries.map((entry) =>
+                entry.templateEntryId === capturedEntryId && savedEntry
+                  ? { ...entry, photos: savedEntry.photos }
+                  : entry,
+              ),
+            };
+          });
+          if (activeEntryRef.current === capturedEntryId) {
+            setUploadNotice('照片已安全保存');
+          }
+
+          if (task?.aiEnabled !== false) {
+            setAnalyzingIds((ids) =>
+              ids.includes(capturedEntryId) ? ids : [...ids, capturedEntryId],
+            );
+            try {
+              await analyzeAi({
+                recordId: capturedRecordId,
+                templateEntryId: capturedEntryId,
+                photoUrl: uploaded.url,
+                samplePhotoUrls: capturedSamplePhotos,
+              });
+              startPoll(capturedRecordId, capturedEntryId);
+            } catch {
+              setAnalyzingIds((ids) => ids.filter((id) => id !== capturedEntryId));
+            }
+          }
+        } catch {
+          if (activeEntryRef.current === capturedEntryId) {
+            setUploadNotice('照片已上传并保存在本机，网络恢复后会再次同步');
+          }
+        }
+      })();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '上传失败';
+      setUploadNotice(
+        message.includes('timeout')
+          ? '网络响应超时，请点击重试，不会丢失已选照片'
+          : '上传没有完成，请检查网络后重试',
+      );
+    } finally {
+      if (!uploadCompleted) setUploading(false);
     }
   };
 
@@ -371,6 +442,10 @@ export default function InspectionPage() {
   };
 
   const goNext = () => {
+    if (uploading) {
+      Toast.info('照片正在上传，请稍候');
+      return;
+    }
     const mustPhoto =
       !!currentTpl &&
       (currentTpl.isOptionalModule || currentTpl.isRequired !== false);
@@ -384,6 +459,10 @@ export default function InspectionPage() {
 
   const handleSubmit = async () => {
     if (!record) return;
+    if (uploading) {
+      Toast.info('照片正在上传，请稍候');
+      return;
+    }
     const mustCurrent =
       !!currentTpl &&
       (currentTpl.isOptionalModule || currentTpl.isRequired !== false);
@@ -765,7 +844,7 @@ export default function InspectionPage() {
                   style={{ display: 'none' }}
                   onChange={(e) => {
                     const f = e.target.files?.[0];
-                    if (f) void handleCapture(f);
+                    if (f) void handleCapture(f, 'camera');
                     e.target.value = '';
                   }}
                 />
@@ -776,15 +855,78 @@ export default function InspectionPage() {
                   style={{ display: 'none' }}
                   onChange={(e) => {
                     const f = e.target.files?.[0];
-                    if (f) void handleCapture(f);
+                    if (f) void handleCapture(f, 'album');
                     e.target.value = '';
                   }}
                 />
+                {uploadNotice && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      background: uploadNotice.includes('没有完成') || uploadNotice.includes('超时')
+                        ? '#fff4f2'
+                        : '#eef8f3',
+                      color: uploadNotice.includes('没有完成') || uploadNotice.includes('超时')
+                        ? '#b33a2b'
+                        : '#176b4d',
+                      fontSize: 13,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ flex: 1 }}>{uploadNotice}</span>
+                      {!uploading &&
+                        lastFileRef.current &&
+                        (uploadNotice.includes('没有完成') || uploadNotice.includes('超时')) && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleCapture(lastFileRef.current!, uploadSource || 'album')
+                            }
+                            style={{
+                              border: 'none',
+                              borderRadius: 16,
+                              padding: '6px 12px',
+                              background: '#16835f',
+                              color: '#fff',
+                              fontWeight: 600,
+                            }}
+                          >
+                            重新上传
+                          </button>
+                        )}
+                    </div>
+                    {uploading && (
+                      <div
+                        style={{
+                          height: 5,
+                          marginTop: 8,
+                          overflow: 'hidden',
+                          borderRadius: 3,
+                          background: '#dcebe4',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: `${Math.max(8, uploadProgress)}%`,
+                            height: '100%',
+                            borderRadius: 3,
+                            background: '#16835f',
+                            transition: 'width .2s ease',
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                   <Button
                     type="primary"
                     round
-                    loading={uploading}
+                    loading={uploading && uploadSource === 'camera'}
+                    disabled={uploading}
                     style={{ flex: 1, height: 48 }}
                     onClick={() => cameraRef.current?.click()}
                   >
@@ -794,7 +936,8 @@ export default function InspectionPage() {
                     round
                     plain
                     type="primary"
-                    loading={uploading}
+                    loading={uploading && uploadSource === 'album'}
+                    disabled={uploading}
                     style={{ flex: 1, height: 48 }}
                     onClick={() => albumRef.current?.click()}
                   >
@@ -856,18 +999,31 @@ export default function InspectionPage() {
           round
           style={{ height: 48, flex: 1 }}
           disabled={step <= 0}
-          onClick={() => setStep((s) => s - 1)}
+          onClick={() => {
+            if (uploading) {
+              Toast.info('照片正在上传，请稍候');
+              return;
+            }
+            setStep((s) => s - 1);
+          }}
         >
           上一步
         </Button>
         {step < entriesTpl.length - 1 ? (
-          <Button round type="primary" style={{ height: 48, flex: 1.4 }} onClick={goNext}>
+          <Button
+            round
+            type="primary"
+            disabled={uploading}
+            style={{ height: 48, flex: 1.4 }}
+            onClick={goNext}
+          >
             下一步
           </Button>
         ) : (
           <Button
             round
             type="primary"
+            disabled={uploading}
             style={{ height: 48, flex: 1.4 }}
             loading={saving}
             onClick={() => void handleSubmit()}
