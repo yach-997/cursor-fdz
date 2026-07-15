@@ -119,6 +119,13 @@ export default function SiteFormModal({
 
     const queryText = full || name;
     const local = parseChineseAddress(queryText);
+    const secondDistrict = local.detail.match(/^(.+?(?:区|县|旗|新区))/)?.[1];
+    if (local.district && secondDistrict && secondDistrict !== local.district) {
+      message.error(
+        `地址同时包含「${local.district}」和「${secondDistrict}」，请只保留站点实际所在的区/县后再解析`,
+      );
+      return;
+    }
     syncRegionFields(form, queryText);
 
     setGeocoding(true);

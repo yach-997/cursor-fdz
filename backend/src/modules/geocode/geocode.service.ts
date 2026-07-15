@@ -65,17 +65,17 @@ export class GeocodeService {
       if (preferPoi) {
         for (const keyword of poiKeywords) {
           const hit = await this.searchAmapPoi(keyword, cityHint);
-          if (hit) return hit;
+          if (this.acceptHit(hit, parsed)) return hit;
         }
       }
       for (const item of candidates) {
         const hit = await this.searchAmapGeo(item.text, item.city || cityHint);
-        if (hit) return hit;
+        if (this.acceptHit(hit, parsed)) return hit;
       }
       if (!preferPoi) {
         for (const keyword of poiKeywords) {
           const hit = await this.searchAmapPoi(keyword, cityHint);
-          if (hit) return hit;
+          if (this.acceptHit(hit, parsed)) return hit;
         }
       }
       this.logger.warn(`高德未命中地址: ${parsed.address}`);
@@ -85,10 +85,11 @@ export class GeocodeService {
 
     for (const text of candidates.map((c) => c.text)) {
       const hit = await this.searchNominatim(`中国${text}`);
-      if (hit) return hit;
+      if (this.acceptHit(hit, parsed)) return hit;
     }
 
-    return this.searchOpenMeteo(parsed.address);
+    const fallback = await this.searchOpenMeteo(parsed.address);
+    return this.acceptHit(fallback, parsed) ? fallback : null;
   }
 
   /** 坐标 → 地址（现场定位后自动填地址） */
@@ -204,6 +205,8 @@ export class GeocodeService {
       .replace(/^[\u4e00-\u9fa5]+(?:省|自治区|特别行政区)/, '')
       .replace(/^[\u4e00-\u9fa5]+市/, '')
       .replace(/^[\u4e00-\u9fa5]+(?:区|县|旗|新区)/, '')
+      // 容错「翠屏区叙州区某大学」这类重复区县前缀，保留真正地标名称
+      .replace(/^[\u4e00-\u9fa5]+(?:区|县|旗|新区)/, '')
       .trim();
     if (!cleaned || cleaned === text) {
       const m = text.match(
@@ -220,6 +223,32 @@ export class GeocodeService {
   private normalizeCity(city?: string) {
     if (!city) return undefined;
     return city.replace(/市$/, '');
+  }
+
+  /** 防止外部地图服务将同名地标解析到其他省市。 */
+  private acceptHit(
+    hit: GeocodeResult | null,
+    query: Pick<GeocodeQuery, 'province' | 'city'>,
+  ): hit is GeocodeResult {
+    if (!hit) return false;
+    const display = this.normalizeRegionText(hit.displayName);
+    const expected = [query.province, query.city]
+      .map((value) => this.normalizeRegionText(value || ''))
+      .filter((value) => value.length >= 2);
+    const accepted = expected.every((value) => display.includes(value));
+    if (!accepted) {
+      this.logger.warn(
+        `已拒绝跨地区地址结果: ${hit.displayName} (期望 ${expected.join('/')})`,
+      );
+    }
+    return accepted;
+  }
+
+  private normalizeRegionText(value: string) {
+    return value
+      .replace(/\s+/g, '')
+      .replace(/(壮族|回族|维吾尔)自治区/g, '')
+      .replace(/(特别行政区|自治州|自治区|地区|省|市)$/g, '');
   }
 
   private parseLocation(location: string) {
@@ -253,6 +282,9 @@ export class GeocodeService {
           formatted_address?: string;
           location?: string;
           level?: string;
+          province?: string;
+          city?: string;
+          district?: string;
         }>;
       };
 
@@ -271,7 +303,10 @@ export class GeocodeService {
 
       return {
         ...coords,
-        displayName: first.formatted_address || address,
+        displayName:
+          [first.province, first.city, first.district, first.formatted_address]
+            .filter(Boolean)
+            .join('') || address,
         provider: 'amap',
       };
     } catch (err) {
@@ -292,7 +327,10 @@ export class GeocodeService {
       url.searchParams.set('output', 'JSON');
       url.searchParams.set('offset', '1');
       url.searchParams.set('page', '1');
-      if (city) url.searchParams.set('city', city);
+      if (city) {
+        url.searchParams.set('city', city);
+        url.searchParams.set('citylimit', 'true');
+      }
 
       const res = await fetch(url.toString());
       if (!res.ok) return null;
@@ -304,6 +342,7 @@ export class GeocodeService {
           name?: string;
           address?: string;
           location?: string;
+          pname?: string;
           cityname?: string;
           adname?: string;
         }>;
@@ -317,7 +356,7 @@ export class GeocodeService {
       const coords = this.parseLocation(first.location);
       if (!coords) return null;
 
-      const displayName = [first.name, first.address, first.adname, first.cityname]
+      const displayName = [first.pname, first.cityname, first.adname, first.name, first.address]
         .filter(Boolean)
         .join(' · ');
 

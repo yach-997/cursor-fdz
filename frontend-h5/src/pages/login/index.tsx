@@ -5,7 +5,10 @@ import { useAuthStore } from '../../stores/auth';
 import './login.css';
 
 /** PC 入口页地址 */
-const PC_PORTAL_URL = import.meta.env.VITE_PC_URL || 'http://localhost:5173/';
+const IS_LOCAL_HOST = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const PC_PORTAL_URL = IS_LOCAL_HOST
+  ? import.meta.env.VITE_PC_URL || 'http://localhost:5173/'
+  : 'https://cursor-fdz-pc.vercel.app/';
 
 /** H5 登录页：与入口页统一的薄荷绿风格 */
 export default function LoginPage() {

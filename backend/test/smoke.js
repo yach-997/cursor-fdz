@@ -14,6 +14,8 @@ const { UploadPhotoMetaDto } = require('../dist/modules/upload/dto/upload.dto');
 const { AnalyzeDto } = require('../dist/modules/ai/dto/ai.dto');
 const { RecordService } = require('../dist/modules/record/record.service');
 const { TemplateService } = require('../dist/modules/template/template.service');
+const { SiteService } = require('../dist/modules/site/site.service');
+const { GeocodeService } = require('../dist/modules/geocode/geocode.service');
 const { configureApp } = require('../dist/bootstrap');
 
 const seededUuid = '11111111-1111-1111-1111-111111111111';
@@ -202,12 +204,67 @@ async function validateAiErrorFallsBackToAudit() {
   assert.equal(detail.needsAudit, true);
 }
 
+async function validatePrimaryManagerCanAlsoInspect() {
+  const managerId = '22222222-2222-2222-2222-222222222222';
+  const site = {
+    id: seededUuid,
+    managerId,
+    status: 'active',
+    deletedAt: null,
+  };
+  const manager = {
+    id: managerId,
+    username: 'manager-inspector',
+    realName: 'Manager Inspector',
+    role: 'site_manager',
+    roles: ['site_manager', 'inspector'],
+    status: 'active',
+  };
+  const siteRepo = { findOne: async () => site };
+  const userRepo = { findOne: async () => manager };
+  const memberRepo = {
+    findOne: async () => null,
+    create: (value) => ({ id: otherSeededUuid, ...value }),
+    save: async (value) => value,
+  };
+  const service = new SiteService(siteRepo, {}, userRepo, memberRepo);
+  const result = await service.addMember(
+    site.id,
+    { userId: managerId },
+    { role: 'super_admin', managedSiteIds: [], memberSiteIds: [] },
+  );
+  assert.equal(result.userId, managerId);
+  assert.equal(result.memberRole, 'inspector');
+  assert.equal(result.user.username, manager.username);
+}
+
+function validateGeocodeRegionGuard() {
+  const service = new GeocodeService({ get: () => '' });
+  const expected = { province: '四川省', city: '宜宾市' };
+  const correct = {
+    latitude: 28.75,
+    longitude: 104.64,
+    displayName: '四川省宜宾市叙州区四川轻化工大学宜宾校区',
+    provider: 'nominatim',
+  };
+  const wrong = {
+    latitude: 31.82,
+    longitude: 117.23,
+    displayName: '安徽省合肥市蜀山区丹霞路',
+    provider: 'nominatim',
+  };
+  assert.equal(service.acceptHit(correct, expected), true);
+  assert.equal(service.acceptHit(wrong, expected), false);
+}
+
 async function main() {
   validateSeededIds();
   await validateCorsPolicy();
   await validateManualAuditFlow();
   await validateTemplateScopeUpdate();
   await validateAiErrorFallsBackToAudit();
+  await validatePrimaryManagerCanAlsoInspect();
+  validateGeocodeRegionGuard();
   console.log('smoke tests passed');
 }
 

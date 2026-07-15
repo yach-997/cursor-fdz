@@ -211,8 +211,8 @@ export class SiteService {
     site.managerId = dto.userId;
     await this.siteRepo.save(site);
 
-    // 若原先在本站是副站长/巡检员，先卸去成员身份，避免角色冲突
-    await this.deactivateMembership(id, dto.userId);
+    // 正站长可以同时保留巡检员身份；仅卸去与正站长冲突的副站长任职。
+    await this.deactivateDeputyMembership(id, dto.userId);
 
     const user = await this.userRepo.findOne({ where: { id: dto.userId } });
     if (user) {
@@ -335,10 +335,6 @@ export class SiteService {
   async addMember(id: string, dto: AddMemberDto, currentUser: CurrentUserContext) {
     const site = await this.getActiveSite(id);
     this.assertLeadershipAccess(site, currentUser);
-
-    if (site.managerId === dto.userId) {
-      throw new BadRequestException('正站长不能再聘为本站巡检员');
-    }
 
     const user = await this.userRepo.findOne({ where: { id: dto.userId } });
     if (!user) {
@@ -507,9 +503,13 @@ export class SiteService {
     throw new ForbiddenException('无权管理该站点人员');
   }
 
-  private async deactivateMembership(siteId: string, userId: string) {
+  private async deactivateDeputyMembership(siteId: string, userId: string) {
     const existing = await this.siteMemberRepo.findOne({
-      where: { siteId, userId },
+      where: {
+        siteId,
+        userId,
+        memberRole: SiteMemberRole.DEPUTY_MANAGER,
+      },
     });
     if (existing && existing.status === CommonStatus.ACTIVE) {
       existing.status = CommonStatus.INACTIVE;

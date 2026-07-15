@@ -416,8 +416,33 @@ export default function SitesPage() {
         width={720}
         destroyOnClose
       >
+        <div
+          style={{
+            padding: '12px 16px',
+            marginBottom: 12,
+            background: '#f6ffed',
+            border: '1px solid #b7eb8f',
+            borderRadius: 8,
+          }}
+        >
+          <Space wrap size={12}>
+            <Tag color="green" style={{ margin: 0 }}>正站长</Tag>
+            <Typography.Text strong>
+              {staffSite?.manager?.realName || '未任命'}
+            </Typography.Text>
+            {staffSite?.manager && (
+              <Typography.Text type="secondary">
+                账号：{staffSite.manager.username}
+                {staffSite.manager.phone ? ` · 电话：${staffSite.manager.phone}` : ''}
+              </Typography.Text>
+            )}
+            {staffSite?.manager && inspectors.some((item) => item.userId === staffSite.manager?.id) && (
+              <Tag color="blue" style={{ margin: 0 }}>兼任巡检员</Tag>
+            )}
+          </Space>
+        </div>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          正站长：{staffSite?.manager?.realName || '未任命'}。副站长须为「站长」角色账号；巡检员账号可同时加入多个站点。
+          同一账号可兼任正站长和巡检员：从 PC 站长入口登录进入管理端，从 H5 巡检员入口登录进入巡检端。
         </Typography.Paragraph>
         <Tabs
           items={[
