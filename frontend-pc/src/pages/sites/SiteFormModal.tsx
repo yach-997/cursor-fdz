@@ -108,7 +108,7 @@ export default function SiteFormModal({
     );
   }, [form]);
 
-  /** 按完整地址解析坐标，并用逆地理补全省市区 */
+  /** 按完整地址解析坐标；省市区直接使用已拆分的表单地址 */
   const locateByAddress = useCallback(async () => {
     const full = (form.getFieldValue('fullAddress') as string)?.trim();
     const name = form.getFieldValue('name');
@@ -141,20 +141,12 @@ export default function SiteFormModal({
       form.setFieldsValue({
         latitude: result.latitude,
         longitude: result.longitude,
+        province: local.province || form.getFieldValue('province') || undefined,
+        city: local.city || form.getFieldValue('city') || undefined,
+        district: local.district || form.getFieldValue('district') || undefined,
+        address: local.detail || queryText,
+        fullAddress: full || queryText,
       });
-
-      try {
-        const regeo = await reverseGeocode(result.longitude, result.latitude);
-        form.setFieldsValue({
-          province: regeo.province || local.province || undefined,
-          city: regeo.city || local.city || undefined,
-          district: regeo.district || local.district || undefined,
-          address: local.detail || regeo.address || queryText,
-          fullAddress: full || composeFullAddress(regeo),
-        });
-      } catch {
-        /* 有坐标即可，省市区用本地拆分结果 */
-      }
 
       message.success(`已按地址定位：${result.displayName}`);
     } finally {
