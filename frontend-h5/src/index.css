@@ -152,6 +152,15 @@ body {
 .rv-cell__title { color: #294b40; }
 .rv-cell__label { margin-top: 4px; color: #8a9a94; }
 
+/* 首次进入只显示稳定的内容骨架，接口完成后再判断是否真的为空。 */
+.mobile-list-skeleton { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.mobile-list-skeleton i { display: block; height: 66px; border-radius: 14px; background: linear-gradient(100deg, rgba(255,255,255,.68) 20%, #fff 42%, rgba(255,255,255,.68) 64%); background-size: 220% 100%; animation: mobile-skeleton 1.2s ease-in-out infinite; }
+.mobile-summary-skeleton { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 18px 8px; border-radius: 14px; background: rgba(255,255,255,.72); }
+.mobile-summary-skeleton i { height: 54px; border-radius: 10px; background: linear-gradient(100deg, #e9f0ec 20%, #f8fbf9 42%, #e9f0ec 64%); background-size: 220% 100%; animation: mobile-skeleton 1.2s ease-in-out infinite; }
+.mobile-load-error { display: block; width: 100%; min-height: 66px; padding: 14px; border: 1px solid rgba(186,83,83,.14); border-radius: 14px; color: #9c5454; background: rgba(255,250,250,.88); font: inherit; font-size: 13px; text-align: center; }
+@keyframes mobile-skeleton { from { background-position: 100% 0; } to { background-position: -120% 0; } }
+@media (prefers-reduced-motion: reduce) { .mobile-list-skeleton i, .mobile-summary-skeleton i, .home-stats--loading i { animation: none; } }
+
 @media (min-width: 641px) {
   body { background: #dfe9e4; }
   #root { min-height: 100%; box-shadow: 0 0 60px rgba(16, 58, 44, 0.12); }

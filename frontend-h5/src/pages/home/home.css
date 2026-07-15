@@ -25,6 +25,8 @@
 .home-stats > div:last-child { border: 0; }
 .home-stats b { color: #1b5945; font-size: 23px; line-height: 1.15; }
 .home-stats span { margin-top: 4px; color: #8a9a93; font-size: 10px; }
+.home-stats--loading { min-height: 47px; align-items: center; gap: 18px; }
+.home-stats--loading i { width: 48px; height: 34px; border-radius: 9px; background: linear-gradient(100deg, #edf3f0 20%, #f8fbf9 42%, #edf3f0 64%); background-size: 220% 100%; animation: mobile-skeleton 1.2s ease-in-out infinite; }
 .home-start { width: 100%; min-height: 58px; padding: 10px 12px; display: flex; align-items: center; gap: 11px; border: 0; border-radius: 14px; text-align: left; color: #fff; background: linear-gradient(135deg, #20ab78, #11724f); box-shadow: 0 10px 24px rgba(22,131,95,.21); }
 .home-start:active { transform: scale(.99); }
 .home-start__icon { flex: 0 0 36px; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 11px; background: rgba(255,255,255,.14); font-size: 17px; }

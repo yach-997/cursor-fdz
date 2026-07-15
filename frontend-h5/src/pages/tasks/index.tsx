@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Empty, PullRefresh, Dialog, Toast } from 'react-vant';
 import { fetchTasks, deleteTask, type TaskItem } from '../../api/task';
 import { useAuthStore } from '../../stores/auth';
+import { mobileCacheKeys } from '../../utils/mobileCacheKeys';
+import { useCachedResource } from '../../utils/useCachedResource';
 import './tasks.css';
 
 const FILTERS = [
@@ -38,30 +40,51 @@ function statusText(t: TaskItem) {
 export default function TasksPage() {
   const navigate = useNavigate();
   const currentSite = useAuthStore((s) => s.currentSite);
+  const user = useAuthStore((s) => s.user);
   const [tab, setTab] = useState<(typeof FILTERS)[number]['key']>('all');
   const [keyword, setKeyword] = useState('');
   const [region, setRegion] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [list, setList] = useState<TaskItem[]>([]);
-
-  const load = useCallback(async () => {
-    const res = await fetchTasks({
+  const [appliedFilters, setAppliedFilters] = useState({
+    keyword: '',
+    region: '',
+    dateFrom: '',
+    dateTo: '',
+  });
+  const applyFilters = useCallback(() => {
+    setAppliedFilters({
+      keyword: keyword.trim(),
+      region: region.trim(),
+      dateFrom,
+      dateTo,
+    });
+  }, [keyword, region, dateFrom, dateTo]);
+  const loader = useCallback(() => fetchTasks({
       page: 1,
       limit: 50,
       statusGroup: tab === 'all' ? undefined : tab,
-      keyword: keyword.trim() || undefined,
-      region: region.trim() || undefined,
-      startDate: dateFrom || undefined,
-      endDate: dateTo || undefined,
+      keyword: appliedFilters.keyword || undefined,
+      region: appliedFilters.region || undefined,
+      startDate: appliedFilters.dateFrom || undefined,
+      endDate: appliedFilters.dateTo || undefined,
       siteId: currentSite?.id,
-    });
-    setList(res.list.filter((t) => t.status !== 'archived'));
-  }, [tab, keyword, region, dateFrom, dateTo, currentSite?.id]);
-
-  useEffect(() => {
-    load().catch(() => undefined);
-  }, [load]);
+    }), [tab, appliedFilters, currentSite?.id]);
+  const filterKey = [
+    tab,
+    appliedFilters.keyword,
+    appliedFilters.region,
+    appliedFilters.dateFrom,
+    appliedFilters.dateTo,
+  ].join('|');
+  const { data, loading, error, reload } = useCachedResource(
+    mobileCacheKeys.taskList(user?.id, currentSite?.id, filterKey),
+    loader,
+  );
+  const list: TaskItem[] = (data?.list || []).filter((t) => t.status !== 'archived');
+  const load = useCallback(async () => {
+    await reload();
+  }, [reload]);
 
   const onDelete = async (t: TaskItem) => {
     try {
@@ -101,7 +124,7 @@ export default function TasksPage() {
           placeholder="搜索任务名称"
           onChange={(e) => setKeyword(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') void load();
+            if (e.key === 'Enter') applyFilters();
           }}
         />
       </div>
@@ -112,7 +135,7 @@ export default function TasksPage() {
           placeholder="区域（省/市/现场）"
           onChange={(e) => setRegion(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') void load();
+            if (e.key === 'Enter') applyFilters();
           }}
         />
       </div>
@@ -156,7 +179,7 @@ export default function TasksPage() {
         />
         <button
           type="button"
-          onClick={() => void load()}
+          onClick={applyFilters}
           style={{
             height: 40,
             padding: '0 12px',
@@ -196,7 +219,15 @@ export default function TasksPage() {
 
       <PullRefresh onRefresh={load}>
         <div className="tasks-page__list">
-          {list.length === 0 ? (
+          {loading ? (
+            <div className="mobile-list-skeleton" aria-label="正在加载任务">
+              <i /><i /><i />
+            </div>
+          ) : error && data === undefined ? (
+            <button type="button" className="mobile-load-error" onClick={() => void load()}>
+              数据暂时没有加载成功，点击重试
+            </button>
+          ) : list.length === 0 ? (
             <div className="tasks-page__empty">
               <Empty description="暂无任务，点上方新建" />
             </div>

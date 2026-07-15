@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Empty, PullRefresh } from 'react-vant';
 import { useAuthStore } from '../../stores/auth';
 import { fetchTasks, type TaskItem } from '../../api/task';
+import { mobileCacheKeys } from '../../utils/mobileCacheKeys';
+import { useCachedResource } from '../../utils/useCachedResource';
 import './home.css';
 
 const STATUS_TEXT: Record<string, string> = {
@@ -19,28 +21,26 @@ const STATUS_TEXT: Record<string, string> = {
 export default function HomePage() {
   const navigate = useNavigate();
   const { currentSite, user } = useAuthStore();
-  const [tasks, setTasks] = useState<TaskItem[]>([]);
-  const [stats, setStats] = useState({ pending: 0, inProgress: 0, done: 0 });
-
   const profileIncomplete = !user?.realName?.trim() || !user?.phone?.trim();
 
-  const load = useCallback(async () => {
-    const res = await fetchTasks({
+  const loader = useCallback(() => fetchTasks({
       page: 1,
       limit: 20,
       siteId: currentSite?.id,
-    });
-    setTasks(res.list);
-    setStats({
-      pending: res.list.filter((t) => t.status === 'pending').length,
-      inProgress: res.list.filter((t) => t.status === 'in_progress').length,
-      done: res.list.filter((t) => ['submitted', 'approved'].includes(t.status)).length,
-    });
-  }, [currentSite?.id]);
-
-  useEffect(() => {
-    load().catch(() => undefined);
-  }, [load]);
+    }), [currentSite?.id]);
+  const { data, loading, error, reload } = useCachedResource(
+    mobileCacheKeys.homeTasks(user?.id, currentSite?.id),
+    loader,
+  );
+  const tasks: TaskItem[] = useMemo(() => data?.list || [], [data]);
+  const stats = useMemo(() => ({
+    pending: tasks.filter((t) => t.status === 'pending').length,
+    inProgress: tasks.filter((t) => t.status === 'in_progress').length,
+    done: tasks.filter((t) => ['submitted', 'approved'].includes(t.status)).length,
+  }), [tasks]);
+  const load = useCallback(async () => {
+    await reload();
+  }, [reload]);
 
   return (
     <div className="page-home">
@@ -71,11 +71,17 @@ export default function HomePage() {
               <div><small>{new Date().getHours() < 12 ? '早上好' : new Date().getHours() < 18 ? '下午好' : '晚上好'}</small><h2>{user?.realName || user?.username}</h2></div>
               <span>{new Date().toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}</span>
             </div>
-            <div className="home-stats">
-              <div><b>{stats.pending}</b><span>待办任务</span></div>
-              <div><b>{stats.inProgress}</b><span>进行中</span></div>
-              <div><b>{stats.done}</b><span>已完成</span></div>
-            </div>
+            {loading || data === undefined ? (
+              <div className="home-stats home-stats--loading" aria-label="正在加载任务统计">
+                <i /><i /><i />
+              </div>
+            ) : (
+              <div className="home-stats">
+                <div><b>{stats.pending}</b><span>待办任务</span></div>
+                <div><b>{stats.inProgress}</b><span>进行中</span></div>
+                <div><b>{stats.done}</b><span>已完成</span></div>
+              </div>
+            )}
             <button type="button" className="home-start" onClick={() => navigate('/m/start')}>
               <span className="home-start__icon">✓</span>
               <span><b>开始巡检</b><small>执行待办任务，或临时新建巡检</small></span>
@@ -88,7 +94,15 @@ export default function HomePage() {
             <button type="button" onClick={() => navigate('/m/tasks')}>全部 ›</button>
           </div>
 
-          {tasks.length === 0 ? (
+          {loading ? (
+            <div className="mobile-list-skeleton" aria-label="正在加载任务">
+              <i /><i /><i />
+            </div>
+          ) : error && data === undefined ? (
+            <button type="button" className="mobile-load-error" onClick={() => void load()}>
+              数据暂时没有加载成功，点击重试
+            </button>
+          ) : tasks.length === 0 ? (
             <div className="home-empty"><Empty description="暂无任务，可点击「开始巡检」" /></div>
           ) : (
             <div className="home-task-list">

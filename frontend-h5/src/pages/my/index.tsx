@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback } from 'react';
 
 import { useNavigate } from 'react-router-dom';
 
@@ -7,6 +7,8 @@ import { NavBar, Cell, Button, Dialog, Grid, Empty } from 'react-vant';
 import { useAuthStore } from '../../stores/auth';
 
 import { fetchInspectorSummary, type InspectorSummary } from '../../api/stats';
+import { mobileCacheKeys } from '../../utils/mobileCacheKeys';
+import { useCachedResource } from '../../utils/useCachedResource';
 
 
 
@@ -18,19 +20,14 @@ export default function MyPage() {
 
   const { user, currentSite, logout } = useAuthStore();
 
-  const [summary, setSummary] = useState<InspectorSummary | null>(null);
-
-
-
-  useEffect(() => {
-
-    fetchInspectorSummary(currentSite?.id)
-
-      .then(setSummary)
-
-      .catch(() => undefined);
-
-  }, [currentSite?.id]);
+  const loader = useCallback(
+    () => fetchInspectorSummary(currentSite?.id),
+    [currentSite?.id],
+  );
+  const { data: summary, loading, error, reload } = useCachedResource<InspectorSummary>(
+    mobileCacheKeys.inspectorSummary(user?.id, currentSite?.id),
+    loader,
+  );
 
 
 
@@ -140,7 +137,15 @@ export default function MyPage() {
 
         <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>本月统计</div>
 
-        {month ? (
+        {loading ? (
+          <div className="mobile-summary-skeleton" aria-label="正在加载本月统计">
+            <i /><i /><i />
+          </div>
+        ) : error && !summary ? (
+          <button type="button" className="mobile-load-error" onClick={() => void reload()}>
+            统计暂时没有加载成功，点击重试
+          </button>
+        ) : month ? (
 
           <Grid columnNum={3} border={false}>
 
@@ -187,4 +192,3 @@ export default function MyPage() {
   );
 
 }
-
