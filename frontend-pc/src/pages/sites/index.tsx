@@ -141,10 +141,20 @@ export default function SitesPage() {
 
   const openAppoint = async (record: SiteItem) => {
     setAppointSite(record);
-    setManagerId(record.managerId || undefined);
-    const res = await fetchUsers({ role: 'site_manager', status: 'active', limit: 100 });
-    const insp = await fetchUsers({ role: 'inspector', status: 'active', limit: 100 });
-    setManagers([...res.list, ...insp.list]);
+    const res = await fetchUsers({ status: 'active', limit: 100 });
+    const candidates = res.list.filter((user) => {
+      const roles = user.roles?.length ? user.roles : [user.role];
+      return (
+        !roles.includes('super_admin') &&
+        (roles.includes('site_manager') || roles.includes('inspector'))
+      );
+    });
+    setManagers(candidates);
+    setManagerId(
+      record.managerId && candidates.some((user) => user.id === record.managerId)
+        ? record.managerId
+        : undefined,
+    );
     setAppointOpen(true);
   };
 
@@ -380,10 +390,13 @@ export default function SitesPage() {
           value={managerId}
           onChange={setManagerId}
           optionFilterProp="label"
-          options={managers.map((m) => ({
-            value: m.id,
-            label: `${m.realName}（${m.username} / ${m.role === 'inspector' ? '巡检员' : '站长'}）`,
-          }))}
+          options={managers.map((m) => {
+            const roles = m.roles?.length ? m.roles : [m.role];
+            return {
+              value: m.id,
+              label: `${m.realName}（${m.username} / ${roles.includes('site_manager') ? '站长' : '巡检员'}）`,
+            };
+          })}
         />
       </Modal>
 

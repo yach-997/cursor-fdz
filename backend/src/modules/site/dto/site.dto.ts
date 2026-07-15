@@ -3,7 +3,6 @@ import {
   IsNotEmpty,
   IsOptional,
   IsNumber,
-  IsUUID,
   IsEnum,
   IsLatitude,
   IsLongitude,
@@ -11,6 +10,7 @@ import {
 import { Type } from 'class-transformer';
 import { CommonStatus } from '../../../common/enums';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
+import { IsPostgresUuid } from '../../../common/decorators/postgres-uuid.decorator';
 
 /** 创建站点 DTO */
 export class CreateSiteDto {
@@ -49,7 +49,7 @@ export class CreateSiteDto {
   longitude: number;
 
   @IsOptional()
-  @IsUUID('4', { message: '站长ID格式不正确' })
+  @IsPostgresUuid({ message: '站长ID格式不正确' })
   managerId?: string;
 }
 
@@ -90,7 +90,7 @@ export class UpdateSiteDto {
   longitude?: number;
 
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   managerId?: string | null;
 
   @IsOptional()
@@ -109,7 +109,7 @@ export class QuerySiteDto extends PaginationDto {
   city?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   managerId?: string;
 
   @IsOptional()
@@ -123,21 +123,21 @@ export class QuerySiteDto extends PaginationDto {
 
 /** 任命正站长 DTO */
 export class AppointManagerDto {
-  @IsUUID('4', { message: '用户ID格式不正确' })
+  @IsPostgresUuid({ message: '用户ID格式不正确' })
   @IsNotEmpty()
   userId: string;
 }
 
 /** 任命副站长 DTO */
 export class AppointDeputyDto {
-  @IsUUID('4', { message: '用户ID格式不正确' })
+  @IsPostgresUuid({ message: '用户ID格式不正确' })
   @IsNotEmpty()
   userId: string;
 }
 
 /** 聘用巡检员 DTO（同一巡检员可加入多个站点） */
 export class AddMemberDto {
-  @IsUUID('4', { message: '用户ID格式不正确' })
+  @IsPostgresUuid({ message: '用户ID格式不正确' })
   @IsNotEmpty()
   userId: string;
 }

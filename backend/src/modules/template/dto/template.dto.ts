@@ -4,7 +4,6 @@ import {
   IsOptional,
   IsEnum,
   IsBoolean,
-  Matches,
   IsArray,
   ValidateNested,
   IsNumber,
@@ -13,10 +12,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { DeviceType, CheckType } from '../../../common/enums';
-
-// PostgreSQL 接受任意十六进制 UUID；历史种子数据并不都满足 RFC v4 的 variant 位。
-const POSTGRES_UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { IsPostgresUuid } from '../../../common/decorators/postgres-uuid.decorator';
 
 /** 模板条目 DTO */
 export class TemplateEntryDto {
@@ -68,7 +64,7 @@ export class CreateTemplateDto {
   isGlobal: boolean;
 
   @IsOptional()
-  @Matches(POSTGRES_UUID_PATTERN, { message: 'siteId must be a UUID' })
+  @IsPostgresUuid({ message: 'siteId must be a UUID' })
   siteId?: string | null;
 }
 
@@ -93,7 +89,7 @@ export class UpdateTemplateDto {
   isGlobal?: boolean;
 
   @IsOptional()
-  @Matches(POSTGRES_UUID_PATTERN, { message: 'siteId must be a UUID' })
+  @IsPostgresUuid({ message: 'siteId must be a UUID' })
   siteId?: string | null;
 }
 
@@ -104,12 +100,12 @@ export class QueryTemplateDto {
   deviceType?: DeviceType;
 
   @IsOptional()
-  @Matches(POSTGRES_UUID_PATTERN, { message: 'siteId must be a UUID' })
+  @IsPostgresUuid({ message: 'siteId must be a UUID' })
   siteId?: string;
 }
 
 /** 克隆模板到站点 */
 export class CloneTemplateDto {
-  @Matches(POSTGRES_UUID_PATTERN, { message: 'siteId must be a UUID' })
+  @IsPostgresUuid({ message: 'siteId must be a UUID' })
   siteId: string;
 }
