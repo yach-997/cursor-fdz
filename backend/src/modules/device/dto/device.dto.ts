@@ -3,15 +3,15 @@ import {
   IsNotEmpty,
   IsOptional,
   IsEnum,
-  IsUUID,
   IsDateString,
 } from 'class-validator';
 import { DeviceType, DeviceStatus } from '../../../common/enums';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
+import { IsPostgresUuid } from '../../../common/decorators/postgres-uuid.decorator';
 
 /** 创建设备 DTO */
 export class CreateDeviceDto {
-  @IsUUID('4', { message: '站点ID格式不正确' })
+  @IsPostgresUuid({ message: '站点ID格式不正确' })
   siteId: string;
 
   @IsString()
@@ -37,7 +37,7 @@ export class CreateDeviceDto {
 /** 更新设备 DTO */
 export class UpdateDeviceDto {
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   siteId?: string;
 
   @IsOptional()
@@ -68,7 +68,7 @@ export class UpdateDeviceDto {
 /** 设备查询 DTO */
 export class QueryDeviceDto extends PaginationDto {
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   siteId?: string;
 
   @IsOptional()

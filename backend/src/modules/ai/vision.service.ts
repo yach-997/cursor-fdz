@@ -26,6 +26,14 @@ export class VisionService {
   ): Promise<VisionCompareResult> {
     const apiKey = (this.config.get<string>('VISION_API_KEY') || '').trim();
     if (!apiKey) {
+      if (process.env.NODE_ENV === 'production') {
+        return {
+          status: CheckResult.ERROR,
+          confidence: 0,
+          reason: '视觉 AI 服务未配置，已转人工审核',
+          provider: 'mock',
+        };
+      }
       return this.mockResult(samplePhotoUrls);
     }
 

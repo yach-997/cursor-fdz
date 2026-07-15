@@ -10,6 +10,9 @@ function AppBootstrap() {
   const hydrate = useAuthStore((s) => s.hydrate);
   useEffect(() => {
     hydrate();
+    if ('caches' in window) {
+      void window.caches.delete('api-cache');
+    }
   }, [hydrate]);
   return (
     <>

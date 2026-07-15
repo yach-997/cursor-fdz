@@ -69,7 +69,6 @@ export default function SitesPage() {
             <br />
             若刚完成聘用，请点下方「刷新列表」。
             <br />
-            已聘账号示例：xcy002 / 123456
           </div>
           <div style={{ marginTop: 20, padding: '0 12px' }}>
             <Button

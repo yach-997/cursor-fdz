@@ -151,11 +151,16 @@ export class RecordService {
     // 审核队列：在结果集上再筛不合格；历史用数据库分页
     if (query.scope === 'audit') {
       const all = await qb.getMany();
-      const failed = all.filter((r) => this.hasAiFail(r.entries));
-      const total = failed.length;
-      const pageList = failed.slice((page - 1) * limit, page * limit);
-      const enriched = await Promise.all(pageList.map((r) => this.toDetail(r)));
-      return { list: enriched, total, page, limit };
+      const details = await Promise.all(all.map((r) => this.toDetail(r)));
+      const pendingAudit = details.filter(
+        (r) =>
+          r.task?.aiEnabled === false ||
+          (r.aiSummary?.fail || 0) > 0 ||
+          (r.aiSummary?.error || 0) > 0,
+      );
+      const total = pendingAudit.length;
+      const list = pendingAudit.slice((page - 1) * limit, page * limit);
+      return { list, total, page, limit };
     }
 
     qb.skip((page - 1) * limit).take(limit);
@@ -319,7 +324,21 @@ export class RecordService {
     const fail = this.hasAiFail(record.entries);
     const pending = this.hasAiPending(record.entries);
 
-    if (fail) {
+    if (task.aiEnabled === false) {
+      record.status = RecordStatus.SUBMITTED;
+      task.status = TaskStatus.SUBMITTED;
+      this.pushTrail(record, {
+        action: isResubmit ? 'resubmitted' : 'submitted',
+        at: new Date().toISOString(),
+        by: currentUser.id,
+        byName: currentUser.realName,
+        summary: isResubmit
+          ? '驳回后重新提交，等待管理员人工审核'
+          : '已提交，该任务未启用 AI，进入人工审核',
+        reason: prevReject?.reason,
+        entryIds: prevReject?.entryIds,
+      });
+    } else if (fail) {
       record.status = RecordStatus.SUBMITTED;
       task.status = TaskStatus.SUBMITTED;
       this.pushTrail(record, {
@@ -492,7 +511,7 @@ export class RecordService {
     // 已提交且 AI 全部落定：合格自动通过，不合格留在审核队列
     if (record.status === RecordStatus.SUBMITTED && !this.hasAiPending(record.entries)) {
       const task = await this.getTaskOrThrow(record.taskId);
-      if (!this.hasAiFail(record.entries)) {
+      if (!this.hasAiFail(record.entries) && !this.hasAiError(record.entries)) {
         record.status = RecordStatus.APPROVED;
         record.approvedAt = new Date();
         this.pushTrail(record, {
@@ -506,7 +525,9 @@ export class RecordService {
         this.pushTrail(record, {
           action: 'submitted',
           at: new Date().toISOString(),
-          summary: 'AI 分析完成，存在不合格项，待管理员审核',
+          summary: this.hasAiError(record.entries)
+            ? 'AI 分析异常，已转管理员人工审核'
+            : 'AI 分析完成，存在不合格项，待管理员审核',
         });
       }
     }
@@ -549,21 +570,27 @@ export class RecordService {
   private hasAiPending(entries: RecordEntry[]) {
     return entries.some((e) => {
       const st = e.aiResult?.status;
-      return !st || st === CheckResult.PENDING || st === CheckResult.ERROR;
+      return !st || st === CheckResult.PENDING;
     });
+  }
+
+  private hasAiError(entries: RecordEntry[]) {
+    return entries.some((e) => e.aiResult?.status === CheckResult.ERROR);
   }
 
   private aiSummary(entries: RecordEntry[]) {
     let pass = 0;
     let fail = 0;
     let pending = 0;
+    let error = 0;
     for (const e of entries) {
       const st = e.finalResult || e.aiResult?.status;
       if (st === CheckResult.FAIL) fail += 1;
       else if (st === CheckResult.PASS) pass += 1;
+      else if (st === CheckResult.ERROR) error += 1;
       else pending += 1;
     }
-    return { pass, fail, pending };
+    return { pass, fail, pending, error };
   }
 
   private async toDetail(record: InspectionRecord, task?: InspectionTask) {
@@ -582,7 +609,9 @@ export class RecordService {
       rejectReason: record.rejectReason,
       auditTrail: record.auditTrail || [],
       aiSummary: ai,
-      needsAudit: record.status === RecordStatus.SUBMITTED && ai.fail > 0,
+      needsAudit:
+        record.status === RecordStatus.SUBMITTED &&
+        (t?.aiEnabled === false || ai.fail > 0 || ai.error > 0),
       createdAt: record.createdAt,
       task: t
         ? {

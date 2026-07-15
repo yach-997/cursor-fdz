@@ -3,24 +3,24 @@ import {
   IsDateString,
   IsOptional,
   IsString,
-  IsUUID,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 import { CheckResult, RecordStatus } from '../../../common/enums';
+import { IsPostgresUuid } from '../../../common/decorators/postgres-uuid.decorator';
 
 export class QueryRecordDto extends PaginationDto {
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   siteId?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   deviceId?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   inspectorId?: string;
 
   @IsOptional()
@@ -68,7 +68,7 @@ export class SubmitRecordDto {
 }
 
 export class CreateRecordDto {
-  @IsUUID()
+  @IsPostgresUuid()
   taskId: string;
 }
 
@@ -108,4 +108,3 @@ export class RejectRecordDto {
   @IsString({ each: true })
   entryIds?: string[];
 }
-

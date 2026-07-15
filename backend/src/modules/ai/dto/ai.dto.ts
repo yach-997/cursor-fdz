@@ -1,7 +1,8 @@
-import { IsArray, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsArray, IsOptional, IsString } from 'class-validator';
+import { IsPostgresUuid } from '../../../common/decorators/postgres-uuid.decorator';
 
 export class AnalyzeDto {
-  @IsUUID()
+  @IsPostgresUuid()
   recordId: string;
 
   @IsString()

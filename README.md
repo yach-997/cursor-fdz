@@ -28,7 +28,7 @@ npm install
 npm run start:dev
 ```
 
-默认超级管理员：`admin` / `admin123`
+本地开发默认超级管理员：`admin` / `admin123`。生产环境必须显式配置 `ADMIN_PASSWORD`。
 
 ### 3. PC 管理端
 

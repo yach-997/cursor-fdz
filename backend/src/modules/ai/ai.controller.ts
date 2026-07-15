@@ -21,8 +21,9 @@ export class AiController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   async getResult(
     @Param('templateEntryId') templateEntryId: string,
+    @CurrentUser() user: CurrentUserContext,
     @Query('recordId') recordId?: string,
   ) {
-    return this.aiService.getResult(templateEntryId, recordId);
+    return this.aiService.getResult(templateEntryId, recordId, user);
   }
 }

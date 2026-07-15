@@ -76,7 +76,6 @@ export default function LoginPage() {
           </div>
           <h1>光伏储能巡检系统</h1>
           <p>H5 巡检端（须具备巡检员角色并已聘到站点）</p>
-          <p style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>演示：xcy002 / 123456</p>
         </div>
 
         <div className="h5-login-card">

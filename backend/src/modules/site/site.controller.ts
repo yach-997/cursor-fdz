@@ -7,7 +7,6 @@ import {
   Body,
   Param,
   Query,
-  ParseUUIDPipe,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
@@ -24,6 +23,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '../../common/enums';
 import { CurrentUserContext } from '../../common/interfaces';
+import { ParsePostgresUuidPipe } from '../../common/pipes/parse-postgres-uuid.pipe';
 
 /** 站点管理控制器 */
 @Controller('sites')
@@ -48,7 +48,7 @@ export class SiteController {
   @Get(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   async findOne(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.siteService.findOne(id, user);
@@ -58,7 +58,7 @@ export class SiteController {
   @Put(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async update(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @Body() dto: UpdateSiteDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
@@ -69,7 +69,7 @@ export class SiteController {
   @Delete(':id')
   @Roles(UserRole.SUPER_ADMIN)
   @HttpCode(HttpStatus.OK)
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
+  async remove(@Param('id', ParsePostgresUuidPipe) id: string) {
     return this.siteService.remove(id);
   }
 
@@ -77,7 +77,7 @@ export class SiteController {
   @Post(':id/appoint-manager')
   @Roles(UserRole.SUPER_ADMIN)
   async appointManager(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @Body() dto: AppointManagerDto,
   ) {
     return this.siteService.appointManager(id, dto);
@@ -87,7 +87,7 @@ export class SiteController {
   @Post(':id/deputies')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async appointDeputy(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @Body() dto: AppointDeputyDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
@@ -99,8 +99,8 @@ export class SiteController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   @HttpCode(HttpStatus.OK)
   async removeDeputy(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
+    @Param('userId', ParsePostgresUuidPipe) userId: string,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.siteService.removeDeputy(id, userId, user);
@@ -110,7 +110,7 @@ export class SiteController {
   @Get(':id/members')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async getMembers(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @Query('role') role: string | undefined,
     @CurrentUser() user: CurrentUserContext,
   ) {
@@ -121,7 +121,7 @@ export class SiteController {
   @Post(':id/members')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async addMember(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @Body() dto: AddMemberDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
@@ -133,8 +133,8 @@ export class SiteController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   @HttpCode(HttpStatus.OK)
   async removeMember(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
+    @Param('userId', ParsePostgresUuidPipe) userId: string,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.siteService.removeMember(id, userId, user);

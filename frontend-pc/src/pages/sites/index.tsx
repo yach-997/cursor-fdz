@@ -38,9 +38,11 @@ import { fetchUsers } from '../../api/user';
 import type { SiteItem, UserInfo } from '../../types';
 import SiteFormModal from './SiteFormModal';
 import { composeFullAddress } from '../../utils/addressParse';
+import { useAuthStore } from '../../stores/auth';
 
 /** 站点管理：正站长 / 多副站长 / 多巡检员（巡检员可跨站） */
 export default function SitesPage() {
+  const isAdmin = useAuthStore((state) => state.user?.role === 'super_admin');
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<SiteItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -274,17 +276,21 @@ export default function SitesPage() {
           <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(record)}>
             编辑
           </Button>
-          <Button type="link" icon={<UserSwitchOutlined />} onClick={() => openAppoint(record)}>
-            正站长
-          </Button>
+          {isAdmin && (
+            <Button type="link" icon={<UserSwitchOutlined />} onClick={() => openAppoint(record)}>
+              正站长
+            </Button>
+          )}
           <Button type="link" icon={<TeamOutlined />} onClick={() => void openStaff(record)}>
             人员
           </Button>
-          <Popconfirm title="确认删除该站点？有设备时将失败" onConfirm={() => onDelete(record.id)}>
-            <Button type="link" danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
-          </Popconfirm>
+          {isAdmin && (
+            <Popconfirm title="确认删除该站点？有设备时将失败" onConfirm={() => onDelete(record.id)}>
+              <Button type="link" danger icon={<DeleteOutlined />}>
+                删除
+              </Button>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -340,9 +346,11 @@ export default function SitesPage() {
             { value: 'inactive', label: '停用' },
           ]}
         />
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          新增站点
-        </Button>
+        {isAdmin && (
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+            新增站点
+          </Button>
+        )}
       </Space>
 
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>

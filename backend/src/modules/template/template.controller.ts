@@ -7,7 +7,6 @@ import {
   Body,
   Param,
   Query,
-  ParseUUIDPipe,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
@@ -22,6 +21,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '../../common/enums';
 import { CurrentUserContext } from '../../common/interfaces';
+import { ParsePostgresUuidPipe } from '../../common/pipes/parse-postgres-uuid.pipe';
 
 /** 巡检模板控制器 */
 @Controller('templates')
@@ -43,7 +43,7 @@ export class TemplateController {
   @Get(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   async findOne(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.templateService.findOne(id, user);
@@ -52,7 +52,7 @@ export class TemplateController {
   @Put(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async update(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @Body() dto: UpdateTemplateDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
@@ -63,7 +63,7 @@ export class TemplateController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   @HttpCode(HttpStatus.OK)
   async remove(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.templateService.remove(id, user);
@@ -72,7 +72,7 @@ export class TemplateController {
   @Post(':id/clone')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async clone(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @Body() dto: CloneTemplateDto,
     @CurrentUser() user: CurrentUserContext,
   ) {

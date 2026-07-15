@@ -17,7 +17,7 @@ export const menuConfig: MenuConfig[] = [
     path: '/sites',
     label: '站点管理',
     icon: 'EnvironmentOutlined',
-    roles: ['super_admin'],
+    roles: ['super_admin', 'site_manager'],
   },
   {
     key: 'users',

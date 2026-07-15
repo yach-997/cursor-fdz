@@ -6,7 +6,6 @@ import {
   Body,
   Param,
   Query,
-  ParseUUIDPipe,
   HttpCode,
   HttpStatus,
   OnModuleInit,
@@ -21,6 +20,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '../../common/enums';
 import { CurrentUserContext } from '../../common/interfaces';
+import { ParsePostgresUuidPipe } from '../../common/pipes/parse-postgres-uuid.pipe';
 
 /** 预警中心 API */
 @Controller('alerts')
@@ -59,7 +59,7 @@ export class AlertController implements OnModuleInit {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   @HttpCode(HttpStatus.OK)
   async resolve(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.alertService.resolve(id, user);

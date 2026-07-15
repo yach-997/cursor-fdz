@@ -127,10 +127,19 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  async getResult(templateEntryId: string, recordId?: string) {
-    const key = recordId
-      ? `${RESULT_PREFIX}${recordId}:${templateEntryId}`
-      : `${RESULT_PREFIX}${templateEntryId}`;
+  async getResult(
+    templateEntryId: string,
+    recordId: string | undefined,
+    currentUser: CurrentUserContext,
+  ) {
+    if (!recordId) throw new BadRequestException('请指定巡检记录');
+    const record = await this.recordRepo.findOne({ where: { id: recordId } });
+    if (!record) throw new NotFoundException('巡检记录不存在');
+    const task = await this.taskRepo.findOne({ where: { id: record.taskId } });
+    if (!task) throw new NotFoundException('任务不存在');
+    this.assertAccess(task, currentUser);
+
+    const key = `${RESULT_PREFIX}${recordId}:${templateEntryId}`;
 
     if (this.redis.isReady) {
       const raw = await this.redis.get(key);

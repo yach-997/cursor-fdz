@@ -7,7 +7,6 @@ import {
   Body,
   Param,
   Query,
-  ParseUUIDPipe,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
@@ -22,6 +21,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '../../common/enums';
 import { CurrentUserContext } from '../../common/interfaces';
+import { ParsePostgresUuidPipe } from '../../common/pipes/parse-postgres-uuid.pipe';
 
 /** 巡检任务控制器 */
 @Controller('tasks')
@@ -44,7 +44,7 @@ export class TaskController {
   @Get(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   async findOne(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.taskService.findOne(id, user);
@@ -54,7 +54,7 @@ export class TaskController {
   @Put(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async update(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @Body() dto: UpdateTaskDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
@@ -65,7 +65,7 @@ export class TaskController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   @HttpCode(HttpStatus.OK)
   async start(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.taskService.start(id, user);
@@ -76,7 +76,7 @@ export class TaskController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   @HttpCode(HttpStatus.OK)
   async remove(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.taskService.remove(id, user);
@@ -87,7 +87,7 @@ export class TaskController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   @HttpCode(HttpStatus.OK)
   async removeByPut(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.taskService.remove(id, user);
@@ -98,7 +98,7 @@ export class TaskController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   @HttpCode(HttpStatus.OK)
   async archive(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.taskService.archive(id, user);
@@ -108,7 +108,7 @@ export class TaskController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   @HttpCode(HttpStatus.OK)
   async cancel(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.taskService.archive(id, user);
@@ -118,7 +118,7 @@ export class TaskController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   @HttpCode(HttpStatus.OK)
   async reassign(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @Body() dto: ReassignTaskDto,
     @CurrentUser() user: CurrentUserContext,
   ) {

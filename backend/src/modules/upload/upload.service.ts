@@ -112,7 +112,7 @@ export class UploadService {
       try {
         const resp = await fetch(url, {
           signal: AbortSignal.timeout(15_000),
-          redirect: 'follow',
+          redirect: 'error',
         });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const contentType = (resp.headers.get('content-type') || 'image/jpeg')

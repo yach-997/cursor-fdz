@@ -6,7 +6,6 @@ import {
   Body,
   Param,
   Query,
-  ParseUUIDPipe,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
@@ -22,6 +21,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '../../common/enums';
 import { CurrentUserContext } from '../../common/interfaces';
+import { ParsePostgresUuidPipe } from '../../common/pipes/parse-postgres-uuid.pipe';
 
 /** 巡检记录：进度保存 / 提交 / 审核 */
 @Controller('records')
@@ -38,7 +38,7 @@ export class RecordController {
   @Get('device/:deviceId/compare')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async compare(
-    @Param('deviceId', ParseUUIDPipe) deviceId: string,
+    @Param('deviceId', ParsePostgresUuidPipe) deviceId: string,
     @Query('record_ids') recordIds: string,
     @CurrentUser() user: CurrentUserContext,
   ) {
@@ -52,7 +52,7 @@ export class RecordController {
   @Get(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   async findOne(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.recordService.findOne(id, user);
@@ -68,7 +68,7 @@ export class RecordController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   @HttpCode(HttpStatus.OK)
   async saveDraft(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @Body() dto: SaveDraftDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
@@ -79,7 +79,7 @@ export class RecordController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   @HttpCode(HttpStatus.OK)
   async submit(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @Body() dto: SubmitRecordDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
@@ -90,7 +90,7 @@ export class RecordController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   @HttpCode(HttpStatus.OK)
   async approve(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.recordService.approve(id, user);
@@ -100,7 +100,7 @@ export class RecordController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   @HttpCode(HttpStatus.OK)
   async reject(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @Body() dto: RejectRecordDto,
     @CurrentUser() user: CurrentUserContext,
   ) {

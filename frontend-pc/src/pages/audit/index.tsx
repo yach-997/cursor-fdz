@@ -38,7 +38,7 @@ const TRAIL_LABEL: Record<string, string> = {
   reopened: '返工打开',
 };
 
-/** 报告审核：只看待审的 AI 不合格报告 + 已驳回；通过历史追溯链 */
+/** 报告审核：AI 不合格报告与未启用 AI 的人工审核报告 */
 export default function AuditPage() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<RecordItem[]>([]);
@@ -112,10 +112,16 @@ export default function AuditPage() {
       width: 140,
     },
     {
-      title: 'AI 不合格',
-      width: 110,
+      title: '审核类型',
+      width: 220,
       render: (_, row) => (
-        <Tag color="error">{row.aiSummary?.fail ?? '-'} 项</Tag>
+        row.task?.aiEnabled === false ? (
+          <Tag color="orange">人工审核</Tag>
+        ) : (row.aiSummary?.error || 0) > 0 ? (
+          <Tag color="warning">AI 异常 {row.aiSummary?.error} 项（人工审核）</Tag>
+        ) : (
+          <Tag color="error">AI 不合格 {row.aiSummary?.fail ?? '-'} 项</Tag>
+        )
       ),
     },
     {

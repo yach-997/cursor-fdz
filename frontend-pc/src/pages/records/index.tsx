@@ -393,8 +393,8 @@ export default function RecordsPage() {
               </Tag>
               {detail.aiSummary ? (
                 <Tag style={{ marginLeft: 8 }}>
-                  AI 合格 {detail.aiSummary.pass} / 不合格 {detail.aiSummary.fail} / 分析中{' '}
-                  {detail.aiSummary.pending}
+                  AI 合格 {detail.aiSummary.pass} / 不合格 {detail.aiSummary.fail} / 异常{' '}
+                  {detail.aiSummary.error ?? 0} / 分析中 {detail.aiSummary.pending}
                 </Tag>
               ) : null}
             </div>

@@ -123,6 +123,22 @@ export class TemplateService {
     if (dto.name !== undefined) tpl.name = dto.name;
     if (dto.deviceType !== undefined) tpl.deviceType = dto.deviceType;
 
+    const nextIsGlobal = dto.isGlobal ?? tpl.isGlobal;
+    const nextSiteId = nextIsGlobal ? null : (dto.siteId ?? tpl.siteId);
+    if (nextIsGlobal) {
+      if (currentUser.role !== UserRole.SUPER_ADMIN) {
+        throw new ForbiddenException('仅超级管理员可将模板设为全局');
+      }
+    } else {
+      if (!nextSiteId) {
+        throw new BadRequestException('站点自定义模板必须指定 siteId');
+      }
+      this.assertSiteAccess(nextSiteId, currentUser);
+      await this.ensureSite(nextSiteId);
+    }
+    tpl.isGlobal = nextIsGlobal;
+    tpl.siteId = nextSiteId;
+
     tpl.version = (tpl.version || 1) + 1;
     const saved = await this.templateRepo.save(tpl);
     return this.toSafe(saved);

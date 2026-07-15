@@ -6,7 +6,6 @@ import {
   Body,
   Param,
   Query,
-  ParseUUIDPipe,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
@@ -23,6 +22,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '../../common/enums';
 import { CurrentUserContext } from '../../common/interfaces';
+import { ParsePostgresUuidPipe } from '../../common/pipes/parse-postgres-uuid.pipe';
 
 /** 用户/人才池控制器 */
 @Controller('users')
@@ -54,7 +54,7 @@ export class UserController {
   @Put(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async update(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @Body() dto: UpdateUserDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
@@ -65,7 +65,7 @@ export class UserController {
   @Put(':id/status')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async updateStatus(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @Body() dto: UpdateUserStatusDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
@@ -77,7 +77,7 @@ export class UserController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   @HttpCode(HttpStatus.OK)
   async resetPassword(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParsePostgresUuidPipe) id: string,
     @Body() dto: ResetPasswordDto,
     @CurrentUser() user: CurrentUserContext,
   ) {

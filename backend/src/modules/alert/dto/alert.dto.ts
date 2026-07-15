@@ -1,10 +1,11 @@
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 import { AlertStatus } from '../../../entities/alert.entity';
+import { IsPostgresUuid } from '../../../common/decorators/postgres-uuid.decorator';
 
 export class QueryAlertDto extends PaginationDto {
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   siteId?: string;
 
   @IsOptional()
@@ -13,7 +14,7 @@ export class QueryAlertDto extends PaginationDto {
 }
 
 export class UpsertAlertConfigDto {
-  @IsUUID()
+  @IsPostgresUuid()
   siteId: string;
 
   @IsOptional()
@@ -44,6 +45,6 @@ export class UpsertAlertConfigDto {
 
 export class QueryAlertConfigDto {
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   siteId?: string;
 }

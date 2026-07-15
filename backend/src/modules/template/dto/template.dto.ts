@@ -6,7 +6,6 @@ import {
   IsBoolean,
   IsArray,
   ValidateNested,
-  IsNumber,
   IsInt,
   Min,
 } from 'class-validator';

@@ -4,7 +4,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import {
   Site,
   Device,
@@ -239,10 +239,19 @@ export class StatsService {
       });
     }
 
-    const sheet = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 提示: '暂无数据' }]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, sheet, '巡检记录');
-    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('巡检记录');
+    const data = rows.length ? rows : [{ 提示: '暂无数据' }];
+    const headers = Object.keys(data[0]);
+    worksheet.columns = headers.map((header) => ({
+      header,
+      key: header,
+      width: Math.max(12, Math.min(36, header.length * 2 + 4)),
+    }));
+    worksheet.addRows(data);
+    worksheet.getRow(1).font = { bold: true };
+    const output = await workbook.xlsx.writeBuffer();
+    return Buffer.from(output);
   }
 
   /** 巡检员个人统计（H5 我的页） */

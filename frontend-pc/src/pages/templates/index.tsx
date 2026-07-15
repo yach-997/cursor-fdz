@@ -105,13 +105,13 @@ export default function TemplatesPage() {
     setModalOpen(true);
   };
 
-  const moveEntry = (index: number, dir: -1 | 1) => {
+  const moveEntry = useCallback((index: number, dir: -1 | 1) => {
     const next = [...entries];
     const target = index + dir;
     if (target < 0 || target >= next.length) return;
     [next[index], next[target]] = [next[target], next[index]];
     setEntries(next.map((e, i) => ({ ...e, order: i })));
-  };
+  }, [entries]);
 
   const submit = async () => {
     const values = await form.validateFields();
@@ -346,7 +346,7 @@ export default function TemplatesPage() {
         </Button>
       </div>
     ),
-    [entries],
+    [entries, form, moveEntry, sites],
   );
 
   return (

@@ -23,7 +23,7 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import {
   fetchDevices,
   createDevice,
@@ -149,14 +149,28 @@ export default function DevicesPage() {
     return false;
   };
 
-  const downloadTemplate = () => {
-    const sheet = XLSX.utils.aoa_to_sheet([
+  const downloadTemplate = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('devices');
+    worksheet.addRows([
       ['site_code', 'serial_number', 'device_type', 'model', 'manufacturer', 'install_date'],
       ['SITE001', 'SN20260001', 'string_inverter', 'SG110CX', '阳光电源', '2026-01-01'],
     ]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, sheet, 'devices');
-    XLSX.writeFile(wb, '设备导入模板.xlsx');
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.columns.forEach((column) => {
+      column.width = 20;
+    });
+    const output = await workbook.xlsx.writeBuffer();
+    const url = URL.createObjectURL(
+      new Blob([output], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+    );
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = '设备导入模板.xlsx';
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const openHistory = async (id: string) => {

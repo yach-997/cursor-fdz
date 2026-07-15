@@ -4,6 +4,7 @@
   "description": "智能设备巡检系统 - NestJS 后端",
   "scripts": {
     "build": "nest build",
+    "test:smoke": "npm run build && node test/smoke.js",
     "typecheck:vercel": "tsc -p tsconfig.vercel.json",
     "start": "nest start",
     "start:dev": "nest start --watch",
@@ -12,17 +13,18 @@
     "format": "prettier --write \"src/**/*.ts\""
   },
   "dependencies": {
-    "@nestjs/common": "^10.4.15",
-    "@nestjs/config": "^3.3.0",
-    "@nestjs/core": "^10.4.15",
-    "@nestjs/jwt": "^10.2.0",
-    "@nestjs/passport": "^10.0.3",
-    "@nestjs/platform-express": "^10.4.15",
+    "@nestjs/common": "^11.1.28",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/core": "^11.1.28",
+    "@nestjs/jwt": "^11.0.2",
+    "@nestjs/passport": "^11.0.5",
+    "@nestjs/platform-express": "^11.1.28",
     "@nestjs/schedule": "^6.1.3",
-    "@nestjs/typeorm": "^10.0.2",
+    "@nestjs/typeorm": "^11.0.3",
     "bcryptjs": "^2.4.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
+    "exceljs": "^4.4.0",
     "minio": "^8.0.7",
     "multer": "^2.2.0",
     "passport": "^0.7.0",
@@ -34,12 +36,11 @@
     "rxjs": "^7.8.1",
     "sharp": "^0.35.3",
     "typeorm": "^0.3.20",
-    "uuid": "^11.0.3",
-    "xlsx": "^0.18.5"
+    "uuid": "^11.0.3"
   },
   "devDependencies": {
-    "@nestjs/cli": "^10.4.9",
-    "@nestjs/schematics": "^10.2.3",
+    "@nestjs/cli": "^11.0.10",
+    "@nestjs/schematics": "^11.0.7",
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.0",
     "@types/multer": "^2.2.0",
@@ -47,7 +48,6 @@
     "@types/passport-jwt": "^4.0.1",
     "@types/sharp": "^0.31.1",
     "@types/uuid": "^10.0.0",
-    "@types/xlsx": "^0.0.35",
     "@typescript-eslint/eslint-plugin": "^8.18.1",
     "@typescript-eslint/parser": "^8.18.1",
     "eslint": "^9.17.0",
@@ -55,5 +55,10 @@
     "eslint-plugin-prettier": "^5.2.1",
     "prettier": "^3.4.2",
     "typescript": "^5.7.2"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
   }
 }

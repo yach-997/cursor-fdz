@@ -43,6 +43,7 @@ export default function InspectionPage() {
   const cameraRef = useRef<HTMLInputElement>(null);
   const albumRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<number | null>(null);
+  const rejectJumpedRef = useRef(false);
   /** 正在 AI 分析的条目，不阻塞其他条目 */
   const [analyzingIds, setAnalyzingIds] = useState<string[]>([]);
 
@@ -161,15 +162,23 @@ export default function InspectionPage() {
     };
   }, [load]);
 
+  useEffect(() => {
+    rejectJumpedRef.current = false;
+  }, [taskId]);
+
   // 驳回后首次进入：跳到第一个需返工项
   useEffect(() => {
+    if (rejectJumpedRef.current) return;
     if (!task || !record || !entriesTpl.length) return;
     const ids =
       task.record?.rejectReason?.entryIds || record.rejectReason?.entryIds || [];
     if (!ids.length) return;
     const idx = entriesTpl.findIndex((e) => ids.includes(e.id));
-    if (idx >= 0) setStep(idx);
-  }, [task?.id, record?.id]);
+    if (idx >= 0) {
+      rejectJumpedRef.current = true;
+      setStep(idx);
+    }
+  }, [task, record, entriesTpl]);
 
   const patchEntry = (patch: Partial<RecordEntry>) => {
     if (!record || !currentTpl) return;
@@ -395,7 +404,10 @@ export default function InspectionPage() {
     try {
       await Dialog.confirm({
         title: '提交报告',
-        message: '照片已齐。提交后 AI 将在后台继续分析，你可去做其他巡检，稍后再看报告结果。',
+        message:
+          task?.aiEnabled === false
+            ? '照片已齐。提交后将进入管理员人工审核。'
+            : '照片已齐。提交后 AI 将在后台继续分析，你可去做其他巡检，稍后再看报告结果。',
       });
       // 先落库再提交，避免本地有图但服务端未同步
       const saved = await saveDraft(

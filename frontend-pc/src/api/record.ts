@@ -42,7 +42,7 @@ export interface RecordItem {
     entryIds?: string[];
   } | null;
   auditTrail?: AuditTrailEvent[];
-  aiSummary?: { pass: number; fail: number; pending: number };
+  aiSummary?: { pass: number; fail: number; pending: number; error: number };
   needsAudit?: boolean;
   createdAt: string;
   task?: {
@@ -52,6 +52,7 @@ export interface RecordItem {
     deviceId: string;
     inspectorId: string;
     status: string;
+    aiEnabled: boolean;
     templateSnapshot?: Array<{ id: string; name: string; description: string }>;
   };
 }

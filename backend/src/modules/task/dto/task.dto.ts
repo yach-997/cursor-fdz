@@ -3,21 +3,21 @@ import {
   IsNotEmpty,
   IsOptional,
   IsEnum,
-  IsUUID,
   IsBoolean,
   IsDateString,
   ValidateIf,
 } from 'class-validator';
 import { DeviceType, TaskStatus } from '../../../common/enums';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
+import { IsPostgresUuid } from '../../../common/decorators/postgres-uuid.decorator';
 
 /** 创建任务（设备用 deviceId 或 serialNumber 二选一） */
 export class CreateTaskDto {
-  @IsUUID()
+  @IsPostgresUuid()
   siteId: string;
 
   @ValidateIf((o) => !o.serialNumber)
-  @IsUUID()
+  @IsPostgresUuid()
   deviceId?: string;
 
   /** 关联设备序列号（与 deviceId 二选一） */
@@ -34,7 +34,7 @@ export class CreateTaskDto {
    * 巡检员：管理员可指定；巡检员自建时可省略（默认本人）
    */
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   inspectorId?: string;
 
   @IsOptional()
@@ -50,11 +50,11 @@ export class UpdateTaskDto {
   taskName?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   siteId?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   deviceId?: string;
 
   @IsOptional()
@@ -62,7 +62,7 @@ export class UpdateTaskDto {
   serialNumber?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   inspectorId?: string;
 
   @IsOptional()
@@ -73,7 +73,7 @@ export class UpdateTaskDto {
 /** 查询任务 */
 export class QueryTaskDto extends PaginationDto {
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   siteId?: string;
 
   /** 区域关键词：匹配站点省/市/区/名称 */
@@ -94,7 +94,7 @@ export class QueryTaskDto extends PaginationDto {
   statusGroup?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   inspectorId?: string;
 
   /** 创建时间起（含） */
@@ -119,6 +119,6 @@ export class QueryTaskDto extends PaginationDto {
 
 /** 改派巡检员 */
 export class ReassignTaskDto {
-  @IsUUID()
+  @IsPostgresUuid()
   inspectorId: string;
 }

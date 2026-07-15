@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull, In, ILike, FindOptionsWhere } from 'typeorm';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { Device, Site, InspectionTask, InspectionRecord } from '../../entities';
 import { DeviceType, DeviceStatus, UserRole, CommonStatus } from '../../common/enums';
 import { CurrentUserContext } from '../../common/interfaces';
@@ -187,16 +187,31 @@ export class DeviceService {
       throw new BadRequestException('请上传 Excel 文件');
     }
 
-    const workbook = XLSX.read(file.buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    if (!sheetName) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.buffer as unknown as ArrayBuffer);
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) {
       throw new BadRequestException('Excel 文件为空');
     }
 
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
-      workbook.Sheets[sheetName],
-      { defval: '' },
-    );
+    const headers = worksheet.getRow(1).values as ExcelJS.CellValue[];
+    const rows: Record<string, unknown>[] = [];
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const item: Record<string, unknown> = {};
+      for (let column = 1; column < headers.length; column++) {
+        const header = String(headers[column] ?? '').trim();
+        if (!header) continue;
+        const value = row.getCell(column).value;
+        item[header] =
+          value instanceof Date
+            ? value.toISOString().slice(0, 10)
+            : typeof value === 'object' && value && 'text' in value
+              ? value.text
+              : value ?? '';
+      }
+      if (Object.values(item).some((value) => String(value).trim())) rows.push(item);
+    });
 
     if (!rows.length) {
       throw new BadRequestException('Excel 无数据行');

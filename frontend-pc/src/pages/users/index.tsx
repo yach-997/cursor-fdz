@@ -137,8 +137,11 @@ export default function UsersPage() {
     };
     delete payload.role;
     if (editing) {
-      const { username, password, ...rest } = payload;
-      await updateUser(editing.id, rest);
+      const updatePayload = { ...payload };
+      delete updatePayload.username;
+      delete updatePayload.password;
+      if (!isAdmin) delete updatePayload.roles;
+      await updateUser(editing.id, updatePayload);
       message.success('用户已更新');
     } else {
       await createUser(payload);

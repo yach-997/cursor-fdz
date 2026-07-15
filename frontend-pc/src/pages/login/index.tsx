@@ -97,7 +97,6 @@ export default function LoginPage() {
             </Button>
           </Form.Item>
         </Form>
-        <p className="pc-login-hint">默认账号：admin / admin123</p>
       </div>
     </div>
   );

@@ -1,15 +1,16 @@
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
+import { IsPostgresUuid } from '../../../common/decorators/postgres-uuid.decorator';
 
 export class SiteStatsQueryDto {
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   siteId?: string;
 }
 
 export class DateRangeQueryDto {
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   siteId?: string;
 
   @IsOptional()
@@ -30,7 +31,7 @@ export class DateRangeQueryDto {
   deviceType?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   inspectorId?: string;
 }
 
@@ -42,7 +43,7 @@ export class ExportQueryDto extends DateRangeQueryDto {
 
 export class QueryStatsDto extends PaginationDto {
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   siteId?: string;
 
   @IsOptional()

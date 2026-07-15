@@ -17,19 +17,29 @@ interface SiteMapViewProps {
   height?: number;
 }
 
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => {
+    const entities: Record<string, string> = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    };
+    return entities[char];
+  });
+}
+
 /** 仪表盘站点分布（Leaflet + 高德瓦片） */
 export default function SiteMapView({ markers, height = 360 }: SiteMapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const hasMarkers = markers.length > 0;
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    if (!hasMarkers || !containerRef.current || mapRef.current) return;
 
-    const center: [number, number] = markers.length
-      ? [markers[0].latitude, markers[0].longitude]
-      : [39.9042, 116.4074];
-
-    const map = L.map(containerRef.current).setView(center, markers.length > 1 ? 5 : 10);
+    const map = L.map(containerRef.current).setView([39.9042, 116.4074], 5);
     createGaodeTileLayer().addTo(map);
     mapRef.current = map;
 
@@ -37,7 +47,7 @@ export default function SiteMapView({ markers, height = 360 }: SiteMapViewProps)
       map.remove();
       mapRef.current = null;
     };
-  }, []);
+  }, [hasMarkers]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -62,7 +72,7 @@ export default function SiteMapView({ markers, height = 360 }: SiteMapViewProps)
       L.marker(latlng, { icon })
         .addTo(map)
         .bindPopup(
-          `<strong>${m.name}</strong><br/>${m.city || ''}<br/>设备 ${m.deviceCount ?? 0} 台`,
+          `<strong>${escapeHtml(m.name)}</strong><br/>${escapeHtml(m.city || '')}<br/>设备 ${m.deviceCount ?? 0} 台`,
         );
     });
 
@@ -75,7 +85,7 @@ export default function SiteMapView({ markers, height = 360 }: SiteMapViewProps)
 
   return (
     <div>
-      {!markers.length ? (
+      {!hasMarkers ? (
         <div
           style={{
             height,

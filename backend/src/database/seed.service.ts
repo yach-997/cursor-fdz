@@ -46,7 +46,14 @@ export class DatabaseSeedService implements OnModuleInit {
       return;
     }
 
-    const password = this.configService.get<string>('ADMIN_PASSWORD', 'admin123');
+    const configuredPassword = this.configService.get<string>('ADMIN_PASSWORD');
+    if (!configuredPassword && process.env.NODE_ENV === 'production') {
+      throw new Error('生产环境首次启动前必须配置 ADMIN_PASSWORD');
+    }
+    const password = configuredPassword || 'admin123';
+    if (!configuredPassword) {
+      this.logger.warn('本地开发环境正在使用默认管理员密码，请勿用于生产环境');
+    }
     const hashed = await bcrypt.hash(password, 10);
 
     const admin = this.userRepo.create({
@@ -60,7 +67,7 @@ export class DatabaseSeedService implements OnModuleInit {
     });
 
     await this.userRepo.save(admin);
-    this.logger.log(`已创建默认超级管理员: ${username} / ${password}`);
+    this.logger.log(`已创建超级管理员: ${username}`);
   }
 
   /** 将旧单 role 同步到 roles 多角色字段 */

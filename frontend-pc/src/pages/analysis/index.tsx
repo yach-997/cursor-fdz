@@ -61,7 +61,12 @@ export default function AnalysisPage() {
   };
 
   useEffect(() => {
-    load().catch(() => undefined);
+    Promise.all([fetchCompletionStats({}), fetchDefectStats({})])
+      .then(([c, d]) => {
+        setCompletion(c);
+        setDefects(d);
+      })
+      .catch(() => undefined);
   }, []);
 
   const completionOption = {

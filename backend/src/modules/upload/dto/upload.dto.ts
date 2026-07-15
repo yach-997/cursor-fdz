@@ -1,9 +1,10 @@
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
+import { IsPostgresUuid } from '../../../common/decorators/postgres-uuid.decorator';
 
 /** 拍照上传附加元数据（水印用） */
 export class UploadPhotoMetaDto {
   @IsOptional()
-  @IsUUID()
+  @IsPostgresUuid()
   taskId?: string;
 
   @IsOptional()
