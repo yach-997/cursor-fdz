@@ -1,0 +1,172 @@
+.app-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 88% 0%, rgba(31, 169, 119, 0.08), transparent 26rem),
+    #f3f7f5;
+}
+
+.app-sider {
+  position: sticky !important;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: linear-gradient(180deg, #0c2e25 0%, #123c30 55%, #0d3127 100%) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 10px 0 40px rgba(8, 42, 32, 0.08);
+}
+
+.app-brand {
+  height: 80px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.app-brand__mark {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  background: linear-gradient(145deg, #31c48d, #16835f);
+  box-shadow: 0 8px 20px rgba(31, 196, 141, 0.22), inset 0 1px rgba(255,255,255,.28);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.app-brand__text {
+  min-width: 0;
+}
+
+.app-brand__title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+.app-brand__sub {
+  margin-top: 3px;
+  color: rgba(223, 247, 237, 0.58);
+  font-size: 10px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.app-menu.ant-menu-dark {
+  padding: 4px 10px;
+  background: transparent;
+}
+
+.app-menu.ant-menu-dark .ant-menu-item {
+  height: 44px;
+  line-height: 44px;
+  margin-block: 5px;
+  border-radius: 11px;
+  color: rgba(229, 248, 240, .72);
+}
+
+.app-menu.ant-menu-dark .ant-menu-item-selected {
+  color: #fff;
+  background: linear-gradient(90deg, rgba(49,196,141,.25), rgba(49,196,141,.13));
+  box-shadow: inset 3px 0 #47dba6;
+}
+
+.app-main {
+  min-width: 0;
+  background: transparent !important;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: 68px;
+  padding: 0 28px !important;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, .86) !important;
+  border-bottom: 1px solid rgba(23, 72, 54, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.app-header__left,
+.app-user {
+  display: flex;
+  align-items: center;
+}
+
+.app-header__left { gap: 14px; }
+
+.app-menu-toggle {
+  width: 38px !important;
+  height: 38px !important;
+  color: #34564a !important;
+}
+
+.app-page-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #17382d;
+}
+
+.app-page-subtitle {
+  margin-top: 1px;
+  color: #87988f;
+  font-size: 11px;
+}
+
+.app-user {
+  gap: 10px;
+  padding: 6px 9px 6px 7px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background .2s ease;
+}
+
+.app-user:hover { background: #eff6f2; }
+
+.app-user__avatar {
+  background: linear-gradient(145deg, #2dbb86, #147453) !important;
+  box-shadow: 0 5px 14px rgba(22, 131, 95, .2);
+}
+
+.app-user__name { font-weight: 600; color: #24493d; }
+.app-user__role { color: #87988f; font-size: 12px; }
+
+.app-content {
+  margin: 0 !important;
+  padding: 22px 26px 30px;
+}
+
+.app-content__surface {
+  min-height: calc(100vh - 120px);
+  padding: 24px;
+  background: rgba(255, 255, 255, .92);
+  border: 1px solid rgba(23, 72, 54, 0.075);
+  border-radius: 20px;
+  box-shadow: 0 12px 40px rgba(23, 72, 54, .055);
+}
+
+.mobile-drawer .ant-drawer-body {
+  padding: 0;
+  background: linear-gradient(180deg, #0c2e25, #123c30);
+}
+
+@media (max-width: 767px) {
+  .app-header { height: 60px; padding: 0 14px !important; }
+  .app-page-title { font-size: 16px; }
+  .app-page-subtitle, .app-user__meta { display: none; }
+  .app-content { padding: 12px; }
+  .app-content__surface {
+    min-height: calc(100vh - 84px);
+    padding: 14px;
+    border-radius: 16px;
+  }
+}

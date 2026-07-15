@@ -71,17 +71,17 @@ export default function LoginPage() {
 
       <div className="h5-login-page__inner">
         <div className="h5-login-brand">
-          <div className="h5-login-brand__logo" aria-hidden>
-            <svg viewBox="0 0 48 48" width="32" height="32">
-              <circle cx="24" cy="18" r="4" fill="#fff" />
-              <path fill="#fff" d="M14 34c2.5-5 6-8 10-8s7.5 3 10 8H14z" opacity="0.9" />
-            </svg>
-          </div>
-          <h1>光伏储能巡检系统</h1>
-          <p>H5 巡检端（须具备巡检员角色并已聘到站点）</p>
+          <div className="h5-login-brand__logo" aria-hidden>光</div>
+          <div className="h5-login-brand__eyebrow">FIELD INSPECTION</div>
+          <h1>光伏储能巡检</h1>
+          <p>现场任务、照片与报告，随时掌握</p>
         </div>
 
         <div className="h5-login-card">
+          <div className="h5-login-card__head">
+            <h2>巡检员登录</h2>
+            <span>请使用已聘用的巡检员账号</span>
+          </div>
           <Form>
             {token && user && (
               <div style={{ padding: '0 16px 8px', fontSize: 13, color: '#666' }}>
@@ -118,10 +118,11 @@ export default function LoginPage() {
               onClick={() => void onSubmit()}
               className="h5-login-btn"
             >
-              登录
+              进入巡检端
             </Button>
           </div>
         </div>
+        <div className="h5-login-trust"><i /> 数据安全传输 · 巡检记录自动保存</div>
       </div>
     </div>
   );

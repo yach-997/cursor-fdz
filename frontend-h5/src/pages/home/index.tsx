@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { NavBar, Card, Grid, Empty, Tag, Cell, PullRefresh, Button } from 'react-vant';
+import { Empty, PullRefresh } from 'react-vant';
 import { useAuthStore } from '../../stores/auth';
 import { fetchTasks, type TaskItem } from '../../api/task';
+import './home.css';
 
 const STATUS_TEXT: Record<string, string> = {
   pending: '未开始',
@@ -43,80 +44,65 @@ export default function HomePage() {
 
   return (
     <div className="page-home">
-      <NavBar
-        title={currentSite?.name || '未选择站点'}
-        rightText="切换"
-        onClickRight={() => navigate('/m/sites')}
-      />
       <PullRefresh onRefresh={load}>
-        <div style={{ padding: 12 }}>
+        <header className="home-hero">
+          <div className="home-hero__top">
+            <div className="home-brand"><span>光</span><b>巡检工作台</b></div>
+            <button type="button" className="home-site-switch" onClick={() => navigate('/m/sites')}>
+              切换站点 ›
+            </button>
+          </div>
+          <div className="home-hero__site">
+            <small>当前站点</small>
+            <h1>{currentSite?.name || '尚未选择站点'}</h1>
+            <p>{currentSite ? `${currentSite.province || ''}${currentSite.city || ''} · ${currentSite.code}` : '请先选择今日要巡检的站点'}</p>
+          </div>
+        </header>
+
+        <main className="home-content">
           {profileIncomplete && (
-            <div
-              style={{
-                marginBottom: 12,
-                padding: '10px 12px',
-                background: '#fff7e6',
-                borderRadius: 8,
-                fontSize: 13,
-                color: '#ad6800',
-              }}
-              onClick={() => navigate('/m/settings')}
-            >
-              请先完善姓名、手机号等个人信息 →
-            </div>
+            <button type="button" className="home-profile-tip" onClick={() => navigate('/m/settings')}>
+              <span>!</span><b>完善个人信息</b><small>确保报告签署准确</small><i>›</i>
+            </button>
           )}
 
-          <Card round style={{ marginBottom: 12 }}>
-            <Card.Header>你好，{user?.realName || user?.username}</Card.Header>
-            <Card.Body>
-              <Grid columnNum={3} border={false}>
-                <Grid.Item text={`${stats.pending}\n待办`} />
-                <Grid.Item text={`${stats.inProgress}\n进行中`} />
-                <Grid.Item text={`${stats.done}\n本页完成`} />
-              </Grid>
-              <Button
-                type="primary"
-                block
-                round
-                style={{ marginTop: 12, height: 48 }}
-                onClick={() => navigate('/m/start')}
-              >
-                开始巡检
-              </Button>
-              <div style={{ marginTop: 8, fontSize: 12, color: '#888', textAlign: 'center' }}>
-                选择地区 → 项目 → 设备类型 → 进入检查
-              </div>
-            </Card.Body>
-          </Card>
+          <section className="home-overview">
+            <div className="home-greeting">
+              <div><small>{new Date().getHours() < 12 ? '早上好' : new Date().getHours() < 18 ? '下午好' : '晚上好'}</small><h2>{user?.realName || user?.username}</h2></div>
+              <span>{new Date().toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}</span>
+            </div>
+            <div className="home-stats">
+              <div><b>{stats.pending}</b><span>待办任务</span></div>
+              <div><b>{stats.inProgress}</b><span>进行中</span></div>
+              <div><b>{stats.done}</b><span>已完成</span></div>
+            </div>
+            <button type="button" className="home-start" onClick={() => navigate('/m/start')}>
+              <span className="home-start__icon">✓</span>
+              <span><b>开始巡检</b><small>选择设备并进入现场检查</small></span>
+              <i>›</i>
+            </button>
+          </section>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <strong>我的任务</strong>
-            <Tag type="primary" plain onClick={() => navigate('/m/tasks')}>
-              全部
-            </Tag>
+          <div className="home-section-title">
+            <div><h3>我的任务</h3><span>优先处理进行中的巡检</span></div>
+            <button type="button" onClick={() => navigate('/m/tasks')}>全部 ›</button>
           </div>
 
           {tasks.length === 0 ? (
-            <Empty description="暂无任务，可点「开始巡检」筛选，或等待站长分配" />
+            <div className="home-empty"><Empty description="暂无任务，可点击「开始巡检」" /></div>
           ) : (
-            <Cell.Group inset>
+            <div className="home-task-list">
               {tasks.slice(0, 8).map((t) => (
-                <Cell
-                  key={t.id}
-                  title={t.taskName}
-                  label={t.device?.serialNumber || t.deviceId}
-                  value={
-                    t.statusLabel && t.statusLabel !== '草稿'
-                      ? t.statusLabel
-                      : STATUS_TEXT[t.status] || '进行中'
-                  }
-                  isLink
-                  onClick={() => navigate(`/m/tasks/${t.id}`)}
-                />
+                <button type="button" className="home-task" key={t.id} onClick={() => navigate(`/m/tasks/${t.id}`)}>
+                  <span className={`home-task__dot is-${t.status}`} />
+                  <span className="home-task__main"><b>{t.taskName}</b><small>{t.device?.serialNumber || t.deviceId}</small></span>
+                  <span className="home-task__status">{t.statusLabel && t.statusLabel !== '草稿' ? t.statusLabel : STATUS_TEXT[t.status] || '进行中'}</span>
+                  <i>›</i>
+                </button>
               ))}
-            </Cell.Group>
+            </div>
           )}
-        </div>
+        </main>
       </PullRefresh>
     </div>
   );

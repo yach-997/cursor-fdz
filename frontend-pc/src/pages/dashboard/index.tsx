@@ -6,6 +6,7 @@ import { fetchAdminDashboard, fetchSiteDashboard, type DashboardData } from '../
 import { fetchAlerts } from '../../api/alert';
 import { useAuthStore } from '../../stores/auth';
 import SiteMapView from '../../components/SiteMapView';
+import './dashboard.css';
 
 /** 仪表盘：统计卡片 + 趋势图 + 待审列表 */
 export default function DashboardPage() {
@@ -66,8 +67,19 @@ export default function DashboardPage() {
   };
 
   return (
-    <div>
-      <Row gutter={[16, 16]}>
+    <div className="dashboard-page">
+      <div className="dashboard-welcome">
+        <div>
+          <div className="dashboard-welcome__eyebrow">运营概览</div>
+          <h2>{new Date().getHours() < 12 ? '早上好' : new Date().getHours() < 18 ? '下午好' : '晚上好'}，{user?.realName || '管理员'}</h2>
+          <p>今日站点巡检与设备运行情况已为你汇总。</p>
+        </div>
+        <div className="dashboard-welcome__date">
+          <b>{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}</b>
+          <span>{new Date().toLocaleDateString('zh-CN', { weekday: 'long' })}</span>
+        </div>
+      </div>
+      <Row className="dashboard-stats" gutter={[14, 14]}>
         {isAdmin && (
           <Col xs={12} sm={8} lg={4}>
             <Card><Statistic title="站点数" value={data?.sites ?? '-'} /></Card>
@@ -115,7 +127,7 @@ export default function DashboardPage() {
         </Col>
       </Row>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+      <Row className="dashboard-grid" gutter={[16, 16]}>
         <Col xs={24} lg={10}>
           <Card title="站点分布地图">
             <SiteMapView markers={data?.siteMarkers || []} />
@@ -128,7 +140,7 @@ export default function DashboardPage() {
         </Col>
       </Row>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+      <Row className="dashboard-grid" gutter={[16, 16]}>
         <Col xs={24} lg={14}>
           <Card title="任务状态分布">
             <ReactECharts option={taskPieOption} style={{ height: 320 }} />

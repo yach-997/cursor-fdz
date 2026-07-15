@@ -4,9 +4,70 @@
   box-sizing: border-box;
 }
 
+:root {
+  color: #18332a;
+  background: #f3f7f5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
 html,
 body,
 #root {
   height: 100%;
   font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+body {
+  min-width: 320px;
+  background: #f3f7f5;
+  color: #18332a;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+::selection {
+  color: #fff;
+  background: rgba(22, 131, 95, 0.78);
+}
+
+.ant-card {
+  border-color: rgba(23, 72, 54, 0.08) !important;
+  box-shadow: 0 8px 28px rgba(28, 71, 56, 0.055);
+}
+
+.ant-card-hoverable:hover {
+  border-color: rgba(22, 131, 95, 0.22) !important;
+  box-shadow: 0 16px 38px rgba(28, 71, 56, 0.1) !important;
+}
+
+.ant-table-wrapper .ant-table {
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.ant-modal .ant-modal-content {
+  padding: 24px;
+  border: 1px solid rgba(23, 72, 54, 0.08);
+}
+
+@media (max-width: 767px) {
+  .ant-modal {
+    max-width: calc(100vw - 24px) !important;
+    margin: 12px auto;
+  }
+
+  .ant-modal .ant-modal-content {
+    padding: 18px;
+  }
+
+  .ant-table-wrapper {
+    overflow-x: auto;
+  }
 }

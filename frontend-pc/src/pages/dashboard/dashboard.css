@@ -1,0 +1,49 @@
+.dashboard-welcome {
+  position: relative;
+  margin: -4px 0 20px;
+  padding: 20px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  overflow: hidden;
+  color: #fff;
+  border-radius: 17px;
+  background: linear-gradient(120deg, #0c5f45 0%, #17845f 58%, #24a978 100%);
+  box-shadow: 0 14px 34px rgba(18, 112, 80, .18);
+}
+
+.dashboard-welcome::after {
+  content: '';
+  position: absolute;
+  width: 240px;
+  height: 240px;
+  right: -80px;
+  top: -130px;
+  border: 34px solid rgba(255,255,255,.07);
+  border-radius: 50%;
+}
+
+.dashboard-welcome__eyebrow { margin-bottom: 5px; color: rgba(218,255,241,.72); font-size: 10px; font-weight: 700; letter-spacing: .14em; }
+.dashboard-welcome h2 { margin: 0; color: #fff; font-size: 23px; line-height: 1.35; }
+.dashboard-welcome p { margin: 5px 0 0; color: rgba(235,255,247,.7); font-size: 13px; }
+.dashboard-welcome__date { position: relative; z-index: 1; min-width: 96px; padding: 11px 14px; display: flex; flex-direction: column; align-items: flex-end; border: 1px solid rgba(255,255,255,.16); border-radius: 13px; background: rgba(255,255,255,.08); }
+.dashboard-welcome__date b { font-size: 15px; }
+.dashboard-welcome__date span { margin-top: 2px; color: rgba(237,255,248,.65); font-size: 11px; }
+.dashboard-stats .ant-card { height: 100%; border-radius: 15px; transition: transform .2s ease, box-shadow .2s ease; }
+.dashboard-stats .ant-card:hover { transform: translateY(-2px); }
+.dashboard-stats .ant-card-body { padding: 17px 18px; }
+.dashboard-stats .ant-statistic-title { margin-bottom: 7px; color: #789087; font-size: 12px; }
+.dashboard-stats .ant-statistic-content { color: #173c30; font-size: 27px; font-weight: 700; letter-spacing: -.04em; }
+.dashboard-grid { margin-top: 16px; }
+.dashboard-grid .ant-card { height: 100%; border-radius: 16px; }
+.dashboard-grid .ant-card-head { min-height: 54px; border-bottom-color: rgba(23,72,54,.07); }
+.dashboard-grid .ant-card-head-title { color: #254b3e; font-size: 15px; }
+
+@media (max-width: 767px) {
+  .dashboard-welcome { padding: 17px; align-items: flex-start; }
+  .dashboard-welcome h2 { font-size: 19px; }
+  .dashboard-welcome p { max-width: 230px; font-size: 12px; }
+  .dashboard-welcome__date { display: none; }
+  .dashboard-stats .ant-card-body { padding: 14px; }
+  .dashboard-stats .ant-statistic-content { font-size: 23px; }
+}

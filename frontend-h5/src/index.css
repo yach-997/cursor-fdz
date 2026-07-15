@@ -8,10 +8,26 @@ html,
 body,
 #root {
   height: 100%;
-  background: #f7f8fa;
+  background: #edf3f0;
   font-family: 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
+}
+
+:root {
+  --h5-green: #16835f;
+  --h5-green-dark: #0e6549;
+  --h5-ink: #18382d;
+  --h5-muted: #74877f;
+  --h5-line: rgba(22, 78, 59, 0.09);
+  color: var(--h5-ink);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  color: var(--h5-ink);
+  -webkit-font-smoothing: antialiased;
 }
 
 /* 手机端内容区限宽，微信浏览器更稳 */
@@ -34,7 +50,7 @@ body,
 
 .tab-layout__content {
   flex: 1;
-  padding-bottom: 50px;
+  padding-bottom: 64px;
 }
 
 .login-page {
@@ -60,4 +76,63 @@ body,
 /* 阳光下高对比度：按钮最小高度 48px */
 .rv-button {
   min-height: 48px;
+}
+
+.network-banner {
+  position: relative;
+  z-index: 50;
+  min-height: 30px;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: #fff;
+  background: #536f65;
+  font-size: 11px;
+  text-align: center;
+}
+
+.network-banner span { width: 6px; height: 6px; border-radius: 50%; background: #ffd279; }
+.network-banner.is-offline { background: #a34e4e; }
+.network-banner.is-offline span { background: #ffd0d0; }
+
+.rv-nav-bar {
+  height: 54px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 0 var(--h5-line);
+  backdrop-filter: blur(16px);
+}
+
+.rv-nav-bar__title { color: var(--h5-ink); font-weight: 700; }
+.rv-nav-bar__text, .rv-nav-bar__arrow { color: var(--h5-green); }
+
+.rv-tabbar {
+  left: 50% !important;
+  width: min(100%, 640px) !important;
+  transform: translateX(-50%);
+  border-top: 1px solid var(--h5-line);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 -10px 30px rgba(21, 65, 50, 0.06);
+  backdrop-filter: blur(18px);
+}
+
+.rv-tabbar-item { color: #8b9c95; }
+.rv-tabbar-item--active { color: var(--h5-green); font-weight: 600; }
+.rv-tabbar-item__icon { margin-bottom: 3px; }
+
+.rv-cell-group--inset {
+  overflow: hidden;
+  border: 1px solid var(--h5-line);
+  border-radius: 15px;
+  box-shadow: 0 8px 24px rgba(22, 69, 52, 0.045);
+}
+
+.rv-cell { padding: 15px 16px; }
+.rv-cell__title { color: #294b40; }
+.rv-cell__label { margin-top: 4px; color: #8a9a94; }
+
+@media (min-width: 641px) {
+  body { background: #dfe9e4; }
+  #root { min-height: 100%; box-shadow: 0 0 60px rgba(16, 58, 44, 0.12); }
 }

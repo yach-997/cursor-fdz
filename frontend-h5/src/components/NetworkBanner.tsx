@@ -42,16 +42,9 @@ export default function NetworkBanner() {
 
   return (
     <div
-      style={{
-        position: 'relative',
-        zIndex: 10,
-        padding: '8px 12px',
-        textAlign: 'center',
-        fontSize: 13,
-        color: '#fff',
-        background: online ? '#fa8c16' : '#ff4d4f',
-      }}
+      className={`network-banner ${online ? 'is-slow' : 'is-offline'}`}
     >
+      <span />
       {!online
         ? '当前离线，恢复网络后可同步上传'
         : '网络较慢，上传照片可能需要更长时间'}
