@@ -38,7 +38,7 @@ export class SystemService {
         detail: this.qiniu.isEnabled()
           ? '七牛云对象存储已配置'
           : this.minio.isConfigured()
-            ? 'MinIO 对象存储已配置'
+            ? '备用对象存储已配置'
             : '未检测到可用对象存储配置',
       },
       {
@@ -56,8 +56,8 @@ export class SystemService {
         detail: serverless
           ? '云函数后台处理模式'
           : this.redis.isReady
-            ? 'Redis 队列连接正常'
-            : 'Redis 未连接，使用进程内备用队列',
+            ? '任务队列连接正常'
+            : '任务队列未连接，使用进程内备用队列',
       },
       {
         key: 'scheduler',
@@ -65,7 +65,7 @@ export class SystemService {
         status: schedulerReady ? 'healthy' : 'warning',
         detail: schedulerReady
           ? '每小时自动检查合格率、超期任务和 AI 异常'
-          : '请配置 CRON_SECRET 以启用云端定时扫描',
+          : '请配置定时任务密钥以启用云端定时扫描',
       },
     ];
 

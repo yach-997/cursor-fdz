@@ -214,7 +214,7 @@ export class DeviceService {
     });
 
     if (!rows.length) {
-      throw new BadRequestException('Excel 无数据行');
+      throw new BadRequestException('导入表格中没有数据行');
     }
 
     const success: unknown[] = [];
@@ -345,14 +345,16 @@ export class DeviceService {
       central_inverter: DeviceType.CENTRAL_INVERTER,
       energy_storage: DeviceType.ENERGY_STORAGE,
       组串逆变器: DeviceType.STRING_INVERTER,
+      组串式逆变器: DeviceType.STRING_INVERTER,
       集中式逆变器: DeviceType.CENTRAL_INVERTER,
       储能设备: DeviceType.ENERGY_STORAGE,
+      储能系统: DeviceType.ENERGY_STORAGE,
       储能: DeviceType.ENERGY_STORAGE,
     };
     const type = map[raw] || map[raw.toLowerCase()];
     if (!type) {
       throw new Error(
-        `设备类型无效: ${raw}（可选：string_inverter/central_inverter/energy_storage）`,
+        `设备类型无效：${raw}（可选：组串式逆变器、集中式逆变器、储能系统）`,
       );
     }
     return type;

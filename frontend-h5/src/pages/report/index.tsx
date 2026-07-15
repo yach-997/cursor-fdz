@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { NavBar, Cell, Empty, Tag, Image, PullRefresh, Button } from 'react-vant';
 import { fetchRecord, type RecordItem } from '../../api/record';
 import { displayPhotoUrl } from '../../utils/photo-url';
+import { RECORD_STATUS_LABEL } from '../../utils/displayLabels';
 
 const AI_LABEL: Record<string, string> = {
   pass: '合格',
@@ -78,7 +79,7 @@ export default function ReportPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f2f5f3', paddingBottom: 24 }}>
-      <NavBar title="AI 分析报告" leftText="返回" onClickLeft={() => navigate(-1)} />
+      <NavBar title="智能分析报告" leftText="返回" onClickLeft={() => navigate(-1)} />
 
       {loading && !record ? (
         <Empty description="加载中..." />
@@ -90,20 +91,14 @@ export default function ReportPage() {
             <Cell.Group inset>
               <Cell
                 title={record.task?.taskName || '巡检报告'}
-                label={`状态：${
-                  record.status === 'rejected'
-                    ? '已驳回'
-                    : record.status === 'draft'
-                      ? '进行中'
-                      : record.status
-                }${
+                label={`状态：${RECORD_STATUS_LABEL[record.status] || '未知状态'}${
                   record.submittedAt
                     ? ` · 提交 ${String(record.submittedAt).slice(0, 16)}`
                     : ''
                 }`}
               />
               <Cell
-                title="AI 汇总"
+                title="智能分析汇总"
                 label={`合格 ${summary.pass} · 不合格 ${summary.fail} · 分析中 ${summary.pending} · 失败 ${summary.error}`}
               />
             </Cell.Group>
@@ -165,9 +160,9 @@ export default function ReportPage() {
                   title={`${idx + 1}. ${tpl?.name || '检查项'}${needRedo ? ' · 需返工' : ''}`}
                 >
                   <Cell
-                    title="AI 结论"
+                    title="智能分析结论"
                     value={
-                      <Tag type={AI_TAG[st] || 'primary'}>{AI_LABEL[st] || st}</Tag>
+                      <Tag type={AI_TAG[st] || 'primary'}>{AI_LABEL[st] || '待人工判断'}</Tag>
                     }
                     label={
                       entry.aiResult

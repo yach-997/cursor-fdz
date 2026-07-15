@@ -216,11 +216,11 @@ export default function StartWizardPage() {
                 <Cell
                   key={t.id}
                   title={t.taskName}
-                  label={`SN: ${t.device?.serialNumber || '-'} · ${STATUS_TEXT[t.status] || t.status}`}
+                  label={`序列号：${t.device?.serialNumber || '-'} · ${STATUS_TEXT[t.status] || '未知状态'}`}
                   isLink
                   value={
                     <Tag type={t.status === 'in_progress' ? 'primary' : 'success'} plain>
-                      {STATUS_TEXT[t.status] || t.status}
+                      {STATUS_TEXT[t.status] || '未知状态'}
                     </Tag>
                   }
                   onClick={() => navigate(`/m/inspection/${t.id}`)}

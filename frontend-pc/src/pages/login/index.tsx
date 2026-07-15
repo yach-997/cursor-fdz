@@ -49,7 +49,7 @@ export default function LoginPage() {
               <span>光伏储能巡检云</span>
             </div>
             <div className="pc-login-visual__main">
-              <div className="pc-login-visual__eyebrow">Smart Energy Operations</div>
+              <div className="pc-login-visual__eyebrow">智能能源运营管理</div>
               <h1>让每一次巡检<br />都清晰、可靠、可追溯</h1>
               <p>站点、任务、设备与报告统一管理，让团队专注现场和决策。</p>
               <div className="pc-login-features">

@@ -25,6 +25,7 @@ import {
 } from '../../api/record';
 import { compressImage } from '../../utils/imageCompress';
 import { displayPhotoUrl } from '../../utils/photo-url';
+import { chineseErrorMessage } from '../../utils/displayLabels';
 import PhotoViewerOverlay from '../../components/PhotoViewerOverlay';
 import './inspection.css';
 
@@ -106,7 +107,10 @@ function requestErrorMessage(error: unknown, fallback: string) {
     message?: string;
     response?: { data?: { message?: string } };
   };
-  return candidate?.response?.data?.message || candidate?.message || fallback;
+  return chineseErrorMessage(
+    candidate?.response?.data?.message || candidate?.message,
+    fallback,
+  );
 }
 
 function PhotoThumbnail({
@@ -811,7 +815,7 @@ export default function InspectionPage() {
           <Cell
             className="inspection-task-summary"
             title={task.taskName}
-            label={`SN: ${task.device?.serialNumber || '-'} · 现场定位通过后拍照巡检`}
+            label={`序列号：${task.device?.serialNumber || '-'} · 现场定位通过后拍照巡检`}
           />
 
           <div
@@ -1288,7 +1292,7 @@ export default function InspectionPage() {
                 {isAnalyzing
                   ? 'AI 后台分析中，无需等待，直接点「下一步」即可。'
                   : currentEntry?.aiResult && aiStatus !== 'pending'
-                    ? `AI：${RESULT_LABEL[aiStatus] || aiStatus}（稍后可在报告中查看详情）`
+                    ? `智能分析：${RESULT_LABEL[aiStatus] || '待人工判断'}（稍后可在报告中查看详情）`
                     : '上传照片后 AI 将后台对比样本；全部拍完再提交，做完其他任务可回来看报告。'}
               </div>
 

@@ -22,6 +22,8 @@ import {
   type AuditTrailEvent,
 } from '../../api/record';
 import { displayPhotoUrl } from '../../utils/photo-url';
+import { DEVICE_TYPE_LABEL } from '../../types';
+import { CHECK_RESULT_LABEL } from '../../utils/displayLabels';
 
 const STATUS_MAP: Record<string, { color: string; text: string }> = {
   submitted: { color: 'processing', text: '待审核' },
@@ -110,6 +112,8 @@ export default function AuditPage() {
       title: '设备类型',
       dataIndex: 'deviceType',
       width: 140,
+      render: (value: string) =>
+        DEVICE_TYPE_LABEL[value as keyof typeof DEVICE_TYPE_LABEL] || '未知设备类型',
     },
     {
       title: '审核类型',
@@ -129,7 +133,7 @@ export default function AuditPage() {
       dataIndex: 'status',
       width: 100,
       render: (s: string) => {
-        const m = STATUS_MAP[s] || { color: 'default', text: s };
+        const m = STATUS_MAP[s] || { color: 'default', text: '未知状态' };
         return <Tag color={m.color}>{m.text}</Tag>;
       },
     },
@@ -169,7 +173,7 @@ export default function AuditPage() {
         children: (
           <div>
             <div style={{ fontWeight: 600 }}>
-              {TRAIL_LABEL[ev.action] || ev.action}
+              {TRAIL_LABEL[ev.action] || '其他操作'}
               {ev.byName ? ` · ${ev.byName}` : ''}
             </div>
             <div style={{ color: '#888', fontSize: 12 }}>
@@ -269,7 +273,7 @@ export default function AuditPage() {
                     ) : null}
                   </div>
                   <div style={{ marginBottom: 8, color: '#666' }}>
-                    AI：{entry.aiResult?.status}（
+                    智能分析：{CHECK_RESULT_LABEL[entry.aiResult?.status || 'pending'] || '待人工判断'}（
                     {((entry.aiResult?.confidence || 0) * 100).toFixed(0)}%）
                     {entry.aiResult?.reason ? ` · ${entry.aiResult.reason}` : ''}
                   </div>

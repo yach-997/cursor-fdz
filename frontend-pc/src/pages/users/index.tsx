@@ -199,7 +199,7 @@ export default function UsersPage() {
         return (
           <Space size={[4, 4]} wrap>
             {list.map((v) => (
-              <Tag key={v}>{ROLE_LABEL[v] || v}</Tag>
+              <Tag key={v}>{ROLE_LABEL[v] || '未知角色'}</Tag>
             ))}
           </Space>
         );
@@ -413,7 +413,7 @@ export default function UsersPage() {
             name="roles"
             label="角色（可多选）"
             rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个角色' }]}
-            extra="可同时勾选站长+巡检员：PC 登管理端、H5 登巡检端"
+            extra="可同时勾选站长和巡检员：电脑登录管理端，手机登录巡检端"
           >
             <Checkbox.Group
               disabled={!isAdmin}

@@ -35,6 +35,7 @@ import {
 import { fetchSites } from '../../api/site';
 import type { DeviceItem, SiteItem, DeviceType } from '../../types';
 import { DEVICE_TYPE_LABEL } from '../../types';
+import { RECORD_STATUS_LABEL, TASK_STATUS_LABEL } from '../../utils/displayLabels';
 
 /** 设备管理：表格 + 站点筛选 + 批量导入 Excel + 历史 */
 export default function DevicesPage() {
@@ -151,10 +152,10 @@ export default function DevicesPage() {
 
   const downloadTemplate = async () => {
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('devices');
+    const worksheet = workbook.addWorksheet('设备');
     worksheet.addRows([
-      ['site_code', 'serial_number', 'device_type', 'model', 'manufacturer', 'install_date'],
-      ['SITE001', 'SN20260001', 'string_inverter', 'SG110CX', '阳光电源', '2026-01-01'],
+      ['站点编码', '序列号', '设备类型', '型号', '制造商', '安装日期'],
+      ['SITE001', 'SN20260001', '组串式逆变器', 'SG110CX', '阳光电源', '2026-01-01'],
     ]);
     worksheet.getRow(1).font = { bold: true };
     worksheet.columns.forEach((column) => {
@@ -188,7 +189,7 @@ export default function DevicesPage() {
       title: '设备类型',
       dataIndex: 'deviceType',
       width: 130,
-      render: (v: DeviceType) => DEVICE_TYPE_LABEL[v] || v,
+      render: (v: DeviceType) => DEVICE_TYPE_LABEL[v] || '未知设备类型',
     },
     {
       title: '所属站点',
@@ -284,7 +285,7 @@ export default function DevicesPage() {
           下载导入模板
         </Button>
         <Upload beforeUpload={onImport} showUploadList={false} accept=".xlsx,.xls">
-          <Button icon={<UploadOutlined />}>批量导入 Excel</Button>
+          <Button icon={<UploadOutlined />}>批量导入表格</Button>
         </Upload>
       </Space>
 
@@ -363,7 +364,12 @@ export default function DevicesPage() {
           dataSource={historyData?.tasks || []}
           columns={[
             { title: '任务名称', dataIndex: 'taskName' },
-            { title: '状态', dataIndex: 'status', width: 100 },
+            {
+              title: '状态',
+              dataIndex: 'status',
+              width: 100,
+              render: (value) => TASK_STATUS_LABEL[String(value)] || '未知状态',
+            },
             { title: '计划日期', dataIndex: 'plannedDate', width: 120 },
           ]}
         />
@@ -374,8 +380,13 @@ export default function DevicesPage() {
           pagination={false}
           dataSource={historyData?.records || []}
           columns={[
-            { title: '记录ID', dataIndex: 'id', ellipsis: true },
-            { title: '状态', dataIndex: 'status', width: 100 },
+            { title: '记录编号', dataIndex: 'id', ellipsis: true },
+            {
+              title: '状态',
+              dataIndex: 'status',
+              width: 100,
+              render: (value) => RECORD_STATUS_LABEL[String(value)] || '未知状态',
+            },
             { title: '提交时间', dataIndex: 'submittedAt', width: 180 },
           ]}
         />

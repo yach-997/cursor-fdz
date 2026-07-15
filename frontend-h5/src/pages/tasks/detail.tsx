@@ -14,9 +14,17 @@ const STATUS_TEXT: Record<string, string> = {
 };
 
 const DEVICE_TYPE: Record<string, string> = {
-  string_inverter: '组串逆变器',
+  string_inverter: '组串式逆变器',
   central_inverter: '集中式逆变器',
-  energy_storage: '储能设备',
+  energy_storage: '储能系统',
+};
+
+const RECORD_STATUS: Record<string, string> = {
+  draft: '进行中',
+  submitted: '待审核',
+  approved: '已通过',
+  rejected: '已驳回',
+  archived: '已归档',
 };
 
 /** 任务详情：继续巡检 / 查看报告 / 删除重来 */
@@ -169,7 +177,7 @@ export default function TaskDetailPage() {
             <Cell
               title="设备类型"
               value={
-                DEVICE_TYPE[task.device?.deviceType || ''] || task.device?.deviceType || '-'
+                DEVICE_TYPE[task.device?.deviceType || ''] || '未知设备类型'
               }
             />
             <Cell title="型号" value={task.device?.model || '-'} />
@@ -222,7 +230,7 @@ export default function TaskDetailPage() {
                       >
                         <div style={{ fontWeight: 600 }}>{related?.taskName || '巡检任务'}</div>
                         <div style={{ color: '#888', marginTop: 4 }}>
-                          状态 {r.status}
+                          状态 {RECORD_STATUS[r.status] || '未知状态'}
                           {r.submittedAt
                             ? ` · 提交 ${new Date(r.submittedAt).toLocaleDateString()}`
                             : ''}

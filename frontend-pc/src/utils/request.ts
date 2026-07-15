@@ -1,6 +1,7 @@
 import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import { message } from 'antd';
 import type { ApiResponse } from '../types';
+import { chineseErrorMessage } from './displayLabels';
 
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/$/, '') || '';
 const supabaseAnon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || '';
@@ -114,7 +115,7 @@ request.interceptors.response.use(
     if (res.code && res.code !== 200) {
       if (res.code === 401) {
         if (isAuthLoginRequest(response.config.url)) {
-          message.error(res.message || '用户名或密码错误');
+          message.error(chineseErrorMessage(res.message, '用户名或密码错误'));
           return Promise.reject(new Error(res.message || '登录失败'));
         }
         localStorage.removeItem('accessToken');
@@ -124,18 +125,21 @@ request.interceptors.response.use(
         return Promise.reject(new Error(res.message || '未登录'));
       }
       if (res.code === 403) {
-        message.error(res.message || '无权限');
+        message.error(chineseErrorMessage(res.message, '暂无操作权限'));
         if (!isAuthLoginRequest(response.config.url)) window.location.href = '/403';
         return Promise.reject(new Error(res.message || '无权限'));
       }
-      message.error(res.message || '请求失败');
+      message.error(chineseErrorMessage(res.message, '请求失败，请稍后重试'));
       return Promise.reject(new Error(res.message || '请求失败'));
     }
     return response;
   },
   (error: AxiosError<ApiResponse>) => {
     const status = error.response?.status;
-    const msg = error.response?.data?.message || error.message;
+    const msg = chineseErrorMessage(
+      error.response?.data?.message || error.message,
+      '请求失败，请稍后重试',
+    );
     const reqUrl = error.config?.url;
     if (status === 401) {
       if (isAuthLoginRequest(reqUrl)) {

@@ -48,7 +48,7 @@ export default function HistoryPage() {
               label={`${t.siteName} · ${t.deviceSerial}`}
               value={
                 <Tag type={t.status === 'approved' ? 'success' : 'primary'}>
-                  {STATUS_TEXT[t.status] || t.status}
+                  {STATUS_TEXT[t.status] || '未知状态'}
                 </Tag>
               }
               isLink

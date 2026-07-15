@@ -30,6 +30,7 @@ import { downloadRecordsExport } from '../../api/stats';
 import type { SiteItem, DeviceItem } from '../../types';
 import { DEVICE_TYPE_LABEL } from '../../types';
 import { displayPhotoUrl } from '../../utils/photo-url';
+import { CHECK_RESULT_LABEL } from '../../utils/displayLabels';
 
 const STATUS_MAP: Record<string, { color: string; text: string }> = {
   submitted: { color: 'processing', text: '待审核' },
@@ -183,7 +184,8 @@ export default function RecordsPage() {
       title: '设备类型',
       dataIndex: 'deviceType',
       width: 130,
-      render: (v: string) => DEVICE_TYPE_LABEL[v as keyof typeof DEVICE_TYPE_LABEL] || v,
+      render: (v: string) =>
+        DEVICE_TYPE_LABEL[v as keyof typeof DEVICE_TYPE_LABEL] || '未知设备类型',
     },
     {
       title: 'AI 结果',
@@ -201,7 +203,7 @@ export default function RecordsPage() {
       dataIndex: 'status',
       width: 100,
       render: (s: string) => {
-        const m = STATUS_MAP[s] || { color: 'default', text: s };
+        const m = STATUS_MAP[s] || { color: 'default', text: '未知状态' };
         return <Tag color={m.color}>{m.text}</Tag>;
       },
     },
@@ -236,7 +238,7 @@ export default function RecordsPage() {
         children: (
           <div>
             <div style={{ fontWeight: 600 }}>
-              {TRAIL_LABEL[ev.action] || ev.action}
+              {TRAIL_LABEL[ev.action] || '其他操作'}
               {ev.byName ? ` · ${ev.byName}` : ''}
             </div>
             <div style={{ color: '#888', fontSize: 12 }}>
@@ -346,7 +348,7 @@ export default function RecordsPage() {
         >
           查询
         </Button>
-        <Button onClick={handleExport}>导出 Excel</Button>
+        <Button onClick={handleExport}>导出表格</Button>
         <Button
           type="primary"
           onClick={() => {
@@ -394,7 +396,7 @@ export default function RecordsPage() {
           <>
             <div style={{ marginBottom: 20 }}>
               <Tag color={STATUS_MAP[detail.status]?.color}>
-                {STATUS_MAP[detail.status]?.text || detail.status}
+                {STATUS_MAP[detail.status]?.text || '未知状态'}
               </Tag>
               {detail.aiSummary ? (
                 <Tag style={{ marginLeft: 8 }}>
@@ -427,11 +429,11 @@ export default function RecordsPage() {
                           : 'default'
                     }
                   >
-                    AI: {entry.aiResult?.status} (
+                    智能分析：{CHECK_RESULT_LABEL[entry.aiResult?.status || 'pending'] || '待人工判断'}（
                     {((entry.aiResult?.confidence || 0) * 100).toFixed(0)}%)
                   </Tag>
                   <Tag color={entry.finalResult === 'fail' ? 'error' : 'success'}>
-                    最终: {entry.finalResult || '-'}
+                    最终结论：{CHECK_RESULT_LABEL[entry.finalResult || 'pending'] || '待人工判断'}
                   </Tag>
                 </Space>
                 {entry.aiResult?.reason ? (
@@ -479,7 +481,7 @@ export default function RecordsPage() {
                   ? new Date(rec.submittedAt).toLocaleDateString()
                   : rec.id.slice(0, 8)}
               </div>
-              <Tag>{STATUS_MAP[rec.status]?.text || rec.status}</Tag>
+              <Tag>{STATUS_MAP[rec.status]?.text || '未知状态'}</Tag>
               {rec.entries.map((entry) => (
                 <div key={entry.templateEntryId} style={{ marginTop: 12 }}>
                   <div style={{ fontSize: 13 }}>{tplName(rec, entry.templateEntryId)}</div>
@@ -487,7 +489,7 @@ export default function RecordsPage() {
                     color={entry.finalResult === 'fail' ? 'error' : 'success'}
                     style={{ marginTop: 4 }}
                   >
-                    {entry.finalResult || '-'}
+                    {CHECK_RESULT_LABEL[entry.finalResult || 'pending'] || '待人工判断'}
                   </Tag>
                   {(entry.photos || []).slice(0, 1).map((url) => (
                     <Image key={url} src={displayPhotoUrl(url)} width={80} height={80} style={{ marginTop: 4 }} />

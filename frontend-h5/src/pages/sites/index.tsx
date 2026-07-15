@@ -65,7 +65,7 @@ export default function SitesPage() {
               textAlign: 'center',
             }}
           >
-            请先让站长在 PC「站点管理 → 人员」中聘用你为巡检员。
+            请先让站长在电脑端「站点管理 → 人员」中聘用你为巡检员。
             <br />
             若刚完成聘用，请点下方「刷新列表」。
             <br />

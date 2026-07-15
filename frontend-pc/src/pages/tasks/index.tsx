@@ -130,7 +130,7 @@ export default function TasksPage() {
       : devices;
     return list.map((d) => ({
       value: d.id,
-      label: `${d.serialNumber} · ${DEVICE_TYPE_LABEL[d.deviceType] || d.deviceType}`,
+      label: `${d.serialNumber} · ${DEVICE_TYPE_LABEL[d.deviceType] || '未知设备类型'}`,
       serialNumber: d.serialNumber,
       deviceType: d.deviceType,
     }));
@@ -204,7 +204,7 @@ export default function TasksPage() {
       render: (_, r) =>
         r.device
           ? DEVICE_TYPE_LABEL[r.device.deviceType as keyof typeof DEVICE_TYPE_LABEL] ||
-            r.device.deviceType
+            '未知设备类型'
           : '-',
     },
     {

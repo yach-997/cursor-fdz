@@ -92,7 +92,7 @@ export default function BasicLayout() {
         {(!collapsed || isMobile) && (
           <div className="app-brand__text">
             <div className="app-brand__title">光伏储能巡检</div>
-            <div className="app-brand__sub">Inspection Cloud</div>
+            <div className="app-brand__sub">智能巡检平台</div>
           </div>
         )}
       </div>
@@ -163,7 +163,7 @@ export default function BasicLayout() {
               <Avatar className="app-user__avatar" icon={<UserOutlined />} src={user?.avatar} />
               <div className="app-user__meta">
                 <div className="app-user__name">{user?.realName}</div>
-                <div className="app-user__role">{roleLabel[user?.role || ''] || user?.role}</div>
+                <div className="app-user__role">{roleLabel[user?.role || ''] || '未知角色'}</div>
               </div>
             </div>
           </Dropdown>

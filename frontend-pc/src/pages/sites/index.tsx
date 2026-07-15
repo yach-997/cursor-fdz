@@ -450,7 +450,7 @@ export default function SitesPage() {
           </Space>
         </div>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          同一账号可兼任正站长和巡检员：从 PC 站长入口登录进入管理端，从 H5 巡检员入口登录进入巡检端。
+          同一账号可兼任正站长和巡检员：从电脑端站长入口登录进入管理端，从手机端巡检员入口登录进入巡检端。
         </Typography.Paragraph>
         <Tabs
           items={[

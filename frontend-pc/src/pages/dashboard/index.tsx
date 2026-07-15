@@ -7,6 +7,7 @@ import { fetchAlerts } from '../../api/alert';
 import { useAuthStore } from '../../stores/auth';
 import SiteMapView from '../../components/SiteMapView';
 import './dashboard.css';
+import { DEVICE_TYPE_LABEL } from '../../types';
 
 /** 仪表盘：统计卡片 + 趋势图 + 待审列表 */
 export default function DashboardPage() {
@@ -159,7 +160,13 @@ export default function DashboardPage() {
               dataSource={data?.recentPending || []}
               columns={[
                 { title: '任务', dataIndex: 'taskName', render: (v) => v || '-' },
-                { title: '设备类型', dataIndex: 'deviceType', width: 100 },
+                {
+                  title: '设备类型',
+                  dataIndex: 'deviceType',
+                  width: 120,
+                  render: (value: string) =>
+                    DEVICE_TYPE_LABEL[value as keyof typeof DEVICE_TYPE_LABEL] || '未知设备类型',
+                },
                 {
                   title: '提交时间',
                   dataIndex: 'submittedAt',

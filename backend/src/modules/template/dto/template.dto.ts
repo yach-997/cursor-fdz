@@ -63,7 +63,7 @@ export class CreateTemplateDto {
   isGlobal: boolean;
 
   @IsOptional()
-  @IsPostgresUuid({ message: 'siteId must be a UUID' })
+  @IsPostgresUuid({ message: '站点标识格式不正确' })
   siteId?: string | null;
 }
 
@@ -88,7 +88,7 @@ export class UpdateTemplateDto {
   isGlobal?: boolean;
 
   @IsOptional()
-  @IsPostgresUuid({ message: 'siteId must be a UUID' })
+  @IsPostgresUuid({ message: '站点标识格式不正确' })
   siteId?: string | null;
 }
 
@@ -99,12 +99,12 @@ export class QueryTemplateDto {
   deviceType?: DeviceType;
 
   @IsOptional()
-  @IsPostgresUuid({ message: 'siteId must be a UUID' })
+  @IsPostgresUuid({ message: '站点标识格式不正确' })
   siteId?: string;
 }
 
 /** 克隆模板到站点 */
 export class CloneTemplateDto {
-  @IsPostgresUuid({ message: 'siteId must be a UUID' })
+  @IsPostgresUuid({ message: '站点标识格式不正确' })
   siteId: string;
 }

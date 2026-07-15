@@ -100,9 +100,9 @@ export interface MenuConfig {
 }
 
 export const DEVICE_TYPE_LABEL: Record<DeviceType, string> = {
-  string_inverter: '组串逆变器',
+  string_inverter: '组串式逆变器',
   central_inverter: '集中式逆变器',
-  energy_storage: '储能设备',
+  energy_storage: '储能系统',
 };
 
 export const ROLE_LABEL: Record<UserRole, string> = {

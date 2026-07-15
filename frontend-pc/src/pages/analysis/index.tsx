@@ -147,7 +147,7 @@ export default function AnalysisPage() {
         radius: '65%',
         data:
           defects?.byDeviceType.map((d) => ({
-            name: DEVICE_TYPE_LABEL[d.deviceType as keyof typeof DEVICE_TYPE_LABEL] || d.deviceType,
+            name: DEVICE_TYPE_LABEL[d.deviceType as keyof typeof DEVICE_TYPE_LABEL] || '未知设备类型',
             value: d.fail,
           })) || [],
       },

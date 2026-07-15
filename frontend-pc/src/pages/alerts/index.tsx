@@ -26,6 +26,7 @@ import {
 import { fetchSites } from '../../api/site';
 import type { SiteItem } from '../../types';
 import { useNavigate } from 'react-router-dom';
+import { ALERT_SEVERITY_LABEL } from '../../utils/displayLabels';
 
 const TYPE_LABEL: Record<string, string> = {
   high_fail_rate: '合格率预警',
@@ -39,6 +40,29 @@ const SEV_COLOR: Record<string, string> = {
   warning: 'orange',
   critical: 'red',
 };
+
+const METADATA_LABEL: Record<string, string> = {
+  passRate: '合格率',
+  passRateThreshold: '合格率阈值',
+  failRate: '不合格率',
+  total: '检查项总数',
+  fail: '不合格数',
+  count: '数量',
+  overdueDays: '超期天数',
+  aiErrorCount: '智能分析失败数',
+  recordIds: '关联巡检记录',
+  subtype: '预警子类型',
+};
+
+function metadataValue(key: string, value: unknown) {
+  if (key === 'subtype' && value === 'ai_failure') return '智能分析持续失败';
+  if (['passRate', 'passRateThreshold', 'failRate'].includes(key)) {
+    return `${Number(value || 0).toFixed(1)}%`;
+  }
+  if (Array.isArray(value)) return `${value.length} 条记录`;
+  if (typeof value === 'boolean') return value ? '是' : '否';
+  return String(value ?? '-');
+}
 
 /** 预警中心：阈值配置 + 预警记录 */
 export default function AlertsPage() {
@@ -104,14 +128,16 @@ export default function AlertsPage() {
       title: '类型',
       dataIndex: 'alertType',
       width: 130,
-      render: (v: string) => TYPE_LABEL[v] || v,
+      render: (v: string) => TYPE_LABEL[v] || '其他预警',
     },
     { title: '标题', dataIndex: 'title' },
     {
       title: '级别',
       dataIndex: 'severity',
       width: 90,
-      render: (v: string) => <Tag color={SEV_COLOR[v] || 'default'}>{v}</Tag>,
+      render: (v: string) => (
+        <Tag color={SEV_COLOR[v] || 'default'}>{ALERT_SEVERITY_LABEL[v] || '未知级别'}</Tag>
+      ),
     },
     {
       title: '状态',
@@ -197,9 +223,13 @@ export default function AlertsPage() {
             <div style={{ color: '#666' }}>
               {row.message}
               {row.metadata ? (
-                <pre style={{ marginTop: 8, fontSize: 12 }}>
-                  {JSON.stringify(row.metadata, null, 2)}
-                </pre>
+                <div style={{ marginTop: 8, display: 'grid', gap: 4, fontSize: 12 }}>
+                  {Object.entries(row.metadata).map(([key, value]) => (
+                    <div key={key}>
+                      <b>{METADATA_LABEL[key] || '补充信息'}：</b>{metadataValue(key, value)}
+                    </div>
+                  ))}
+                </div>
               ) : null}
             </div>
           ),
@@ -237,8 +267,8 @@ export default function AlertsPage() {
           <Form.Item name="notifyEmails" label="运维人员 / 站点联系人邮箱（回车添加）">
             <Select mode="tags" placeholder="admin@example.com" tokenSeparators={[',', ' ']} />
           </Form.Item>
-          <Form.Item name="webhookUrl" label="Webhook 地址">
-            <Input placeholder="企业微信 / 钉钉机器人 Webhook URL" />
+          <Form.Item name="webhookUrl" label="机器人通知地址">
+            <Input placeholder="填写企业微信或钉钉机器人的通知地址" />
           </Form.Item>
         </Form>
       </Modal>

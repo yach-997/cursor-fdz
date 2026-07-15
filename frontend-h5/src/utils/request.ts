@@ -1,6 +1,7 @@
 import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import { Toast } from 'react-vant';
 import type { ApiResponse } from '../types';
+import { chineseErrorMessage } from './displayLabels';
 
 /**
  * 模式 A（本地）：VITE_API_BASE 空 → /api 代理 Nest
@@ -135,35 +136,30 @@ function isAuthLoginRequest(url?: string) {
   return !!url && (url.includes('/auth/login') || url.endsWith('/login'));
 }
 
-function friendlyErrorMessage(message?: string) {
-  const value = String(message || '');
-  if (/image to composite|sharp|input buffer|unsupported image/i.test(value)) {
-    return '照片处理失败，请重新选择或拍摄一张照片';
-  }
-  return value || '网络错误';
-}
-
 request.interceptors.response.use(
   (response) => {
     const res = response.data as ApiResponse;
     if (res.code && res.code !== 200) {
       if (res.code === 401) {
         if (isAuthLoginRequest(response.config.url)) {
-          Toast.info(res.message || '用户名或密码错误');
+          Toast.info(chineseErrorMessage(res.message, '用户名或密码错误'));
           return Promise.reject(new Error(res.message || '登录失败'));
         }
         clearAuth();
         window.location.href = '/m/login';
         return Promise.reject(new Error(res.message || '未登录'));
       }
-      Toast.info(res.message || '请求失败');
+      Toast.info(chineseErrorMessage(res.message, '请求失败，请稍后重试'));
       return Promise.reject(new Error(res.message || '请求失败'));
     }
     return response;
   },
   (error: AxiosError<ApiResponse>) => {
     const status = error.response?.status;
-    const msg = friendlyErrorMessage(error.response?.data?.message || error.message);
+    const msg = chineseErrorMessage(
+      error.response?.data?.message || error.message,
+      '请求失败，请稍后重试',
+    );
     const reqUrl = error.config?.url;
     if (status === 401) {
       if (isAuthLoginRequest(reqUrl)) {

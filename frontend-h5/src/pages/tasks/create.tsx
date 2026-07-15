@@ -148,7 +148,7 @@ export default function CreateTaskPage() {
 
       {device && (
         <Cell.Group inset style={{ marginTop: 12 }}>
-          <Cell title="设备类型" value={DEVICE_TYPE_LABEL[device.deviceType] || device.deviceType} />
+          <Cell title="设备类型" value={DEVICE_TYPE_LABEL[device.deviceType] || '未知设备类型'} />
           <Cell title="型号" value={device.model || '-'} />
         </Cell.Group>
       )}
