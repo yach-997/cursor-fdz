@@ -141,7 +141,8 @@ export default function ReportPage() {
                   color: '#ad6800',
                 }}
               >
-                仍有 {summary.pending} 项在后台分析，下拉刷新或稍后再看。
+                仍有 {summary.pending} 项正在分析，页面会自动刷新；超过 3
+                分钟将自动转人工审核。
               </div>
             )}
 

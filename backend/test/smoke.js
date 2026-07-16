@@ -296,6 +296,55 @@ async function validateLateDraftCannotOverwriteSubmission() {
   assert.equal(result.auditTrail.length, 1);
 }
 
+async function validateStaleAiPendingFallsBackToManualAudit() {
+  const task = {
+    id: seededUuid,
+    siteId: otherSeededUuid,
+    status: 'submitted',
+    aiEnabled: true,
+  };
+  const record = {
+    id: otherSeededUuid,
+    taskId: task.id,
+    deviceType: 'string_inverter',
+    entries: [
+      {
+        templateEntryId: 'entry-timeout',
+        photos: ['https://example.com/test.jpg'],
+        aiResult: { status: 'pending', confidence: 0, reason: '' },
+        manualResult: 'pending',
+        finalResult: null,
+        remark: '',
+      },
+    ],
+    status: 'submitted',
+    submittedAt: new Date(Date.now() - 4 * 60_000),
+    auditTrail: [],
+    createdAt: new Date(),
+  };
+  const recordRepo = {
+    findOne: async () => record,
+    update: async (_criteria, patch) => {
+      Object.assign(record, patch);
+      return { affected: 1 };
+    },
+  };
+  const taskRepo = { findOne: async () => task };
+  const service = new RecordService(recordRepo, taskRepo, {}, {});
+
+  const detail = await service.findOne(record.id, {
+    id: seededUuid,
+    role: 'super_admin',
+    managedSiteIds: [],
+    memberSiteIds: [],
+  });
+  assert.equal(detail.aiSummary.pending, 0);
+  assert.equal(detail.aiSummary.error, 1);
+  assert.equal(detail.needsAudit, true);
+  assert.match(detail.entries[0].aiResult.reason, /超时.*人工判断/);
+  assert.match(detail.auditTrail[0].summary, /超时.*人工判断/);
+}
+
 async function validatePrimaryManagerCanAlsoInspect() {
   const managerId = '22222222-2222-2222-2222-222222222222';
   const site = {
@@ -499,6 +548,7 @@ async function main() {
   await validateTemplateScopeUpdate();
   await validateAiErrorFallsBackToAudit();
   await validateLateDraftCannotOverwriteSubmission();
+  await validateStaleAiPendingFallsBackToManualAudit();
   await validatePrimaryManagerCanAlsoInspect();
   validateGeocodeRegionGuard();
   await validateLandmarkGeocodeFallback();

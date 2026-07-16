@@ -93,6 +93,7 @@ export class VisionService {
 
       const resp = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
+        signal: AbortSignal.timeout(45_000),
         headers: {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
@@ -159,6 +160,7 @@ export class VisionService {
     try {
       const resp = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
+        signal: AbortSignal.timeout(12_000),
         headers: {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',

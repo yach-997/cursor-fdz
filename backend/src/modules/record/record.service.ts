@@ -30,6 +30,10 @@ import {
 } from './dto/record.dto';
 import { LocationGuardService } from '../upload/location-guard.service';
 
+// AI 分析是异步体验，但不能无限等待。超过此时间仍未回写的条目
+// 自动转为“AI 异常/待人工判断”，保证报告流程可以闭环。
+const AI_PENDING_TIMEOUT_MS = 3 * 60 * 1000;
+
 @Injectable()
 export class RecordService {
   constructor(
@@ -153,7 +157,9 @@ export class RecordService {
     // 审核队列：在结果集上再筛不合格；历史用数据库分页
     if (query.scope === 'audit') {
       const all = await qb.getMany();
-      const details = await Promise.all(all.map((r) => this.toDetail(r)));
+      const details = await Promise.all(
+        all.map(async (r) => this.toDetail(await this.resolveStalePending(r))),
+      );
       const pendingAudit = details.filter(
         (r) =>
           r.task?.aiEnabled === false ||
@@ -168,7 +174,9 @@ export class RecordService {
     qb.skip((page - 1) * limit).take(limit);
     const total = await qb.getCount();
     const list = await qb.getMany();
-    const enriched = await Promise.all(list.map((r) => this.toDetail(r)));
+    const enriched = await Promise.all(
+      list.map(async (r) => this.toDetail(await this.resolveStalePending(r))),
+    );
     return { list: enriched, total, page, limit };
   }
 
@@ -176,7 +184,7 @@ export class RecordService {
     const record = await this.getRecordOrThrow(id);
     const task = await this.getTaskOrThrow(record.taskId);
     this.assertTaskAccess(task, currentUser);
-    return this.toDetail(record, task);
+    return this.toDetail(await this.resolveStalePending(record), task);
   }
 
   /** 创建巡检记录（通常由 start 任务触发） */
@@ -631,6 +639,59 @@ export class RecordService {
 
   private hasAiError(entries: RecordEntry[]) {
     return entries.some((e) => e.aiResult?.status === CheckResult.ERROR);
+  }
+
+  /**
+   * 清理异常中断后遗留的 pending。Vercel 实例退出、浏览器断网或上游模型
+   * 长时间无响应时，都不能让用户永久停留在“后台分析中”。
+   */
+  private async resolveStalePending(record: InspectionRecord) {
+    if (
+      record.status !== RecordStatus.SUBMITTED ||
+      !record.submittedAt ||
+      !this.hasAiPending(record.entries || [])
+    ) {
+      return record;
+    }
+
+    const submittedAt = new Date(record.submittedAt).getTime();
+    if (
+      !Number.isFinite(submittedAt) ||
+      Date.now() - submittedAt < AI_PENDING_TIMEOUT_MS
+    ) {
+      return record;
+    }
+
+    const entries = (record.entries || []).map((entry) => {
+      const status = entry.aiResult?.status;
+      if (status && status !== CheckResult.PENDING) return entry;
+      return {
+        ...entry,
+        aiResult: {
+          status: CheckResult.ERROR,
+          confidence: 0,
+          reason: 'AI 分析超时，已转人工判断',
+        },
+      };
+    });
+    const auditTrail = [
+      ...(record.auditTrail || []),
+      {
+        action: 'submitted' as const,
+        at: new Date().toISOString(),
+        summary: 'AI 分析等待超时，未完成条目已转人工判断',
+      },
+    ];
+
+    const updated = await this.recordRepo.update(
+      { id: record.id, status: RecordStatus.SUBMITTED },
+      { entries, auditTrail },
+    );
+    if (updated.affected) {
+      record.entries = entries;
+      record.auditTrail = auditTrail;
+    }
+    return record;
   }
 
   private aiSummary(entries: RecordEntry[]) {
