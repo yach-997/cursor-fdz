@@ -23,3 +23,13 @@ test('手机端英文网络与图片异常统一转换为中文提示', async ()
   assert.match(labels, /network error\|failed to fetch/i);
   assert.match(request, /chineseErrorMessage/);
 });
+
+test('定位按钮保持动作名称，现场人工结论明确标注为选填', async () => {
+  const inspection = await source('src/pages/inspection/index.tsx');
+
+  assert.match(inspection, />\s*从相册选择\s*</);
+  assert.match(inspection, />\s*现场拍照\s*</);
+  assert.doesNotMatch(inspection, /定位通过后选择|定位通过后拍照/);
+  assert.match(inspection, /现场检查结论（选填）/);
+  assert.match(inspection, /未选择不影响提交/);
+});

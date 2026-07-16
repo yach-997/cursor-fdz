@@ -607,7 +607,9 @@ export class RecordService {
     let pending = 0;
     let error = 0;
     for (const e of entries) {
-      const st = e.finalResult || e.aiResult?.status;
+      // 此处只统计 AI 原始判断。巡检员现场确认保存在 manualResult/finalResult，
+      // 不能覆盖 AI 统计，否则后台会出现“详情 5 项 AI 不合格、列表只显示 1 项”的口径冲突。
+      const st = e.aiResult?.status;
       if (st === CheckResult.FAIL) fail += 1;
       else if (st === CheckResult.PASS) pass += 1;
       else if (st === CheckResult.ERROR) error += 1;

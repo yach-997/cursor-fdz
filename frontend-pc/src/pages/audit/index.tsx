@@ -118,15 +118,19 @@ export default function AuditPage() {
     {
       title: '审核类型',
       width: 220,
-      render: (_, row) => (
+      render: (_, row) =>
         row.task?.aiEnabled === false ? (
-          <Tag color="orange">人工审核</Tag>
-        ) : (row.aiSummary?.error || 0) > 0 ? (
-          <Tag color="warning">AI 异常 {row.aiSummary?.error} 项（人工审核）</Tag>
+          <Tag color="orange">未启用 AI（人工审核）</Tag>
         ) : (
-          <Tag color="error">AI 不合格 {row.aiSummary?.fail ?? '-'} 项</Tag>
-        )
-      ),
+          <Space size={[4, 4]} wrap>
+            {(row.aiSummary?.fail || 0) > 0 ? (
+              <Tag color="error">AI 不合格 {row.aiSummary?.fail} 项</Tag>
+            ) : null}
+            {(row.aiSummary?.error || 0) > 0 ? (
+              <Tag color="warning">AI 异常 {row.aiSummary?.error} 项</Tag>
+            ) : null}
+          </Space>
+        ),
     },
     {
       title: '状态',
@@ -255,17 +259,33 @@ export default function AuditPage() {
 
             {detail.entries?.map((entry) => {
               const needRedo = detail.rejectReason?.entryIds?.includes(entry.templateEntryId);
-              const fail =
-                entry.aiResult?.status === 'fail' || entry.finalResult === 'fail';
+              const aiFail = entry.aiResult?.status === 'fail';
+              const aiError = entry.aiResult?.status === 'error';
+              const manualResult = entry.manualResult;
               return (
                 <div key={entry.templateEntryId} style={{ marginBottom: 20 }}>
                   <div style={{ fontWeight: 600, marginBottom: 8 }}>
                     {tplName(entry.templateEntryId)}
-                    {fail ? (
+                    {aiFail ? (
                       <Tag color="error" style={{ marginLeft: 8 }}>
                         AI 不合格
                       </Tag>
                     ) : null}
+                    {aiError ? (
+                      <Tag color="warning" style={{ marginLeft: 8 }}>
+                        AI 异常
+                      </Tag>
+                    ) : null}
+                    {manualResult === 'pass' || manualResult === 'fail' ? (
+                      <Tag
+                        color={manualResult === 'fail' ? 'error' : 'success'}
+                        style={{ marginLeft: 8 }}
+                      >
+                        巡检员现场确认{manualResult === 'fail' ? '不合格' : '合格'}
+                      </Tag>
+                    ) : (
+                      <Tag style={{ marginLeft: 8 }}>巡检员未确认</Tag>
+                    )}
                     {needRedo ? (
                       <Tag color="error" style={{ marginLeft: 8 }}>
                         需返工
@@ -276,6 +296,14 @@ export default function AuditPage() {
                     智能分析：{CHECK_RESULT_LABEL[entry.aiResult?.status || 'pending'] || '待人工判断'}（
                     {((entry.aiResult?.confidence || 0) * 100).toFixed(0)}%）
                     {entry.aiResult?.reason ? ` · ${entry.aiResult.reason}` : ''}
+                  </div>
+                  <div style={{ marginBottom: 8, color: '#666' }}>
+                    现场结论：
+                    {manualResult === 'pass'
+                      ? '巡检员确认合格'
+                      : manualResult === 'fail'
+                        ? '巡检员确认不合格'
+                        : '巡检员未选择，以管理员审核为准'}
                   </div>
                   <Image.PreviewGroup>
                     <Space wrap>

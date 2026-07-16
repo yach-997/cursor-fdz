@@ -815,7 +815,7 @@ export default function InspectionPage() {
           <Cell
             className="inspection-task-summary"
             title={task.taskName}
-            label={`序列号：${task.device?.serialNumber || '-'} · 现场定位通过后拍照巡检`}
+            label={`序列号：${task.device?.serialNumber || '-'} · 已启用现场定位校验`}
           />
 
           <div
@@ -1259,7 +1259,7 @@ export default function InspectionPage() {
                     className="inspection-gallery-button"
                     onClick={() => galleryRef.current?.click()}
                   >
-                    {locationStatus === 'verified' ? '从相册选择' : '定位通过后选择'}
+                    从相册选择
                   </Button>
                   <Button
                     type="primary"
@@ -1269,11 +1269,13 @@ export default function InspectionPage() {
                     className="inspection-camera-button"
                     onClick={() => cameraRef.current?.click()}
                   >
-                    {locationStatus === 'verified' ? '现场拍照' : '定位通过后拍照'}
+                    现场拍照
                   </Button>
                 </div>
                 <div className="inspection-upload-tip">
-                  支持相册照片或现场拍照；上传时需处于站点允许范围内
+                  {locationStatus === 'verified'
+                    ? '定位已通过，支持从相册选择或现场拍照'
+                    : '请先完成现场定位；定位通过后才可选择照片或拍照'}
                 </div>
               </div>
 
@@ -1300,8 +1302,8 @@ export default function InspectionPage() {
                 <div className="inspection-manual-check">
                   <div className="inspection-manual-check__heading">
                     <div>
-                      <strong>最终人工确认</strong>
-                      <span>可参考 AI 结论，以现场人工判断为准</span>
+                      <strong>现场检查结论（选填）</strong>
+                      <span>AI 仅供参考；如现场判断明确可选择，未选择不影响提交</span>
                     </div>
                     {currentEntry?.manualResult && currentEntry.manualResult !== 'pending' ? (
                       <Tag type={currentEntry.manualResult === 'fail' ? 'danger' : 'success'}>
@@ -1317,14 +1319,14 @@ export default function InspectionPage() {
                       className={currentEntry?.manualResult === 'pass' ? 'is-pass' : ''}
                       onClick={() => patchEntry({ manualResult: 'pass', finalResult: 'pass' })}
                     >
-                      确认合格
+                      现场合格
                     </Button>
                     <Button
                       round
                       className={currentEntry?.manualResult === 'fail' ? 'is-fail' : ''}
                       onClick={() => patchEntry({ manualResult: 'fail', finalResult: 'fail' })}
                     >
-                      确认不合格
+                      现场不合格
                     </Button>
                   </div>
                 </div>

@@ -186,6 +186,13 @@ async function validateAiErrorFallsBackToAudit() {
         manualResult: 'pending',
         finalResult: null,
       },
+      {
+        templateEntryId: 'entry-2',
+        photos: ['https://example.com/test-2.jpg'],
+        aiResult: { status: 'fail', confidence: 0.98, reason: 'AI found defect' },
+        manualResult: 'pass',
+        finalResult: 'pass',
+      },
     ],
     status: 'submitted',
     auditTrail: [],
@@ -216,6 +223,11 @@ async function validateAiErrorFallsBackToAudit() {
     memberSiteIds: [],
   });
   assert.equal(detail.aiSummary.error, 1);
+  assert.equal(
+    detail.aiSummary.fail,
+    1,
+    'AI 不合格统计不能被巡检员人工确认结果覆盖',
+  );
   assert.equal(detail.needsAudit, true);
 }
 
