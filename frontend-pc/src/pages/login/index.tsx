@@ -62,28 +62,15 @@ export default function LoginPage() {
           </div>
         </section>
 
-        <div className="pc-login-mobile-hero">
-          <div className="pc-login-mobile-hero__logo" aria-hidden>
-            光
-          </div>
-          <div className="pc-login-mobile-hero__eyebrow">管理工作台</div>
-          <h1>光伏储能巡检</h1>
-          <p>管理员与站长统一入口，手机也可高效管理</p>
-        </div>
-
         <section className="pc-login-panel">
           <div className="pc-login-card">
             <Link to="/" className="login-back">
-              <span className="login-back__arrow" aria-hidden>
-                ←
-              </span>
+              <span className="login-back__arrow" aria-hidden>←</span>
               返回入口
             </Link>
 
             <div className="pc-login-brand">
-              <div className="pc-login-brand__logo" aria-hidden>
-                光
-              </div>
+              <div className="pc-login-brand__logo" aria-hidden>光</div>
               <div>
                 <div className="pc-login-brand__eyebrow">管理工作台</div>
                 <h2>欢迎回来</h2>

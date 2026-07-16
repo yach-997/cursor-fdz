@@ -72,12 +72,6 @@ export default function BasicLayout() {
 
   const currentTitle = menus.find((m) => selectedKeys.includes(m.key))?.label || '工作台';
 
-  const workspaceLabel =
-    user?.role === 'site_manager' ? '站长管理工作台' : '光伏储能智能巡检工作台';
-
-  const brandSub =
-    user?.role === 'site_manager' ? '站长端' : user?.role === 'super_admin' ? '管理端' : '智能巡检平台';
-
   useEffect(() => {
     if (!user) return;
     // 巡检员默认不进仪表盘
@@ -98,7 +92,7 @@ export default function BasicLayout() {
         {(!collapsed || isMobile) && (
           <div className="app-brand__text">
             <div className="app-brand__title">光伏储能巡检</div>
-            <div className="app-brand__sub">{brandSub}</div>
+            <div className="app-brand__sub">智能巡检平台</div>
           </div>
         )}
       </div>
@@ -140,11 +134,11 @@ export default function BasicLayout() {
               type="text"
               className="app-menu-toggle"
               icon={isMobile || collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-              onClick={() => (isMobile ? setMobileMenuOpen(true) : setCollapsed(!collapsed))}
+              onClick={() => isMobile ? setMobileMenuOpen(true) : setCollapsed(!collapsed)}
             />
             <div>
               <h1 className="app-page-title">{currentTitle}</h1>
-              <div className="app-page-subtitle">{workspaceLabel}</div>
+              <div className="app-page-subtitle">光伏储能智能巡检工作台</div>
             </div>
           </div>
           <Dropdown
