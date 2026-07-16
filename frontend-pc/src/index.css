@@ -58,16 +58,132 @@ select {
 }
 
 @media (max-width: 767px) {
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
   .ant-modal {
-    max-width: calc(100vw - 24px) !important;
-    margin: 12px auto;
+    top: 8px;
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px) !important;
+    margin: 0 auto;
+    padding-bottom: 8px;
   }
 
   .ant-modal .ant-modal-content {
-    padding: 18px;
+    max-height: calc(100dvh - 16px);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 16px;
+  }
+
+  .ant-modal .ant-modal-header {
+    flex: 0 0 auto;
+    padding-right: 24px;
+  }
+
+  .ant-modal .ant-modal-body {
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .ant-modal .ant-modal-footer {
+    flex: 0 0 auto;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(23, 72, 54, 0.08);
+  }
+
+  .ant-drawer .ant-drawer-content-wrapper {
+    width: min(100vw, 420px) !important;
+    max-width: 100vw;
+  }
+
+  .ant-drawer .ant-drawer-header {
+    padding: 14px 16px;
+  }
+
+  .ant-drawer .ant-drawer-body {
+    padding: 16px;
+    overflow-x: hidden;
+  }
+
+  .ant-drawer .ant-drawer-extra .ant-space {
+    gap: 6px !important;
+  }
+
+  .ant-drawer .ant-drawer-extra .ant-btn {
+    padding-inline: 10px;
   }
 
   .ant-table-wrapper {
+    width: 100%;
+    max-width: 100%;
     overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 12px;
+  }
+
+  .ant-table-wrapper .ant-table-container,
+  .ant-table-wrapper .ant-table-content {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .ant-table-wrapper .ant-table-content > table {
+    min-width: max-content !important;
+  }
+
+  .ant-table-wrapper .ant-table-cell {
+    white-space: nowrap;
+  }
+
+  .ant-table-wrapper .ant-table-cell .ant-space {
+    flex-wrap: nowrap;
+  }
+
+  .ant-pagination {
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 4px 0;
+  }
+
+  .ant-form-item {
+    margin-bottom: 16px;
+  }
+
+  .ant-form-item .ant-input,
+  .ant-form-item .ant-input-number,
+  .ant-form-item .ant-picker,
+  .ant-form-item .ant-select {
+    width: 100% !important;
+    max-width: 100%;
+  }
+
+  .ant-descriptions-view {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .ant-tabs-nav-wrap {
+    overflow-x: auto;
+  }
+
+  .ant-card .ant-card-body {
+    padding: 16px;
+  }
+
+  .ant-image-preview-operations {
+    padding-inline: 8px;
   }
 }

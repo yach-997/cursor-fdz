@@ -361,7 +361,14 @@ export default function TemplatesPage() {
           新建模板
         </Button>
       </Space>
-      <Table rowKey="id" loading={loading} columns={columns} dataSource={list} pagination={false} />
+      <Table
+        rowKey="id"
+        loading={loading}
+        columns={columns}
+        dataSource={list}
+        pagination={false}
+        scroll={{ x: 'max-content' }}
+      />
 
       <Modal
         title={editing ? `编辑模板（当前 v${editing.version}）` : '新建模板'}

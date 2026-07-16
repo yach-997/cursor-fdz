@@ -277,6 +277,7 @@ export default function AnalysisPage() {
           rowKey="siteId"
           pagination={false}
           dataSource={siteRows}
+          scroll={{ x: 'max-content' }}
           columns={[
             { title: '现场', dataIndex: 'siteName' },
             { title: '任务数', dataIndex: 'total', width: 100 },

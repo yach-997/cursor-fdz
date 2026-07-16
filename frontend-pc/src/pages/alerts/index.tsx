@@ -218,6 +218,7 @@ export default function AlertsPage() {
         loading={loading}
         columns={columns}
         dataSource={data}
+        scroll={{ x: 'max-content' }}
         expandable={{
           expandedRowRender: (row) => (
             <div style={{ color: '#666' }}>

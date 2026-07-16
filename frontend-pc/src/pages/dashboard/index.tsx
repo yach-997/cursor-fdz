@@ -158,6 +158,7 @@ export default function DashboardPage() {
               size="small"
               pagination={false}
               dataSource={data?.recentPending || []}
+              scroll={{ x: 'max-content' }}
               columns={[
                 { title: '任务', dataIndex: 'taskName', render: (v) => v || '-' },
                 {
