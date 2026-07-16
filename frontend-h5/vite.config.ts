@@ -13,7 +13,7 @@ export default defineConfig({
         name: '智能设备巡检系统',
         short_name: '设备巡检',
         description: '光伏/储能设备现场巡检移动端',
-        theme_color: '#2f9b6a',
+        theme_color: '#0f7a58',
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait',

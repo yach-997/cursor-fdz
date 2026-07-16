@@ -1,27 +1,25 @@
 .tasks-page {
-  --ink: #1a2e24;
-  --muted: #6b7a72;
-  --line: rgba(26, 80, 55, 0.08);
-  --green: #2f9b6a;
-  --green-dark: #248556;
-  --bg: #eef6f1;
+  --ink: var(--h5-ink);
+  --muted: var(--h5-muted);
+  --line: var(--h5-line-soft);
+  --green: var(--h5-green-bright);
+  --green-dark: var(--h5-green-dark);
 
   min-height: 100%;
-  background:
-    radial-gradient(ellipse 120% 50% at 50% -10%, rgba(47, 155, 106, 0.16), transparent 55%),
-    linear-gradient(180deg, #f4faf6 0%, var(--bg) 40%, #f7f8fa 100%);
+  background: transparent;
   padding-bottom: 24px;
 }
 
 .tasks-page__header {
-  padding: 16px 20px 8px;
+  padding: max(16px, env(safe-area-inset-top)) 20px 8px;
 }
 
 .tasks-page__title {
   margin: 0;
-  font-size: 26px;
+  font-family: var(--h5-font-display);
+  font-size: 28px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   color: var(--ink);
 }
 
@@ -29,18 +27,20 @@
   margin: 6px 0 0;
   font-size: 13px;
   color: var(--muted);
+  line-height: 1.45;
 }
 
 .tasks-page__search {
-  margin: 12px 20px 0;
+  margin: 14px 16px 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 44px;
+  height: 46px;
   padding: 0 14px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.88);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.92);
   border: 1px solid var(--line);
+  box-shadow: var(--h5-shadow-soft);
 }
 
 .tasks-page__search input {
@@ -62,8 +62,8 @@
   gap: 4px;
   margin: 14px 16px 0;
   padding: 4px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.65);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.68);
   border: 1px solid var(--line);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -79,34 +79,39 @@
   font-weight: 500;
   font-family: inherit;
   padding: 10px 8px;
-  border-radius: 9px;
+  border-radius: 10px;
   cursor: pointer;
   white-space: nowrap;
+  transition: background 0.18s var(--h5-ease), color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .tasks-page__filter.is-active {
   background: #fff;
   color: var(--green-dark);
-  box-shadow: 0 1px 4px rgba(26, 80, 55, 0.08);
+  box-shadow: 0 2px 8px rgba(14, 52, 38, 0.08);
+  font-weight: 600;
 }
 
 .tasks-page__create {
   display: block;
-  margin: 16px 20px 8px;
-  height: 48px;
+  margin: 16px 16px 8px;
+  height: 50px;
   border: none;
   border-radius: 14px;
   background: linear-gradient(135deg, var(--green), var(--green-dark));
   color: #fff;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   font-family: inherit;
   cursor: pointer;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
+  box-shadow: 0 10px 24px rgba(15, 122, 88, 0.22);
+  transition: transform 0.16s var(--h5-ease), opacity 0.16s ease;
 }
 
 .tasks-page__create:active {
-  opacity: 0.92;
+  transform: scale(0.985);
+  opacity: 0.94;
 }
 
 .tasks-page__list {
@@ -121,16 +126,19 @@
   width: 100%;
   text-align: left;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.92);
-  padding: 14px 14px 12px;
+  border-radius: var(--h5-radius);
+  background: rgba(255, 255, 255, 0.94);
+  padding: 15px 14px 12px;
   cursor: pointer;
   font-family: inherit;
   color: inherit;
+  box-shadow: var(--h5-shadow-soft);
+  transition: transform 0.16s var(--h5-ease), background 0.16s ease;
 }
 
 .tasks-item:active {
-  background: #f7fbf8;
+  background: #f6faf8;
+  transform: scale(0.992);
 }
 
 .tasks-item__top {
@@ -184,7 +192,7 @@
 .tasks-item__del {
   border: none;
   background: transparent;
-  color: #c45c5c;
+  color: var(--h5-danger);
   font-size: 13px;
   font-family: inherit;
   padding: 4px 2px;

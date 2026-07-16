@@ -1,0 +1,133 @@
+.my-page {
+  min-height: 100%;
+  padding-bottom: 12px;
+  background: transparent;
+}
+
+.my-hero {
+  position: relative;
+  overflow: hidden;
+  margin: 0 0 14px;
+  padding: max(14px, env(safe-area-inset-top)) 18px 28px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(120, 230, 180, 0.2), transparent 40%),
+    linear-gradient(145deg, #064833, #0f7a58 60%, #1a9a6e);
+}
+
+.my-hero::after {
+  content: '';
+  position: absolute;
+  width: 180px;
+  height: 180px;
+  right: -70px;
+  top: -60px;
+  border: 22px solid rgba(255, 255, 255, 0.06);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.my-hero__profile {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.my-hero__avatar {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  font-family: var(--h5-font-display);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.my-hero__meta h1 {
+  margin: 0;
+  font-family: var(--h5-font-display);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.my-hero__meta p {
+  margin: 5px 0 0;
+  color: rgba(238, 255, 248, 0.68);
+  font-size: 12px;
+}
+
+.my-body {
+  position: relative;
+  z-index: 2;
+  margin-top: -12px;
+  padding: 0 14px 8px;
+  animation: h5-rise 0.4s var(--h5-ease) both;
+}
+
+.my-stats-card {
+  margin-bottom: 12px;
+  padding: 16px;
+  border: 1px solid var(--h5-line-soft);
+  border-radius: var(--h5-radius-lg);
+  background: var(--h5-surface-elevated);
+  box-shadow: var(--h5-shadow);
+}
+
+.my-stats-card__title {
+  margin: 0 0 12px;
+  color: var(--h5-ink);
+  font-family: var(--h5-font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.my-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.my-stats-grid > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 4px;
+  border-radius: 12px;
+  background: #eef5f1;
+}
+
+.my-stats-grid b {
+  font-family: var(--h5-font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--h5-green-dark);
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.my-stats-grid span {
+  font-size: 11px;
+  color: var(--h5-muted);
+}
+
+.my-logout {
+  padding: 16px 0 8px;
+}
+
+.my-logout .rv-button {
+  height: 48px;
+  border-radius: 14px !important;
+  border-color: rgba(181, 74, 63, 0.28) !important;
+  color: var(--h5-danger) !important;
+  font-weight: 600;
+}

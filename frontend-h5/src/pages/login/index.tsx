@@ -84,7 +84,7 @@ export default function LoginPage() {
           </div>
           <Form>
             {token && user && (
-              <div style={{ padding: '0 16px 8px', fontSize: 13, color: '#666' }}>
+              <div className="h5-login-switch-hint">
                 当前：{user.realName}。输入其他账号可切换，或先退出再登。
               </div>
             )}

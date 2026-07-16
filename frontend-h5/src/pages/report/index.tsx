@@ -4,6 +4,7 @@ import { NavBar, Cell, Empty, Tag, Image, PullRefresh, Button } from 'react-vant
 import { fetchRecord, type RecordItem } from '../../api/record';
 import { displayPhotoUrl } from '../../utils/photo-url';
 import { RECORD_STATUS_LABEL } from '../../utils/displayLabels';
+import './report.css';
 
 const AI_LABEL: Record<string, string> = {
   pass: '合格',
@@ -41,7 +42,6 @@ export default function ReportPage() {
     load().catch(() => undefined);
   }, [load]);
 
-  // 若仍有分析中，定时刷新
   useEffect(() => {
     if (!record) return;
     const pending = record.entries.some(
@@ -78,7 +78,7 @@ export default function ReportPage() {
   }, [record]);
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f2f5f3', paddingBottom: 24 }}>
+    <div className="report-page">
       <NavBar title="智能分析报告" leftText="返回" onClickLeft={() => navigate(-1)} />
 
       {loading && !record ? (
@@ -87,7 +87,7 @@ export default function ReportPage() {
         <Empty description="报告不存在" />
       ) : (
         <PullRefresh onRefresh={load}>
-          <div style={{ padding: 12 }}>
+          <div className="report-body">
             <Cell.Group inset>
               <Cell
                 title={record.task?.taskName || '巡检报告'}
@@ -97,31 +97,36 @@ export default function ReportPage() {
                     : ''
                 }`}
               />
-              <Cell
-                title="智能分析汇总"
-                label={`合格 ${summary.pass} · 不合格 ${summary.fail} · 分析中 ${summary.pending} · 失败 ${summary.error}`}
-              />
             </Cell.Group>
 
+            <div className="report-summary">
+              <div className="is-pass">
+                <b>{summary.pass}</b>
+                <span>合格</span>
+              </div>
+              <div className="is-fail">
+                <b>{summary.fail}</b>
+                <span>不合格</span>
+              </div>
+              <div className="is-pending">
+                <b>{summary.pending}</b>
+                <span>分析中</span>
+              </div>
+              <div className="is-error">
+                <b>{summary.error}</b>
+                <span>失败</span>
+              </div>
+            </div>
+
             {record.rejectReason?.reason && (
-              <div
-                style={{
-                  margin: '12px 4px',
-                  padding: 12,
-                  background: '#fff1f0',
-                  borderRadius: 8,
-                  fontSize: 13,
-                  color: '#a8071a',
-                  lineHeight: 1.5,
-                }}
-              >
-                <div style={{ fontWeight: 600 }}>管理员驳回</div>
-                <div style={{ marginTop: 4 }}>原因：{record.rejectReason.reason}</div>
+              <div className="report-alert report-alert--reject">
+                <div className="report-alert__title">管理员驳回</div>
+                <div>原因：{record.rejectReason.reason}</div>
                 {record.rejectReason.entryIds?.length ? (
-                  <div style={{ marginTop: 8 }}>
+                  <div className="report-alert__tags">
                     需返工：
                     {record.rejectReason.entryIds.map((eid) => (
-                      <Tag key={eid} type="danger" style={{ marginLeft: 6, marginTop: 4 }}>
+                      <Tag key={eid} type="danger">
                         {snapshot.get(eid)?.name || eid.slice(0, 8)}
                       </Tag>
                     ))}
@@ -131,16 +136,7 @@ export default function ReportPage() {
             )}
 
             {summary.pending > 0 && (
-              <div
-                style={{
-                  margin: '12px 4px',
-                  padding: 10,
-                  background: '#fff7e6',
-                  borderRadius: 8,
-                  fontSize: 13,
-                  color: '#ad6800',
-                }}
-              >
+              <div className="report-alert report-alert--pending">
                 仍有 {summary.pending} 项正在分析，页面会自动刷新；超过 3
                 分钟将自动转人工审核。
               </div>
@@ -151,50 +147,50 @@ export default function ReportPage() {
               const st = entry.aiResult?.status || 'pending';
               const needRedo = record.rejectReason?.entryIds?.includes(entry.templateEntryId);
               return (
-                <Cell.Group
+                <div
                   key={entry.templateEntryId}
-                  inset
-                  style={{
-                    marginTop: 12,
-                    border: needRedo ? '1px solid #ffa39e' : undefined,
-                  }}
-                  title={`${idx + 1}. ${tpl?.name || '检查项'}${needRedo ? ' · 需返工' : ''}`}
+                  className={`report-entry${needRedo ? ' is-redo' : ''}`}
                 >
-                  <Cell
-                    title="智能分析结论"
-                    value={
-                      <Tag type={AI_TAG[st] || 'primary'}>{AI_LABEL[st] || '待人工判断'}</Tag>
-                    }
-                    label={
-                      entry.aiResult
-                        ? `置信度 ${Math.round((entry.aiResult.confidence || 0) * 100)}% · ${
-                            entry.aiResult.reason || ''
-                          }`
-                        : '等待分析'
-                    }
-                  />
-                  {(entry.photos || []).length > 0 && (
-                    <Cell title="现场照片">
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-                        {entry.photos.map((url) => (
-                          <Image
-                            key={url}
-                            src={displayPhotoUrl(url)}
-                            width={72}
-                            height={72}
-                            fit="cover"
-                            radius={6}
-                          />
-                        ))}
-                      </div>
-                    </Cell>
-                  )}
-                  {entry.remark ? <Cell title="备注" label={entry.remark} /> : null}
-                </Cell.Group>
+                  <Cell.Group
+                    inset
+                    title={`${idx + 1}. ${tpl?.name || '检查项'}${needRedo ? ' · 需返工' : ''}`}
+                  >
+                    <Cell
+                      title="智能分析结论"
+                      value={
+                        <Tag type={AI_TAG[st] || 'primary'}>{AI_LABEL[st] || '待人工判断'}</Tag>
+                      }
+                      label={
+                        entry.aiResult
+                          ? `置信度 ${Math.round((entry.aiResult.confidence || 0) * 100)}% · ${
+                              entry.aiResult.reason || ''
+                            }`
+                          : '等待分析'
+                      }
+                    />
+                    {(entry.photos || []).length > 0 && (
+                      <Cell title="现场照片">
+                        <div className="report-photos">
+                          {entry.photos.map((url) => (
+                            <Image
+                              key={url}
+                              src={displayPhotoUrl(url)}
+                              width={72}
+                              height={72}
+                              fit="cover"
+                              radius={10}
+                            />
+                          ))}
+                        </div>
+                      </Cell>
+                    )}
+                    {entry.remark ? <Cell title="备注" label={entry.remark} /> : null}
+                  </Cell.Group>
+                </div>
               );
             })}
 
-            <div style={{ padding: '16px 4px' }}>
+            <div className="report-actions">
               <Button block round onClick={() => navigate('/m/tasks')}>
                 返回任务列表
               </Button>

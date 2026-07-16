@@ -1,0 +1,121 @@
+.report-page {
+  min-height: 100vh;
+  padding-bottom: 28px;
+  background: transparent;
+}
+
+.report-body {
+  padding: 12px 14px 8px;
+  animation: h5-rise 0.4s var(--h5-ease) both;
+}
+
+.report-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 12px 0 4px;
+  padding: 14px 10px;
+  border: 1px solid var(--h5-line-soft);
+  border-radius: var(--h5-radius-lg);
+  background: var(--h5-surface-elevated);
+  box-shadow: var(--h5-shadow-soft);
+}
+
+.report-summary > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.report-summary b {
+  font-family: var(--h5-font-display);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--h5-ink);
+  line-height: 1.1;
+}
+
+.report-summary span {
+  font-size: 10px;
+  color: var(--h5-muted);
+}
+
+.report-summary .is-pass b {
+  color: var(--h5-green);
+}
+
+.report-summary .is-fail b {
+  color: var(--h5-danger);
+}
+
+.report-summary .is-pending b {
+  color: #c48a2e;
+}
+
+.report-summary .is-error b {
+  color: #8a6d3b;
+}
+
+.report-alert {
+  margin: 12px 0 0;
+  padding: 13px 14px;
+  border-radius: 13px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.report-alert--reject {
+  color: var(--h5-danger);
+  background: var(--h5-danger-bg);
+  border: 1px solid rgba(181, 74, 63, 0.12);
+}
+
+.report-alert--pending {
+  color: var(--h5-warn);
+  background: var(--h5-warn-bg);
+  border: 1px solid rgba(154, 107, 31, 0.12);
+}
+
+.report-alert__title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.report-alert__tags {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.report-entry {
+  margin-top: 12px;
+}
+
+.report-entry.is-redo .rv-cell-group--inset {
+  border-color: rgba(181, 74, 63, 0.28);
+}
+
+.report-photos {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.report-photos .rv-image {
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: var(--h5-shadow-soft);
+}
+
+.report-actions {
+  padding: 18px 2px 8px;
+}
+
+.report-actions .rv-button {
+  border-radius: 14px !important;
+  font-weight: 700;
+}
