@@ -78,7 +78,15 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <Form form={form} name="login" onFinish={onFinish} size="large" layout="vertical">
+            <Form
+              form={form}
+              name="login"
+              className="pc-login-form"
+              onFinish={onFinish}
+              size="large"
+              layout="vertical"
+              requiredMark={false}
+            >
               {token && user && (
                 <div className="pc-login-session">
                   当前仍登录为 {user.realName}。可直接切换账号，或{' '}

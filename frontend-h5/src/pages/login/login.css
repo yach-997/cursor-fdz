@@ -1,11 +1,13 @@
 .h5-login-page {
   min-height: 100vh;
+  min-height: 100dvh;
   position: relative;
   overflow: hidden;
+  /* 绿色区加高，保证品牌标题与副标题都落在深绿底上，避免「看不见字」 */
   background:
     radial-gradient(circle at 88% -4%, rgba(90, 220, 170, 0.28), transparent 18rem),
     radial-gradient(circle at 8% 18%, rgba(20, 90, 70, 0.35), transparent 12rem),
-    linear-gradient(165deg, #074a36 0%, #0f7a58 34%, #e8f1ec 34.05%, #e8f1ec 100%);
+    linear-gradient(165deg, #063d2d 0%, #0f7a58 46%, #e8f1ec 46.05%, #e8f1ec 100%);
 }
 
 .h5-login-page::before,
@@ -43,7 +45,7 @@
   gap: 6px;
   border: 0;
   background: transparent;
-  color: rgba(238, 255, 248, 0.72);
+  color: rgba(238, 255, 248, 0.85);
   font-size: 13px;
   font-family: inherit;
 }
@@ -51,33 +53,34 @@
 .h5-login-page__inner {
   position: relative;
   z-index: 1;
-  padding: 8px 18px 36px;
+  padding: 4px 18px 32px;
 }
 
 .h5-login-brand {
   text-align: center;
   color: #fff;
+  padding-bottom: 8px;
   animation: h5-rise 0.5s var(--h5-ease) both;
 }
 
 .h5-login-brand__logo {
-  width: 68px;
-  height: 68px;
-  margin: 0 auto 14px;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 12px;
   display: grid;
   place-items: center;
   border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 20px;
+  border-radius: 18px;
   background: linear-gradient(150deg, rgba(80, 210, 160, 0.95), rgba(12, 100, 72, 0.94));
   box-shadow: 0 16px 36px rgba(4, 40, 28, 0.28), inset 0 1px rgba(255, 255, 255, 0.35);
   font-family: var(--h5-font-display);
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 800;
   letter-spacing: -0.03em;
 }
 
 .h5-login-brand__eyebrow {
-  color: #9aebc9;
+  color: #b6f0d4;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.22em;
@@ -86,61 +89,74 @@
 
 .h5-login-brand h1 {
   margin: 8px 0 0;
+  color: #fff;
   font-family: var(--h5-font-display);
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1.2;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
 }
 
 .h5-login-brand p {
   margin: 8px auto 0;
-  max-width: 16em;
-  color: rgba(235, 255, 247, 0.68);
+  max-width: 18em;
+  color: #e8fff4;
   font-size: 13px;
   line-height: 1.5;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  opacity: 0.95;
 }
 
 .h5-login-card {
-  margin-top: 30px;
+  margin-top: 22px;
   overflow: hidden;
   border: 1px solid rgba(18, 70, 52, 0.08);
   border-radius: var(--h5-radius-xl);
-  background: rgba(255, 255, 255, 0.97);
+  background: rgba(255, 255, 255, 0.98);
   box-shadow: 0 24px 56px rgba(8, 48, 34, 0.14);
   animation: h5-rise 0.55s var(--h5-ease) 0.08s both;
 }
 
 .h5-login-card__head {
-  padding: 24px 20px 12px;
+  padding: 20px 20px 8px;
 }
 
 .h5-login-card__head h2 {
   margin: 0;
   color: var(--h5-ink);
   font-family: var(--h5-font-display);
-  font-size: 20px;
+  font-size: 18px;
   letter-spacing: -0.02em;
 }
 
 .h5-login-card__head span {
   display: block;
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--h5-muted);
   font-size: 12px;
 }
 
 .h5-login-card .rv-form {
-  padding: 0 8px;
+  padding: 0 4px;
 }
 
+/* 收紧账号/密码行间距，避免卡片被拉得过高 */
 .h5-login-card .rv-cell {
-  padding: 15px 12px;
+  padding: 10px 14px;
+  min-height: 44px;
+}
+
+.h5-login-card .rv-cell::after {
+  left: 14px;
+  right: 14px;
 }
 
 .h5-login-card .rv-field__label {
+  width: 4.2em;
+  margin-right: 8px;
   color: #456257;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -149,29 +165,33 @@
   font-size: 15px;
 }
 
+.h5-login-card .rv-field__body {
+  min-height: 28px;
+}
+
 .h5-login-switch-hint {
-  padding: 0 16px 8px;
+  padding: 0 16px 6px;
   font-size: 12px;
   color: var(--h5-muted);
   line-height: 1.5;
 }
 
 .h5-login-actions {
-  padding: 20px 18px 24px;
+  padding: 14px 18px 20px;
 }
 
 .h5-login-btn {
-  height: 52px !important;
+  height: 48px !important;
   border: 0 !important;
   border-radius: 14px !important;
   background: linear-gradient(135deg, var(--h5-green-bright), var(--h5-green-dark)) !important;
   box-shadow: 0 12px 28px rgba(15, 122, 88, 0.26);
-  font-size: 16px !important;
+  font-size: 15px !important;
   font-weight: 700 !important;
 }
 
 .h5-login-trust {
-  margin-top: 22px;
+  margin-top: 18px;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -192,5 +212,30 @@
   .h5-login-page__inner {
     max-width: 450px;
     margin: 0 auto;
+  }
+}
+
+/* 矮屏：绿色区再略加高，避免副标题压到分界线 */
+@media (max-height: 720px) {
+  .h5-login-page {
+    background:
+      radial-gradient(circle at 88% -4%, rgba(90, 220, 170, 0.28), transparent 18rem),
+      radial-gradient(circle at 8% 18%, rgba(20, 90, 70, 0.35), transparent 12rem),
+      linear-gradient(165deg, #063d2d 0%, #0f7a58 52%, #e8f1ec 52.05%, #e8f1ec 100%);
+  }
+
+  .h5-login-brand__logo {
+    width: 56px;
+    height: 56px;
+    margin-bottom: 8px;
+    font-size: 20px;
+  }
+
+  .h5-login-brand h1 {
+    font-size: 24px;
+  }
+
+  .h5-login-card {
+    margin-top: 16px;
   }
 }

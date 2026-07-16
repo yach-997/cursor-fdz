@@ -90,35 +90,55 @@
 .pc-login-card { width: 100%; max-width: 410px; margin: 0 auto; }
 .login-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 42px; color: #84968f; font-size: 13px; text-decoration: none; transition: color .2s; }
 .login-back:hover { color: var(--green); }
-.pc-login-brand { display: flex; align-items: center; gap: 14px; margin-bottom: 34px; }
+.pc-login-brand { display: flex; align-items: center; gap: 14px; margin-bottom: 26px; }
 .pc-login-brand__logo { flex: 0 0 54px; width: 54px; height: 54px; border-radius: 16px; font-size: 20px; }
 .pc-login-brand__eyebrow { margin-bottom: 3px; color: var(--green); font-size: 11px; font-weight: 700; letter-spacing: .12em; }
 .pc-login-brand h2 { margin: 0; color: #18382d; font-size: 28px; letter-spacing: -.03em; }
 .pc-login-brand p { margin: 5px 0 0; color: #84968f; font-size: 13px; }
-.pc-login-card .ant-form-item { margin-bottom: 22px; }
-.pc-login-card .ant-form-item-label > label { color: #3e5c52; font-size: 13px; font-weight: 600; }
-.pc-login-card .ant-input-affix-wrapper { height: 48px; border-color: #dce7e2; border-radius: 12px; box-shadow: none; }
+.pc-login-card .pc-login-form.ant-form-vertical .ant-form-item {
+  margin-bottom: 12px;
+}
+.pc-login-card .pc-login-form .ant-form-item-label {
+  padding-bottom: 4px;
+}
+.pc-login-card .pc-login-form .ant-form-item-label > label {
+  height: auto;
+  color: #3e5c52;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.pc-login-card .pc-login-form .ant-form-item-control-input {
+  min-height: auto;
+}
+.pc-login-card .ant-input-affix-wrapper { height: 46px; border-color: #dce7e2; border-radius: 12px; box-shadow: none; }
 .pc-login-card .ant-input-affix-wrapper-focused { border-color: #2ba879; box-shadow: 0 0 0 3px rgba(22, 131, 95, .09); }
 .pc-login-card .ant-input-prefix { margin-right: 10px; color: #8da097; }
-.pc-login-session { margin-bottom: 18px; padding: 11px 13px; border-radius: 10px; color: #5d756c; background: #f0f7f4; font-size: 12px; line-height: 1.6; }
-.pc-login-options { margin: -4px 0 24px; display: flex; justify-content: space-between; align-items: center; color: #91a098; font-size: 12px; }
+.pc-login-session { margin-bottom: 14px; padding: 11px 13px; border-radius: 10px; color: #5d756c; background: #f0f7f4; font-size: 12px; line-height: 1.6; }
+.pc-login-options { margin: 2px 0 18px; display: flex; justify-content: space-between; align-items: center; color: #91a098; font-size: 12px; }
 .pc-login-options .ant-checkbox-wrapper { color: #536b62; font-size: 13px; }
 .pc-login-btn { height: 50px !important; border: 0 !important; border-radius: 12px !important; background: linear-gradient(135deg, #1ba873, #117452) !important; font-size: 15px; font-weight: 700; box-shadow: 0 10px 24px rgba(22, 131, 95, .22); }
 .pc-login-btn:hover { transform: translateY(-1px); filter: brightness(1.04); }
-.pc-login-support { margin-top: 28px; display: flex; justify-content: center; align-items: center; gap: 7px; color: #92a39b; font-size: 11px; }
+.pc-login-support { margin-top: 22px; display: flex; justify-content: center; align-items: center; gap: 7px; color: #92a39b; font-size: 11px; }
 .pc-login-support span { width: 7px; height: 7px; border-radius: 50%; background: #36c889; box-shadow: 0 0 0 4px rgba(54,200,137,.12); }
 
 @media (max-width: 900px) {
   .pc-login-page { padding: 18px; }
   .pc-login-shell { max-width: 520px; min-height: 0; grid-template-columns: 1fr; }
   .pc-login-visual { display: none; }
-  .pc-login-panel { min-height: calc(100vh - 36px); padding: 34px 30px; }
+  .pc-login-panel { min-height: calc(100vh - 36px); padding: 30px 26px; }
+  .login-back { margin-bottom: 28px; }
+  .pc-login-brand { margin-bottom: 22px; }
+  .pc-login-card .pc-login-form.ant-form-vertical .ant-form-item { margin-bottom: 10px; }
 }
 
 @media (max-width: 480px) {
   .pc-login-page { padding: 0; background: #fff; }
   .pc-login-shell { min-height: 100vh; border: 0; border-radius: 0; box-shadow: none; }
-  .pc-login-panel { min-height: 100vh; padding: 26px 22px; align-items: flex-start; }
-  .login-back { margin-bottom: 42px; }
+  .pc-login-panel { min-height: 100vh; padding: 24px 20px; align-items: flex-start; }
+  .login-back { margin-bottom: 24px; }
+  .pc-login-brand { margin-bottom: 20px; }
   .pc-login-brand h2 { font-size: 25px; }
+  .pc-login-card .ant-input-affix-wrapper { height: 44px; }
+  .pc-login-options { margin: 0 0 16px; }
 }
