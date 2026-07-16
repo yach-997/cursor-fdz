@@ -241,6 +241,7 @@ export class RecordService {
       };
     });
 
+    const expectedStatus = record.status;
     if (record.status === RecordStatus.REJECTED) {
       record.status = RecordStatus.DRAFT;
       // 保留 rejectReason 供巡检员查看；只记追溯，不抹掉驳回信息
@@ -253,8 +254,24 @@ export class RecordService {
       });
     }
 
-    await this.recordRepo.save(record);
-    return this.toDetail(record, task);
+    // 只更新草稿字段，并用读取时的状态作为更新条件。手机端快速连续点击时，
+    // 较早发出的自动保存可能晚于“提交报告”返回；整实体 save 会把已提交记录
+    // 的状态、提交时间和审核链覆盖回草稿。
+    const updated = await this.recordRepo.update(
+      { id: record.id, status: expectedStatus },
+      {
+        entries: record.entries,
+        status: record.status,
+        auditTrail: record.auditTrail,
+      },
+    );
+
+    const latest = await this.getRecordOrThrow(record.id);
+    if (!updated.affected) {
+      // 另一请求已经推进状态，保留最新提交结果，不允许晚到草稿回写。
+      return this.toDetail(latest, task);
+    }
+    return this.toDetail(latest, task);
   }
 
   /**
@@ -531,32 +548,47 @@ export class RecordService {
       return next;
     });
 
+    // AI 回写只更新 entries，不能用可能过期的实体覆盖提交状态、提交时间和审核链。
+    await this.recordRepo.update(record.id, { entries: record.entries });
+    const latest = await this.getRecordOrThrow(record.id);
+
     // 已提交且 AI 全部落定：合格自动通过，不合格留在审核队列
-    if (record.status === RecordStatus.SUBMITTED && !this.hasAiPending(record.entries)) {
-      const task = await this.getTaskOrThrow(record.taskId);
-      if (!this.hasAiFail(record.entries) && !this.hasAiError(record.entries)) {
-        record.status = RecordStatus.APPROVED;
-        record.approvedAt = new Date();
-        this.pushTrail(record, {
+    if (latest.status === RecordStatus.SUBMITTED && !this.hasAiPending(latest.entries)) {
+      const task = await this.getTaskOrThrow(latest.taskId);
+      let autoApproved = false;
+      if (!this.hasAiFail(latest.entries) && !this.hasAiError(latest.entries)) {
+        latest.status = RecordStatus.APPROVED;
+        latest.approvedAt = new Date();
+        autoApproved = true;
+        this.pushTrail(latest, {
           action: 'auto_approved',
           at: new Date().toISOString(),
           summary: 'AI 分析完成且全部合格，自动通过',
         });
         task.status = TaskStatus.APPROVED;
-        await this.taskRepo.save(task);
       } else {
-        this.pushTrail(record, {
+        this.pushTrail(latest, {
           action: 'submitted',
           at: new Date().toISOString(),
-          summary: this.hasAiError(record.entries)
+          summary: this.hasAiError(latest.entries)
             ? 'AI 分析异常，已转管理员人工审核'
             : 'AI 分析完成，存在不合格项，待管理员审核',
         });
       }
+      const routed = await this.recordRepo.update(
+        { id: latest.id, status: RecordStatus.SUBMITTED },
+        {
+          status: latest.status,
+          approvedAt: latest.approvedAt,
+          auditTrail: latest.auditTrail,
+        },
+      );
+      if (autoApproved && routed.affected) {
+        await this.taskRepo.save(task);
+      }
     }
 
-    await this.recordRepo.save(record);
-    return record;
+    return this.getRecordOrThrow(record.id);
   }
 
   private buildDraftEntries(snapshot: TemplateEntry[]): RecordEntry[] {

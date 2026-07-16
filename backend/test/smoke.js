@@ -115,6 +115,10 @@ async function validateManualAuditFlow() {
   const recordRepo = {
     findOne: async () => record,
     save: async (value) => value,
+    update: async (_criteria, patch) => {
+      Object.assign(record, patch);
+      return { affected: 1 };
+    },
   };
   const taskRepo = {
     findOne: async () => task,
@@ -200,6 +204,10 @@ async function validateAiErrorFallsBackToAudit() {
   const recordRepo = {
     findOne: async () => record,
     save: async (value) => value,
+    update: async (_criteria, patch) => {
+      Object.assign(record, patch);
+      return { affected: 1 };
+    },
   };
   const taskRepo = {
     findOne: async () => task,
@@ -229,6 +237,63 @@ async function validateAiErrorFallsBackToAudit() {
     'AI 不合格统计不能被巡检员人工确认结果覆盖',
   );
   assert.equal(detail.needsAudit, true);
+}
+
+async function validateLateDraftCannotOverwriteSubmission() {
+  const task = {
+    id: seededUuid,
+    siteId: otherSeededUuid,
+    status: 'submitted',
+    aiEnabled: true,
+  };
+  const entry = {
+    templateEntryId: 'entry-1',
+    photos: ['https://example.com/test.jpg'],
+    aiResult: { status: 'fail', confidence: 0.95, reason: 'defect' },
+    manualResult: 'fail',
+    finalResult: 'fail',
+    remark: '',
+  };
+  const staleDraft = {
+    id: otherSeededUuid,
+    taskId: task.id,
+    deviceType: 'string_inverter',
+    entries: [entry],
+    status: 'draft',
+    submittedAt: null,
+    auditTrail: [],
+    createdAt: new Date(),
+  };
+  const submitted = {
+    ...staleDraft,
+    status: 'submitted',
+    submittedAt: new Date(),
+    auditTrail: [{ action: 'submitted', at: new Date().toISOString() }],
+  };
+  let reads = 0;
+  const recordRepo = {
+    findOne: async () => (reads++ === 0 ? staleDraft : submitted),
+    update: async () => ({ affected: 0 }),
+    save: async () => {
+      throw new Error('晚到的草稿不应再整实体保存');
+    },
+  };
+  const taskRepo = { findOne: async () => task };
+  const service = new RecordService(recordRepo, taskRepo, {});
+  const result = await service.saveDraft(
+    staleDraft.id,
+    { entries: [entry] },
+    {
+      id: seededUuid,
+      realName: 'Admin',
+      role: 'super_admin',
+      managedSiteIds: [],
+      memberSiteIds: [],
+    },
+  );
+  assert.equal(result.status, 'submitted');
+  assert.ok(result.submittedAt);
+  assert.equal(result.auditTrail.length, 1);
 }
 
 async function validatePrimaryManagerCanAlsoInspect() {
@@ -433,6 +498,7 @@ async function main() {
   await validateManualAuditFlow();
   await validateTemplateScopeUpdate();
   await validateAiErrorFallsBackToAudit();
+  await validateLateDraftCannotOverwriteSubmission();
   await validatePrimaryManagerCanAlsoInspect();
   validateGeocodeRegionGuard();
   await validateLandmarkGeocodeFallback();
