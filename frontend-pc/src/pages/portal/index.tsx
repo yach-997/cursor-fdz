@@ -30,14 +30,9 @@ export default function PortalPage() {
           <h1 className="portal-brand__title">光伏储能巡检系统</h1>
           <p className="portal-brand__subtitle">为管理与现场巡检提供清晰、可靠的一体化工作台</p>
           {token && user && (
-            <p className="portal-brand__subtitle" style={{ marginTop: 8, opacity: 0.9 }}>
+            <p className="portal-brand__subtitle portal-brand__session">
               当前账号：{user.realName} ·{' '}
-              <a
-                style={{ color: '#fff', textDecoration: 'underline', cursor: 'pointer' }}
-                onClick={() => navigate(getHomePathByRole(user.role))}
-              >
-                继续进入
-              </a>
+              <a onClick={() => navigate(getHomePathByRole(user.role))}>继续进入</a>
             </p>
           )}
         </div>
@@ -56,8 +51,8 @@ export default function PortalPage() {
             </svg>
           </span>
           <span className="portal-card__text">
-            <span className="portal-card__title">电脑管理后台</span>
-            <span className="portal-card__desc">管理员 / 站长入口</span>
+            <span className="portal-card__title">管理后台</span>
+            <span className="portal-card__desc">管理员 / 站长 · 电脑与手机均可使用</span>
           </span>
           <span className="portal-card__arrow">›</span>
         </button>

@@ -34,23 +34,24 @@ export default function App() {
         locale={zhCN}
         theme={{
           token: {
-            colorPrimary: '#16835f',
-            colorInfo: '#16835f',
-            colorSuccess: '#18a573',
+            colorPrimary: '#0f7a58',
+            colorInfo: '#0f7a58',
+            colorSuccess: '#1a9a6e',
             colorWarning: '#e7a23b',
-            colorText: '#18332a',
-            colorTextSecondary: '#657a72',
-            colorBgLayout: '#f3f7f5',
-            borderRadius: 10,
+            colorText: '#132820',
+            colorTextSecondary: '#61756b',
+            colorBgLayout: '#e8f0eb',
+            borderRadius: 12,
             borderRadiusLG: 16,
             controlHeight: 40,
-            fontFamily: "'Inter', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif",
-            boxShadowSecondary: '0 18px 48px rgba(22, 70, 52, 0.12)',
+            fontFamily:
+              "'Noto Sans SC', 'Outfit', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+            boxShadowSecondary: '0 18px 48px rgba(14, 52, 38, 0.12)',
           },
           components: {
-            Button: { primaryShadow: '0 8px 20px rgba(22, 131, 95, 0.2)' },
+            Button: { primaryShadow: '0 8px 20px rgba(15, 122, 88, 0.22)' },
             Card: { headerBg: 'transparent' },
-            Table: { headerBg: '#f5f8f7', headerColor: '#49635a' },
+            Table: { headerBg: '#f0f6f3', headerColor: '#49635a' },
             Menu: { darkItemBg: 'transparent', darkSubMenuItemBg: 'transparent' },
           },
         }}
