@@ -29,6 +29,7 @@ export interface UserInfo {
   roles?: UserRole[];
   status: string;
   region?: string;
+  orgUnit?: string;
   managedSites?: SiteBrief[];
   siteMemberships?: SiteMembership[];
   membershipCount?: number;

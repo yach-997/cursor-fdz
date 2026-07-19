@@ -89,6 +89,13 @@ export const menuConfig: MenuConfig[] = [
     icon: 'SettingOutlined',
     roles: ['super_admin', 'site_manager', 'inspector'],
   },
+  {
+    key: 'finance',
+    path: '/finance',
+    label: '费用结算中心',
+    icon: 'AccountBookOutlined',
+    roles: ['super_admin', 'site_manager'],
+  },
 ];
 
 /** 根据角色过滤菜单 */

@@ -48,6 +48,10 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   region?: string;
+
+  @IsOptional()
+  @IsString()
+  orgUnit?: string;
 }
 
 /** 更新用户 DTO */
@@ -78,6 +82,10 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   region?: string;
+
+  @IsOptional()
+  @IsString()
+  orgUnit?: string;
 
   @IsOptional()
   @IsString()

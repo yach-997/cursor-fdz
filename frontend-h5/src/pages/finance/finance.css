@@ -1,0 +1,25 @@
+.mobile-finance-page { min-height: 100vh; padding: 18px 16px 36px; background: #f2f8f5; color: #163c33; }
+.mobile-finance-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+.mobile-finance-head button { border: 0; background: transparent; color: #108663; font-size: 16px; padding: 8px 0; }
+.mobile-finance-head h1 { margin: 0; font-size: 22px; }
+.mobile-finance-card { padding: 18px; margin-bottom: 14px; border-radius: 18px; background: #fff; box-shadow: 0 9px 28px rgba(22, 79, 62, .08); }
+.mobile-finance-card h2, .mobile-finance-card h3 { margin: 0 0 8px; }
+.mobile-finance-muted { color: #82918c; font-size: 14px; }
+.mobile-finance-status { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #e8f7f1; color: #087b5b; font-size: 13px; }
+.mobile-finance-list-item { width: 100%; border: 0; text-align: left; }
+.mobile-finance-list-item + .mobile-finance-list-item { margin-top: 12px; }
+.mobile-finance-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.mobile-finance-form label { display: block; margin: 14px 0 7px; font-weight: 600; }
+.mobile-finance-form input, .mobile-finance-form textarea { box-sizing: border-box; width: 100%; padding: 13px; border: 1px solid #dce8e3; border-radius: 12px; background: #fbfdfc; font: inherit; }
+.mobile-finance-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+.mobile-finance-primary, .mobile-finance-secondary { min-height: 48px; border-radius: 24px; font-size: 16px; }
+.mobile-finance-primary { border: 0; color: #fff; background: linear-gradient(135deg,#19ad7b,#087b59); }
+.mobile-finance-secondary { border: 1px solid #b9d4ca; color: #126f55; background: #fff; }
+.mobile-finance-photo { width: 88px; height: 88px; border-radius: 12px; object-fit: cover; margin: 8px 8px 0 0; }
+.income-hero { padding: 24px; color: #fff; background: linear-gradient(135deg,#16a875,#086c51); }
+.income-hero strong { display: block; font-size: 32px; margin-top: 8px; }
+.income-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+.income-grid div { padding: 12px; border-radius: 12px; background: rgba(255,255,255,.13); }
+.income-grid b { display: block; font-size: 20px; }
+.income-item-lines { margin-top: 12px; padding-top: 10px; border-top: 1px solid #edf2f0; }
+.income-item-lines p { display:flex; justify-content:space-between; margin:8px 0; font-size:14px; }

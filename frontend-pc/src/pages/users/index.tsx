@@ -39,9 +39,7 @@ export default function UsersPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [keyword, setKeyword] = useState('');
-  const [role, setRole] = useState<UserRole | undefined>(
-    isAdmin ? undefined : 'inspector',
-  );
+  const [role, setRole] = useState<UserRole | undefined>(isAdmin ? undefined : 'inspector');
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<UserInfo | null>(null);
@@ -98,9 +96,7 @@ export default function UsersPage() {
       const map: Record<string, string[]> = {};
       for (const site of siteRes.list) {
         const members = await fetchSiteMembers(site.id, 'inspector');
-        map[site.id] = members
-          .filter((m) => m.status === 'active')
-          .map((m) => m.userId);
+        map[site.id] = members.filter((m) => m.status === 'active').map((m) => m.userId);
       }
       setMemberMap(map);
     } finally {
@@ -205,15 +201,19 @@ export default function UsersPage() {
         );
       },
     },
-    { title: '地区', dataIndex: 'region', width: 100, render: (v) => v || '-' },
+    {
+      title: '归属区域',
+      dataIndex: 'region',
+      width: 100,
+      render: (v) => (v === 'yunnan' ? '云南' : v === 'south_china' ? '华南' : '-'),
+    },
+    { title: '归属单位', dataIndex: 'orgUnit', width: 140, render: (v) => v || '-' },
     {
       title: '状态',
       dataIndex: 'status',
       width: 90,
       render: (v) => (
-        <Tag color={v === 'active' ? 'green' : 'default'}>
-          {v === 'active' ? '启用' : '停用'}
-        </Tag>
+        <Tag color={v === 'active' ? 'green' : 'default'}>{v === 'active' ? '启用' : '停用'}</Tag>
       ),
     },
     {
@@ -251,7 +251,11 @@ export default function UsersPage() {
   const poolColumns: ColumnsType<UserInfo> = [
     { title: '姓名', dataIndex: 'realName', width: 100 },
     { title: '手机号', dataIndex: 'phone', width: 130 },
-    { title: '地区', dataIndex: 'region', render: (v) => v || '-' },
+    {
+      title: '归属区域',
+      dataIndex: 'region',
+      render: (v) => (v === 'yunnan' ? '云南' : v === 'south_china' ? '华南' : '-'),
+    },
     {
       title: '已加入站点数',
       dataIndex: 'membershipCount',
@@ -427,8 +431,18 @@ export default function UsersPage() {
               }
             />
           </Form.Item>
-          <Form.Item name="region" label="地区">
-            <Input placeholder="如：华东" />
+          <Form.Item name="region" label="归属区域">
+            <Select
+              allowClear
+              placeholder="费用数据与派单的区域范围"
+              options={[
+                { value: 'south_china', label: '华南' },
+                { value: 'yunnan', label: '云南' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="orgUnit" label="归属单位">
+            <Input placeholder="选填，如：华南运维中心" />
           </Form.Item>
           <Form.Item name="email" label="邮箱">
             <Input />

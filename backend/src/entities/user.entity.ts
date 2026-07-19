@@ -59,6 +59,10 @@ export class User {
   @Column({ nullable: true })
   region: string;
 
+  /** 费用结算归属单位 */
+  @Column({ name: 'org_unit', type: 'varchar', length: 64, nullable: true })
+  orgUnit: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

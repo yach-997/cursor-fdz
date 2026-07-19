@@ -1,0 +1,110 @@
+.finance-shell {
+  min-width: 0;
+}
+.finance-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.finance-heading h2 {
+  margin: 0;
+  color: #153c32;
+  font-size: 22px;
+}
+.finance-heading p {
+  margin: 6px 0 0;
+  color: #87958f;
+}
+.finance-phase {
+  padding: 5px 12px;
+  border-radius: 16px;
+  background: #e6f7f1;
+  color: #07845f;
+  font-weight: 600;
+}
+.finance-tabs {
+  margin-bottom: 12px;
+}
+.finance-toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.finance-toolbar .ant-input,
+.finance-toolbar .ant-select {
+  min-width: 150px;
+}
+.finance-card {
+  border: 0 !important;
+  box-shadow: 0 8px 30px rgba(25, 82, 65, 0.07);
+}
+.finance-money {
+  font-variant-numeric: tabular-nums;
+}
+.finance-warning {
+  margin-bottom: 14px;
+}
+.finance-preview {
+  max-height: 360px;
+  overflow: auto;
+  background: #f6faf8;
+  padding: 12px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+.finance-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.finance-profit-grid {
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+}
+.finance-profit {
+  background: linear-gradient(145deg, #e9fbf3, #d9f5e8);
+}
+.finance-stat {
+  padding: 18px;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #fff, #f4faf7);
+  box-shadow: 0 8px 24px rgba(20, 75, 58, 0.08);
+}
+.finance-stat span {
+  display: block;
+  color: #7a8b85;
+}
+.finance-stat b {
+  display: block;
+  margin-top: 8px;
+  color: #133f34;
+  font-size: 25px;
+}
+.finance-detail-section {
+  margin-top: 18px;
+}
+.finance-detail-section h3 {
+  color: #1b4b3e;
+}
+@media (max-width: 768px) {
+  .finance-stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .finance-profit-grid {
+    grid-template-columns: 1fr;
+  }
+  .finance-heading {
+    align-items: flex-start;
+  }
+  .finance-tabs .ant-tabs-nav-wrap {
+    overflow-x: auto;
+  }
+  .finance-toolbar > * {
+    width: 100% !important;
+  }
+  .finance-card .ant-table {
+    min-width: 760px;
+  }
+}

@@ -19,6 +19,14 @@ const AlertsPage = lazy(() => import('../pages/alerts'));
 const MonitoringPage = lazy(() => import('../pages/monitoring'));
 const SettingsPage = lazy(() => import('../pages/settings'));
 const ForbiddenPage = lazy(() => import('../pages/forbidden'));
+const FinanceLayout = lazy(() => import('../pages/finance/FinanceLayout'));
+const FinanceDashboardPage = lazy(() => import('../pages/finance/dashboard'));
+const FinanceCasesPage = lazy(() => import('../pages/finance/cases'));
+const FinancePoOrdersPage = lazy(() => import('../pages/finance/po-orders'));
+const FinancePricesPage = lazy(() => import('../pages/finance/prices'));
+const FinanceReviewPage = lazy(() => import('../pages/finance/review'));
+const FinanceAssessmentPage = lazy(() => import('../pages/finance/assessment'));
+const FinanceMonthlyPage = lazy(() => import('../pages/finance/monthly'));
 
 /** 页面加载中占位 */
 function PageLoading() {
@@ -183,6 +191,75 @@ export const router = createBrowserRouter([
             <SettingsPage />
           </Lazy>
         ),
+      },
+      {
+        path: 'finance',
+        element: (
+          <AuthGuard roles={['super_admin', 'site_manager']}>
+            <Lazy>
+              <FinanceLayout />
+            </Lazy>
+          </AuthGuard>
+        ),
+        children: [
+          { index: true, element: <Navigate to="dashboard" replace /> },
+          {
+            path: 'dashboard',
+            element: (
+              <Lazy>
+                <FinanceDashboardPage />
+              </Lazy>
+            ),
+          },
+          {
+            path: 'cases',
+            element: (
+              <Lazy>
+                <FinanceCasesPage />
+              </Lazy>
+            ),
+          },
+          {
+            path: 'po-orders',
+            element: (
+              <Lazy>
+                <FinancePoOrdersPage />
+              </Lazy>
+            ),
+          },
+          {
+            path: 'prices',
+            element: (
+              <Lazy>
+                <FinancePricesPage />
+              </Lazy>
+            ),
+          },
+          {
+            path: 'review',
+            element: (
+              <Lazy>
+                <FinanceReviewPage />
+              </Lazy>
+            ),
+          },
+          {
+            path: 'assessment',
+            element: (
+              <Lazy>
+                <FinanceAssessmentPage />
+              </Lazy>
+            ),
+          },
+          {
+            path: 'monthly',
+            element: (
+              <Lazy>
+                <FinanceMonthlyPage />
+              </Lazy>
+            ),
+          },
+        ],
       },
     ],
   },

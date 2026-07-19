@@ -55,10 +55,9 @@ export class UserService {
     }
 
     if (query.keyword) {
-      qb.andWhere(
-        '(user.username ILIKE :kw OR user.realName ILIKE :kw OR user.phone ILIKE :kw)',
-        { kw: `%${query.keyword}%` },
-      );
+      qb.andWhere('(user.username ILIKE :kw OR user.realName ILIKE :kw OR user.phone ILIKE :kw)', {
+        kw: `%${query.keyword}%`,
+      });
     }
 
     qb.orderBy('user.createdAt', 'DESC')
@@ -104,6 +103,7 @@ export class UserService {
       phone: dto.phone,
       email: dto.email || undefined,
       region: dto.region || undefined,
+      orgUnit: dto.orgUnit || undefined,
       status: CommonStatus.ACTIVE,
       role: roles[0],
       roles: [],
@@ -132,6 +132,7 @@ export class UserService {
       ...(dto.phone !== undefined && { phone: dto.phone }),
       ...(dto.email !== undefined && { email: dto.email }),
       ...(dto.region !== undefined && { region: dto.region }),
+      ...(dto.orgUnit !== undefined && { orgUnit: dto.orgUnit }),
       ...(dto.avatar !== undefined && { avatar: dto.avatar }),
     });
 
@@ -166,10 +167,7 @@ export class UserService {
   }
 
   async getInspectorPool(query: QueryPoolDto, currentUser: CurrentUserContext) {
-    if (
-      currentUser.role !== UserRole.SUPER_ADMIN &&
-      currentUser.role !== UserRole.SITE_MANAGER
-    ) {
+    if (currentUser.role !== UserRole.SUPER_ADMIN && currentUser.role !== UserRole.SITE_MANAGER) {
       throw new ForbiddenException('无权查看人才池');
     }
 
@@ -245,6 +243,7 @@ export class UserService {
       roles,
       status: user.status,
       region: user.region,
+      orgUnit: user.orgUnit,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };

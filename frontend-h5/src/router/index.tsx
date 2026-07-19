@@ -19,6 +19,9 @@ const MyPage = lazy(() => import('../pages/my'));
 const HistoryPage = lazy(() => import('../pages/history'));
 const SettingsPage = lazy(() => import('../pages/settings'));
 const PhotoPreviewPage = lazy(() => import('../pages/photo'));
+const FinanceCasesPage = lazy(() => import('../pages/finance/cases'));
+const FinanceCaseDetailPage = lazy(() => import('../pages/finance/case-detail'));
+const MyIncomePage = lazy(() => import('../pages/finance/income'));
 
 function Lazy({ children }: { children: React.ReactNode }) {
   return (
@@ -41,7 +44,19 @@ export const router = createBrowserRouter([
   {
     errorElement: <RouteErrorPage />,
     children: [
-      {
+  {
+    path: '/m/finance-cases',
+    element: <AuthGuard><Lazy><FinanceCasesPage /></Lazy></AuthGuard>,
+  },
+  {
+    path: '/m/finance-cases/:id',
+    element: <AuthGuard><Lazy><FinanceCaseDetailPage /></Lazy></AuthGuard>,
+  },
+  {
+    path: '/m/income',
+    element: <AuthGuard><Lazy><MyIncomePage /></Lazy></AuthGuard>,
+  },
+  {
     path: '/m/login',
     element: (
       <Lazy>

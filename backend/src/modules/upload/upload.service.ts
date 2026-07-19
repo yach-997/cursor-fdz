@@ -69,6 +69,17 @@ export class UploadService {
     return { list: results };
   }
 
+  /** 费用案例里程凭证：独立于巡检任务定位校验，仅保存原始凭证图片。 */
+  async uploadFinanceImage(file: Express.Multer.File) {
+    if (!file?.buffer?.length) throw new BadRequestException('未收到图片文件');
+    if (!file.mimetype?.startsWith('image/')) throw new BadRequestException('仅支持图片文件');
+    const contentType = file.mimetype;
+    const extension = this.imageExtension(contentType);
+    const objectName = `finance/${new Date().toISOString().slice(0, 10)}/${uuidv4()}.${extension}`;
+    const url = await this.putStorage(objectName, file.buffer, contentType);
+    return { url, objectName, size: file.buffer.length };
+  }
+
   /**
    * 代理读取公开巡检图片，解决 HTTPS 页面无法加载七牛测试域名 HTTP 图片的问题。
    * 仅允许当前配置的七牛域名和 MinIO 地址，避免成为任意 URL 代理。

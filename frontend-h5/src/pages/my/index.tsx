@@ -93,6 +93,8 @@ export default function MyPage() {
         </div>
 
         <Cell.Group inset>
+          <Cell title="费用案例" label="接单、登记工作量与完工" isLink onClick={() => navigate('/m/finance-cases')} />
+          <Cell title="我的收入" label="查看每单绩效与审核状态" isLink onClick={() => navigate('/m/income')} />
           <Cell title="历史记录" isLink onClick={() => navigate('/m/history')} />
           <Cell title="个人资料" isLink onClick={() => navigate('/m/settings')} />
         </Cell.Group>

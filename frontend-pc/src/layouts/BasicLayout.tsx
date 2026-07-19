@@ -18,6 +18,7 @@ import {
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  AccountBookOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '../stores/auth';
 import { getMenusByRole } from '../router/menus';
@@ -38,6 +39,7 @@ const iconMap: Record<string, React.ReactNode> = {
   AlertOutlined: <AlertOutlined />,
   SafetyCertificateOutlined: <SafetyCertificateOutlined />,
   SettingOutlined: <SettingOutlined />,
+  AccountBookOutlined: <AccountBookOutlined />,
 };
 
 const roleLabel: Record<string, string> = {
@@ -113,7 +115,13 @@ export default function BasicLayout() {
   return (
     <Layout className="app-shell">
       {!isMobile && (
-        <Sider className="app-sider" collapsed={collapsed} trigger={null} width={232} collapsedWidth={76}>
+        <Sider
+          className="app-sider"
+          collapsed={collapsed}
+          trigger={null}
+          width={232}
+          collapsedWidth={76}
+        >
           {menuNode}
         </Sider>
       )}
@@ -134,7 +142,7 @@ export default function BasicLayout() {
               type="text"
               className="app-menu-toggle"
               icon={isMobile || collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-              onClick={() => isMobile ? setMobileMenuOpen(true) : setCollapsed(!collapsed)}
+              onClick={() => (isMobile ? setMobileMenuOpen(true) : setCollapsed(!collapsed))}
             />
             <div>
               <h1 className="app-page-title">{currentTitle}</h1>

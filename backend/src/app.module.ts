@@ -13,6 +13,17 @@ import {
   InspectionRecord,
   AlertConfig,
   AlertRecord,
+  ServiceCase,
+  PoOrder,
+  PoItem,
+  PriceLibrary,
+  CasePerformance,
+  ImportBatch,
+  ChangeLog,
+  ItemPriceMapping,
+    CaseWorkRecord,
+    Assessment,
+    MonthlySettlement,
 } from './entities';
 import { AuthModule } from './modules/auth/auth.module';
 import { SiteModule } from './modules/site/site.module';
@@ -28,6 +39,7 @@ import { StatsModule } from './modules/stats/stats.module';
 import { AlertModule } from './modules/alert/alert.module';
 import { GeocodeModule } from './modules/geocode/geocode.module';
 import { SystemModule } from './modules/system/system.module';
+import { FinanceModule } from './modules/finance/finance.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -48,11 +60,11 @@ import { HealthController } from './modules/health/health.controller';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const databaseUrl = (
-          process.env.DATABASE_URL || config.get<string>('DATABASE_URL') || ''
+          process.env.DATABASE_URL ||
+          config.get<string>('DATABASE_URL') ||
+          ''
         ).trim();
-        const isServerless = Boolean(
-          process.env.VERCEL || process.env.SERVERLESS === 'true',
-        );
+        const isServerless = Boolean(process.env.VERCEL || process.env.SERVERLESS === 'true');
         if (isServerless && !databaseUrl) {
           throw new Error('Vercel 环境缺少 DATABASE_URL 或该变量值为空');
         }
@@ -76,18 +88,23 @@ import { HealthController } from './modules/health/health.controller';
             InspectionRecord,
             AlertConfig,
             AlertRecord,
+            ServiceCase,
+            PoOrder,
+            PoItem,
+            PriceLibrary,
+            CasePerformance,
+            ImportBatch,
+            ChangeLog,
+            ItemPriceMapping,
+              CaseWorkRecord,
+              Assessment,
+              MonthlySettlement,
           ],
           synchronize,
           logging: config.get<string>('NODE_ENV') === 'development',
-          ssl:
-            config.get<string>('DB_SSL') === 'true'
-              ? { rejectUnauthorized: false }
-              : undefined,
+          ssl: config.get<string>('DB_SSL') === 'true' ? { rejectUnauthorized: false } : undefined,
           extra: {
-            max: Number(
-              config.get<string>('DB_POOL_MAX') ||
-                (isServerless ? 2 : 10),
-            ),
+            max: Number(config.get<string>('DB_POOL_MAX') || (isServerless ? 2 : 10)),
             connectionTimeoutMillis: 10_000,
           },
         };
@@ -121,6 +138,7 @@ import { HealthController } from './modules/health/health.controller';
     AlertModule,
     GeocodeModule,
     SystemModule,
+    FinanceModule,
   ],
   controllers: [HealthController],
   providers: [
