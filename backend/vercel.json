@@ -15,7 +15,7 @@
   "crons": [
     {
       "path": "/api/alerts/scheduled/run",
-      "schedule": "0 * * * *"
+      "schedule": "0 1 * * *"
     }
   ]
 }

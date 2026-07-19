@@ -124,7 +124,7 @@ export class AlertService {
     return alert;
   }
 
-  /** 每小时扫描：不合格率、超期任务、数据归档 */
+  /** 常驻服务每小时扫描；Vercel Hobby 由每日 Cron 兜底。 */
   @Cron(CronExpression.EVERY_HOUR)
   async runScheduledChecks() {
     this.logger.log('开始执行预警定时扫描');
@@ -142,6 +142,17 @@ export class AlertService {
     // 云函数由 Vercel Cron 触发，避免每次冷启动重复扫描。
     if (process.env.VERCEL || process.env.SERVERLESS === 'true') return;
     setTimeout(() => void this.runScheduledChecks(), 15000);
+  }
+
+  /** 报告完成后即时检查本站点；异常只记日志，不阻塞巡检主流程。 */
+  async runSiteChecksNow(siteId: string) {
+    try {
+      await this.checkSiteAlerts(siteId);
+    } catch (error) {
+      this.logger.error(
+        `站点 ${siteId} 即时预警检查失败: ${(error as Error).message}`,
+      );
+    }
   }
 
   private async checkSiteAlerts(siteId: string) {

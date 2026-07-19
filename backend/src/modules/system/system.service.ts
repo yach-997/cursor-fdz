@@ -64,7 +64,7 @@ export class SystemService {
         name: '定时预警扫描',
         status: schedulerReady ? 'healthy' : 'warning',
         detail: schedulerReady
-          ? '每小时自动检查合格率、超期任务和 AI 异常'
+          ? '报告完成即时检查，云端每日兜底扫描'
           : '请配置定时任务密钥以启用云端定时扫描',
       },
     ];

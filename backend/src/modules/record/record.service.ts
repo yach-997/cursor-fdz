@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -29,6 +30,7 @@ import {
   SubmitRecordDto,
 } from './dto/record.dto';
 import { LocationGuardService } from '../upload/location-guard.service';
+import { AlertService } from '../alert/alert.service';
 
 // AI 分析是异步体验，但不能无限等待。超过此时间仍未回写的条目
 // 自动转为“AI 异常/待人工判断”，保证报告流程可以闭环。
@@ -44,6 +46,8 @@ export class RecordService {
     @InjectRepository(Device)
     private readonly deviceRepo: Repository<Device>,
     private readonly locationGuard: LocationGuardService,
+    @Optional()
+    private readonly alertService?: AlertService,
   ) {}
 
   async findAll(query: QueryRecordDto, currentUser: CurrentUserContext) {
@@ -438,6 +442,11 @@ export class RecordService {
     await this.recordRepo.save(record);
     await this.taskRepo.save(task);
 
+    // AI 尚未分析完时由最后一次 AI 回写触发；其余完成态报告立即检查预警。
+    if (task.aiEnabled === false || !this.hasAiPending(record.entries)) {
+      await this.alertService?.runSiteChecksNow(task.siteId);
+    }
+
     return this.toDetail(record, task);
   }
 
@@ -618,6 +627,9 @@ export class RecordService {
       );
       if (autoApproved && routed.affected) {
         await this.taskRepo.save(task);
+      }
+      if (routed.affected) {
+        await this.alertService?.runSiteChecksNow(task.siteId);
       }
     }
 

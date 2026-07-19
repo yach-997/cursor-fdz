@@ -124,7 +124,14 @@ async function validateManualAuditFlow() {
     findOne: async () => task,
     save: async (value) => value,
   };
-  const service = new RecordService(recordRepo, taskRepo, {});
+  let immediateAlertChecks = 0;
+  const alertService = {
+    runSiteChecksNow: async (siteId) => {
+      assert.equal(siteId, task.siteId);
+      immediateAlertChecks += 1;
+    },
+  };
+  const service = new RecordService(recordRepo, taskRepo, {}, {}, alertService);
   const user = {
     id: seededUuid,
     username: 'admin',
@@ -140,6 +147,7 @@ async function validateManualAuditFlow() {
   assert.equal(result.task.status, 'submitted');
   assert.equal(result.needsAudit, true);
   assert.match(result.auditTrail[0].summary, /人工审核/);
+  assert.equal(immediateAlertChecks, 1, '报告完成后应立即检查本站点预警');
 }
 
 async function validateTemplateScopeUpdate() {

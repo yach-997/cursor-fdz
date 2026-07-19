@@ -4,11 +4,13 @@ import { InspectionRecord, InspectionTask, Device } from '../../entities';
 import { RecordService } from './record.service';
 import { RecordController } from './record.controller';
 import { UploadModule } from '../upload/upload.module';
+import { AlertModule } from '../alert/alert.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([InspectionRecord, InspectionTask, Device]),
     UploadModule,
+    AlertModule,
   ],
   controllers: [RecordController],
   providers: [RecordService],

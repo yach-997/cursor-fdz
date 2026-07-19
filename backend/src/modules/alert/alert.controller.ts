@@ -50,7 +50,7 @@ export class AlertController implements OnModuleInit {
     return this.alertService.getConfigs(query, user);
   }
 
-  /** Vercel Cron 每小时触发；配置 CRON_SECRET 后校验 Bearer 令牌。 */
+  /** Vercel 每日兜底触发；报告完成时另有即时预警检查。 */
   @Public()
   @Get('scheduled/run')
   async runScheduled(@Headers('authorization') authorization?: string) {
