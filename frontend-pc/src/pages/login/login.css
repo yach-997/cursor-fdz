@@ -120,7 +120,11 @@
 .pc-login-btn { height: 50px !important; border: 0 !important; border-radius: 12px !important; background: linear-gradient(135deg, #1ba873, #117452) !important; font-size: 15px; font-weight: 700; box-shadow: 0 10px 24px rgba(22, 131, 95, .22); }
 .pc-login-btn:hover { transform: translateY(-1px); filter: brightness(1.04); }
 .pc-login-support { margin-top: 22px; display: flex; justify-content: center; align-items: center; gap: 7px; color: #92a39b; font-size: 11px; }
-.pc-login-support span { width: 7px; height: 7px; border-radius: 50%; background: #36c889; box-shadow: 0 0 0 4px rgba(54,200,137,.12); }
+.pc-login-support span { width: 7px; height: 7px; border-radius: 50%; background: #c5d0cb; box-shadow: 0 0 0 4px rgba(146,163,155,.12); }
+.pc-login-support.is-ok { color: #4e7a68; }
+.pc-login-support.is-ok span { background: #36c889; box-shadow: 0 0 0 4px rgba(54,200,137,.12); }
+.pc-login-support.is-fail { color: #a35a52; }
+.pc-login-support.is-fail span { background: #d86a5e; box-shadow: 0 0 0 4px rgba(216,106,94,.12); }
 
 @media (max-width: 900px) {
   .pc-login-page { padding: 18px; }

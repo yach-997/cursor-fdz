@@ -2,6 +2,18 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 
+/** 允许本仓库 Vercel Preview 域名（含分支别名与部署临时域名） */
+function isAllowedVercelPreviewOrigin(origin: string): boolean {
+  try {
+    const { hostname, protocol } = new URL(origin);
+    if (protocol !== 'https:') return false;
+    // 例：cursor-fdz-pc-git-xxx-wndm.vercel.app / cursor-fdz-h5-xxxx-wndm.vercel.app
+    return /^cursor-fdz.*-wndm\.vercel\.app$/i.test(hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function configureApp(app: INestApplication) {
   app.setGlobalPrefix('api');
   const allowedOrigins = (
@@ -13,7 +25,11 @@ export function configureApp(app: INestApplication) {
     .filter(Boolean);
   app.enableCors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        isAllowedVercelPreviewOrigin(origin)
+      ) {
         callback(null, true);
         return;
       }

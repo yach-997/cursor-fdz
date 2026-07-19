@@ -10,7 +10,10 @@ import {
 } from '@ant-design/icons';
 import { useAuthStore } from '../../stores/auth';
 import { getHomePathByRole } from '../../router/menus';
+import request from '../../utils/request';
 import './login.css';
+
+type BackendStatus = 'checking' | 'ok' | 'fail';
 
 /** PC 登录页：与入口页统一的薄荷绿风格 */
 export default function LoginPage() {
@@ -18,6 +21,7 @@ export default function LoginPage() {
   const { login, loading, token, user, hydrate, logout } = useAuthStore();
   const [form] = Form.useForm();
   const [remember, setRemember] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
 
   useEffect(() => {
     hydrate();
@@ -28,6 +32,25 @@ export default function LoginPage() {
     }
   }, [form, hydrate]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const probe = async () => {
+      setBackendStatus('checking');
+      try {
+        const { data } = await request.get('/health', { timeout: 8000 });
+        if (!cancelled) {
+          setBackendStatus(data?.code === 200 || data?.data?.ok ? 'ok' : 'fail');
+        }
+      } catch {
+        if (!cancelled) setBackendStatus('fail');
+      }
+    };
+    void probe();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const onFinish = async (values: { username: string; password: string }) => {
     try {
       const loggedUser = await login(values.username, values.password, remember);
@@ -37,6 +60,13 @@ export default function LoginPage() {
       // 错误已由拦截器提示
     }
   };
+
+  const statusText =
+    backendStatus === 'checking'
+      ? '正在检测后端连接…'
+      : backendStatus === 'ok'
+        ? '后端已连接'
+        : '后端不可用，请检查接口地址或网络';
 
   return (
     <div className="pc-login-page">
@@ -105,7 +135,13 @@ export default function LoginPage() {
               </div>
               <Button type="primary" htmlType="submit" block loading={loading} className="pc-login-btn">进入管理端</Button>
             </Form>
-            <div className="pc-login-support"><span /> 系统运行正常</div>
+            <div
+              className={`pc-login-support${backendStatus === 'fail' ? ' is-fail' : ''}${
+                backendStatus === 'ok' ? ' is-ok' : ''
+              }`}
+            >
+              <span /> {statusText}
+            </div>
           </div>
         </section>
       </div>

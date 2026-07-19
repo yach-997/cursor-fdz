@@ -76,7 +76,19 @@ async function validateCorsPolicy() {
       });
     });
   assert.equal(await check('https://cursor-fdz-pc.vercel.app'), true);
+  assert.equal(
+    await check(
+      'https://cursor-fdz-pc-git-backup-before-fee-module-wndm.vercel.app',
+    ),
+    true,
+  );
+  assert.equal(await check('https://cursor-fdz-97lq8x45k-wndm.vercel.app'), true);
+  assert.equal(
+    await check('https://cursor-fdz-h5-git-backup-before-fee-module-wndm.vercel.app'),
+    true,
+  );
   assert.equal(await check('https://example.invalid'), false);
+  assert.equal(await check('https://other-app-wndm.vercel.app'), false);
 }
 
 async function validateManualAuditFlow() {
