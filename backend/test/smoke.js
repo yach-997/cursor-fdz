@@ -208,6 +208,18 @@ async function validateAiErrorFallsBackToAudit() {
       Object.assign(record, patch);
       return { affected: 1 };
     },
+    manager: {
+      transaction: async (work) =>
+        work({
+          getRepository: () => ({
+            findOne: async () => record,
+            update: async (_criteria, patch) => {
+              Object.assign(record, patch);
+              return { affected: 1 };
+            },
+          }),
+        }),
+    },
   };
   const taskRepo = {
     findOne: async () => task,
@@ -324,9 +336,17 @@ async function validateStaleAiPendingFallsBackToManualAudit() {
   };
   const recordRepo = {
     findOne: async () => record,
-    update: async (_criteria, patch) => {
-      Object.assign(record, patch);
-      return { affected: 1 };
+    manager: {
+      transaction: async (work) =>
+        work({
+          getRepository: () => ({
+            findOne: async () => record,
+            update: async (_criteria, patch) => {
+              Object.assign(record, patch);
+              return { affected: 1 };
+            },
+          }),
+        }),
     },
   };
   const taskRepo = { findOne: async () => task };
@@ -343,6 +363,155 @@ async function validateStaleAiPendingFallsBackToManualAudit() {
   assert.equal(detail.needsAudit, true);
   assert.match(detail.entries[0].aiResult.reason, /超时.*人工判断/);
   assert.match(detail.auditTrail[0].summary, /超时.*人工判断/);
+}
+
+async function validateStalePendingCannotOverwriteFreshAiResult() {
+  const task = {
+    id: seededUuid,
+    siteId: otherSeededUuid,
+    status: 'submitted',
+    aiEnabled: true,
+  };
+  const base = {
+    id: otherSeededUuid,
+    taskId: task.id,
+    deviceType: 'string_inverter',
+    status: 'submitted',
+    submittedAt: new Date(Date.now() - 4 * 60_000),
+    auditTrail: [],
+    createdAt: new Date(),
+  };
+  const stale = {
+    ...base,
+    entries: [
+      {
+        templateEntryId: 'entry-race',
+        photos: ['https://example.com/test.jpg'],
+        aiResult: { status: 'pending', confidence: 0, reason: '' },
+        manualResult: 'pending',
+        finalResult: null,
+        remark: '',
+      },
+    ],
+  };
+  const latest = {
+    ...base,
+    entries: [
+      {
+        ...stale.entries[0],
+        aiResult: { status: 'pass', confidence: 0.97, reason: 'AI 已完成' },
+        finalResult: 'pass',
+      },
+    ],
+  };
+  let timeoutUpdates = 0;
+  const recordRepo = {
+    findOne: async () => stale,
+    manager: {
+      transaction: async (work) =>
+        work({
+          getRepository: () => ({
+            // 模拟进入事务并取得行锁前，AI 已经完成回写。
+            findOne: async () => latest,
+            update: async () => {
+              timeoutUpdates += 1;
+              return { affected: 1 };
+            },
+          }),
+        }),
+    },
+  };
+  const taskRepo = { findOne: async () => task };
+  const service = new RecordService(recordRepo, taskRepo, {}, {});
+
+  const detail = await service.findOne(stale.id, {
+    id: seededUuid,
+    role: 'super_admin',
+    managedSiteIds: [],
+    memberSiteIds: [],
+  });
+  assert.equal(timeoutUpdates, 0, '超时兜底不能覆盖刚完成的 AI 结果');
+  assert.equal(detail.aiSummary.pass, 1);
+  assert.equal(detail.aiSummary.pending, 0);
+  assert.equal(detail.aiSummary.error, 0);
+  assert.equal(detail.auditTrail.length, 0);
+}
+
+async function validateConcurrentAiResultsAreMerged() {
+  const task = {
+    id: seededUuid,
+    siteId: otherSeededUuid,
+    status: 'submitted',
+    aiEnabled: true,
+  };
+  const record = {
+    id: otherSeededUuid,
+    taskId: task.id,
+    deviceType: 'string_inverter',
+    status: 'submitted',
+    submittedAt: new Date(),
+    auditTrail: [],
+    createdAt: new Date(),
+    entries: ['entry-a', 'entry-b'].map((templateEntryId) => ({
+      templateEntryId,
+      photos: [`https://example.com/${templateEntryId}.jpg`],
+      aiResult: { status: 'pending', confidence: 0, reason: '' },
+      manualResult: 'pending',
+      finalResult: null,
+      remark: '',
+    })),
+  };
+  let transactionTail = Promise.resolve();
+  const lockedRepo = {
+    findOne: async () => record,
+    update: async (_criteria, patch) => {
+      Object.assign(record, patch);
+      return { affected: 1 };
+    },
+  };
+  const recordRepo = {
+    findOne: async () => record,
+    update: lockedRepo.update,
+    manager: {
+      transaction: async (work) => {
+        const previous = transactionTail;
+        let release;
+        transactionTail = new Promise((resolve) => {
+          release = resolve;
+        });
+        await previous;
+        try {
+          return await work({ getRepository: () => lockedRepo });
+        } finally {
+          release();
+        }
+      },
+    },
+  };
+  const taskRepo = {
+    findOne: async () => task,
+    save: async (value) => value,
+  };
+  const service = new RecordService(recordRepo, taskRepo, {}, {});
+
+  await Promise.all([
+    service.applyAiResult(record.id, 'entry-a', {
+      status: 'pass',
+      confidence: 0.96,
+      reason: '正常',
+    }),
+    service.applyAiResult(record.id, 'entry-b', {
+      status: 'fail',
+      confidence: 0.94,
+      reason: '异常',
+    }),
+  ]);
+
+  const statuses = Object.fromEntries(
+    record.entries.map((entry) => [entry.templateEntryId, entry.aiResult.status]),
+  );
+  assert.deepEqual(statuses, { 'entry-a': 'pass', 'entry-b': 'fail' });
+  assert.equal(record.auditTrail.length, 1, '分析完成后只应分流一次');
 }
 
 async function validatePrimaryManagerCanAlsoInspect() {
@@ -549,6 +718,8 @@ async function main() {
   await validateAiErrorFallsBackToAudit();
   await validateLateDraftCannotOverwriteSubmission();
   await validateStaleAiPendingFallsBackToManualAudit();
+  await validateStalePendingCannotOverwriteFreshAiResult();
+  await validateConcurrentAiResultsAreMerged();
   await validatePrimaryManagerCanAlsoInspect();
   validateGeocodeRegionGuard();
   await validateLandmarkGeocodeFallback();

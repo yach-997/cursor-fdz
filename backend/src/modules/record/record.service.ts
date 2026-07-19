@@ -540,28 +540,53 @@ export class RecordService {
     templateEntryId: string,
     aiResult: RecordEntry['aiResult'],
   ) {
-    const record = await this.getRecordOrThrow(recordId);
-    record.entries = record.entries.map((e) => {
-      if (e.templateEntryId !== templateEntryId) return e;
-      const next = { ...e, aiResult };
-      if (
-        aiResult.status === CheckResult.PASS ||
-        aiResult.status === CheckResult.FAIL
-      ) {
-        // 人工结论优先：巡检员已经确认后，后到的 AI 结果不能覆盖人工判断。
-        if (!e.manualResult || e.manualResult === CheckResult.PENDING) {
-          next.finalResult = aiResult.status as CheckResult.PASS | CheckResult.FAIL;
+    // 多个检查项会并行完成 AI 分析。必须锁住记录后再读取和合并目标条目，
+    // 否则并发请求各自写回整段 JSONB 时，后写入的旧快照会覆盖先完成的结果。
+    const applied = await this.recordRepo.manager.transaction(async (manager) => {
+      const lockedRepo = manager.getRepository(InspectionRecord);
+      const record = await lockedRepo.findOne({
+        where: { id: recordId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!record) throw new NotFoundException('巡检记录不存在');
+
+      const before = this.aiSummary(record.entries || []);
+      record.entries = (record.entries || []).map((e) => {
+        if (e.templateEntryId !== templateEntryId) return e;
+        const next = { ...e, aiResult };
+        if (
+          aiResult.status === CheckResult.PASS ||
+          aiResult.status === CheckResult.FAIL
+        ) {
+          // 人工结论优先：巡检员已经确认后，后到的 AI 结果不能覆盖人工判断。
+          if (!e.manualResult || e.manualResult === CheckResult.PENDING) {
+            next.finalResult = aiResult.status as
+              | CheckResult.PASS
+              | CheckResult.FAIL;
+          }
         }
-      }
-      return next;
+        return next;
+      });
+      const after = this.aiSummary(record.entries);
+      await lockedRepo.update(record.id, { entries: record.entries });
+      return {
+        record,
+        shouldRoute:
+          (before.pending > 0 && after.pending === 0) ||
+          (before.pending === 0 &&
+            before.error > 0 &&
+            after.error === 0),
+      };
     });
 
-    // AI 回写只更新 entries，不能用可能过期的实体覆盖提交状态、提交时间和审核链。
-    await this.recordRepo.update(record.id, { entries: record.entries });
-    const latest = await this.getRecordOrThrow(record.id);
+    const latest = applied.record;
 
     // 已提交且 AI 全部落定：合格自动通过，不合格留在审核队列
-    if (latest.status === RecordStatus.SUBMITTED && !this.hasAiPending(latest.entries)) {
+    if (
+      applied.shouldRoute &&
+      latest.status === RecordStatus.SUBMITTED &&
+      !this.hasAiPending(latest.entries)
+    ) {
       const task = await this.getTaskOrThrow(latest.taskId);
       let autoApproved = false;
       if (!this.hasAiFail(latest.entries) && !this.hasAiError(latest.entries)) {
@@ -596,7 +621,7 @@ export class RecordService {
       }
     }
 
-    return this.getRecordOrThrow(record.id);
+    return this.getRecordOrThrow(recordId);
   }
 
   private buildDraftEntries(snapshot: TemplateEntry[]): RecordEntry[] {
@@ -662,36 +687,55 @@ export class RecordService {
       return record;
     }
 
-    const entries = (record.entries || []).map((entry) => {
-      const status = entry.aiResult?.status;
-      if (status && status !== CheckResult.PENDING) return entry;
-      return {
-        ...entry,
-        aiResult: {
-          status: CheckResult.ERROR,
-          confidence: 0,
-          reason: 'AI 分析超时，已转人工判断',
-        },
-      };
-    });
-    const auditTrail = [
-      ...(record.auditTrail || []),
-      {
-        action: 'submitted' as const,
+    // 必须在行锁内重新读取：AI 可能在上面的初步检查之后刚好完成回写。
+    // 锁可保证“AI 回写”和“超时转人工”按先后顺序生效，同时避免多个
+    // 报告轮询请求重复追加同一条超时追溯记录。
+    return this.recordRepo.manager.transaction(async (manager) => {
+      const lockedRepo = manager.getRepository(InspectionRecord);
+      const latest = await lockedRepo.findOne({
+        where: { id: record.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (
+        !latest ||
+        latest.status !== RecordStatus.SUBMITTED ||
+        !latest.submittedAt ||
+        !this.hasAiPending(latest.entries || [])
+      ) {
+        return latest || record;
+      }
+
+      const latestSubmittedAt = new Date(latest.submittedAt).getTime();
+      if (
+        !Number.isFinite(latestSubmittedAt) ||
+        Date.now() - latestSubmittedAt < AI_PENDING_TIMEOUT_MS
+      ) {
+        return latest;
+      }
+
+      latest.entries = (latest.entries || []).map((entry) => {
+        const status = entry.aiResult?.status;
+        if (status && status !== CheckResult.PENDING) return entry;
+        return {
+          ...entry,
+          aiResult: {
+            status: CheckResult.ERROR,
+            confidence: 0,
+            reason: 'AI 分析超时，已转人工判断',
+          },
+        };
+      });
+      this.pushTrail(latest, {
+        action: 'submitted',
         at: new Date().toISOString(),
         summary: 'AI 分析等待超时，未完成条目已转人工判断',
-      },
-    ];
-
-    const updated = await this.recordRepo.update(
-      { id: record.id, status: RecordStatus.SUBMITTED },
-      { entries, auditTrail },
-    );
-    if (updated.affected) {
-      record.entries = entries;
-      record.auditTrail = auditTrail;
-    }
-    return record;
+      });
+      await lockedRepo.update(latest.id, {
+        entries: latest.entries,
+        auditTrail: latest.auditTrail,
+      });
+      return latest;
+    });
   }
 
   private aiSummary(entries: RecordEntry[]) {
