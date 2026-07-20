@@ -66,7 +66,7 @@ export default function ImportDialog({
       const totalHint =
         kind === 'po' ? Number(preview.totalOrders || 0) : Number(preview.totalRows || 0);
       let offset = resume
-        ? Number(importStatus?.nextOffset ?? resumeRef.current.offset || 0)
+        ? Number(importStatus?.nextOffset ?? resumeRef.current.offset ?? 0)
         : 0;
       let batchId = resume
         ? importStatus?.batchId || resumeRef.current.batchId
