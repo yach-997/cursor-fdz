@@ -17,7 +17,7 @@ async function getServer() {
   return serverPromise;
 }
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 300 };
 
 export default async function handler(req: Request, res: Response) {
   const server = await getServer();

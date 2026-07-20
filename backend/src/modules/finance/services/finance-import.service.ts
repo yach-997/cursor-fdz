@@ -1,9 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, IsNull, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import {
   CasePerformance,
-  ChangeLog,
   ImportBatch,
   PoItem,
   PoOrder,
@@ -17,6 +16,8 @@ import { FinanceScopeService } from './finance-scope.service';
 import { isIgnoredItem, pickMappedPrice } from './item-matcher';
 
 const money = (value: number) => (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2);
+const PO_CHUNK = 40;
+const PRICE_CHUNK = 200;
 
 @Injectable()
 export class FinanceImportService {
@@ -51,15 +52,22 @@ export class FinanceImportService {
     );
     let success = 0;
     const failures = [...parsed.failures];
+    const gspNos = [...new Set(parsed.cases.map((x) => x.gspCaseNo))];
+    const existing = gspNos.length
+      ? await this.cases.find({ where: { gspCaseNo: In(gspNos) } })
+      : [];
+    const caseMap = new Map(existing.map((row) => [row.gspCaseNo, row]));
+    const toSave: ServiceCase[] = [];
     for (const item of parsed.cases) {
       try {
         if (scopedRegion && item.region !== scopedRegion) throw new Error('站长只能导入本区域案例');
-        const old = await this.cases.findOne({ where: { gspCaseNo: item.gspCaseNo } });
+        const old = caseMap.get(item.gspCaseNo);
         const entity =
           old ||
           this.cases.create({ gspCaseNo: item.gspCaseNo, status: 'pending_assign', version: 0 });
         Object.assign(entity, item, { importBatchId: batch.id, version: (old?.version || 0) + 1 });
-        await this.cases.save(entity);
+        toSave.push(entity);
+        caseMap.set(item.gspCaseNo, entity);
         success += 1;
       } catch (error) {
         failures.push({
@@ -67,6 +75,9 @@ export class FinanceImportService {
           reason: error instanceof Error ? error.message : '导入失败',
         });
       }
+    }
+    for (let i = 0; i < toSave.length; i += PRICE_CHUNK) {
+      await this.cases.save(toSave.slice(i, i + PRICE_CHUNK));
     }
     await this.finishBatch(batch, success, failures);
     return {
@@ -106,26 +117,30 @@ export class FinanceImportService {
     let success = 0;
     let generatedCases = 0;
     const failures = [...parsed.failures];
-    for (const parsedOrder of parsed.orders) {
+
+    for (let offset = 0; offset < parsed.orders.length; offset += PO_CHUNK) {
+      const chunk = parsed.orders.slice(offset, offset + PO_CHUNK);
       try {
-        const region = parsedOrder.province?.includes('云南') ? 'yunnan' : 'south_china';
-        if (scopedRegion && region !== scopedRegion) throw new Error('站长只能导入本区域PO');
-        const result = await this.savePo(
-          parsedOrder,
+        const result = await this.savePoChunk(
+          chunk,
           batch.id,
-          user.id,
           activePrices,
           activeMappings,
+          scopedRegion,
         );
-        if (result.generatedCase) generatedCases += 1;
-        success += 1;
+        success += result.success;
+        generatedCases += result.generatedCases;
+        failures.push(...result.failures);
       } catch (error) {
-        failures.push({
-          row: parsedOrder.items[0]?.sourceRow || 0,
-          reason: `${parsedOrder.poNo}: ${error instanceof Error ? error.message : '导入失败'}`,
-        });
+        for (const parsedOrder of chunk) {
+          failures.push({
+            row: parsedOrder.items[0]?.sourceRow || 0,
+            reason: `${parsedOrder.poNo}: ${error instanceof Error ? error.message : '导入失败'}`,
+          });
+        }
       }
     }
+
     await this.finishBatch(batch, success, failures);
     return {
       batchId: batch.id,
@@ -154,20 +169,22 @@ export class FinanceImportService {
       parsed.prices.length,
       user.id,
     );
+    const effectiveDate = new Date().toISOString().slice(0, 10);
+    const existing = await this.prices.find({
+      where: { priceType: 'settle', effectiveDate },
+    });
+    const priceKey = (itemCode: string, productModel: string | null, scene: string | null) =>
+      `${itemCode}|${productModel || ''}|${scene || ''}`;
+    const priceMap = new Map(
+      existing.map((row) => [priceKey(row.itemCode, row.productModel, row.scene), row]),
+    );
     let success = 0;
     const failures = [...parsed.failures];
+    const toSave: PriceLibrary[] = [];
     for (const price of parsed.prices) {
       try {
-        const effectiveDate = new Date().toISOString().slice(0, 10);
-        let entity = await this.prices.findOne({
-          where: {
-            priceType: 'settle',
-            itemCode: price.itemCode,
-            productModel: price.productModel || IsNull(),
-            scene: price.scene || IsNull(),
-            effectiveDate,
-          },
-        });
+        const key = priceKey(price.itemCode, price.productModel, price.scene);
+        let entity = priceMap.get(key);
         entity ||= this.prices.create({
           priceType: 'settle',
           region: null,
@@ -181,7 +198,8 @@ export class FinanceImportService {
           createdBy: user.id,
           changeRemark: `由${file.originalname}初始化，已应用0.990应答系数`,
         });
-        await this.prices.save(entity);
+        toSave.push(entity);
+        priceMap.set(key, entity);
         success += 1;
       } catch (error) {
         failures.push({
@@ -189,6 +207,9 @@ export class FinanceImportService {
           reason: error instanceof Error ? error.message : '价格导入失败',
         });
       }
+    }
+    for (let i = 0; i < toSave.length; i += PRICE_CHUNK) {
+      await this.prices.save(toSave.slice(i, i + PRICE_CHUNK));
     }
     await this.finishBatch(batch, success, failures);
     return {
@@ -212,130 +233,187 @@ export class FinanceImportService {
     return batch.failDetail;
   }
 
-  private async savePo(
-    parsed: ParsedPoOrder,
+  private async savePoChunk(
+    chunk: ParsedPoOrder[],
     batchId: string,
-    operatorId: string,
     prices: PriceLibrary[],
     mappings: ItemPriceMapping[],
+    scopedRegion: string | null,
   ) {
     return this.dataSource.transaction(async (manager) => {
       const caseRepo = manager.getRepository(ServiceCase);
       const orderRepo = manager.getRepository(PoOrder);
       const itemRepo = manager.getRepository(PoItem);
-      const logRepo = manager.getRepository(ChangeLog);
       const performanceRepo = manager.getRepository(CasePerformance);
-      let serviceCase = await caseRepo.findOne({ where: { gspCaseNo: parsed.gspCaseNo } });
-      let generatedCase = false;
-      if (!serviceCase) {
-        const region = parsed.province?.includes('云南') ? 'yunnan' : 'south_china';
-        serviceCase = await caseRepo.save(
-          caseRepo.create({
-            gspCaseNo: parsed.gspCaseNo,
-            projectName: parsed.projectName || parsed.poNo,
-            serviceType: parsed.demandType,
-            creator: parsed.submitter,
-            province: parsed.province,
-            city: parsed.projectRegion,
-            siteDesc: parsed.demandDesc || parsed.projectArea,
-            region,
-            status: 'settle_review',
-            finishTime:
-              parsed.dingtalkUpdatedAt ||
-              (parsed.demandDate ? new Date(`${parsed.demandDate}T12:00:00+08:00`) : new Date()),
+
+      const gspNos = [...new Set(chunk.map((row) => row.gspCaseNo))];
+      const poNos = chunk.map((row) => row.poNo);
+      const existingCases = gspNos.length
+        ? await caseRepo.find({ where: { gspCaseNo: In(gspNos) } })
+        : [];
+      const existingOrders = poNos.length ? await orderRepo.find({ where: { poNo: In(poNos) } }) : [];
+      const caseMap = new Map(existingCases.map((row) => [row.gspCaseNo, row]));
+      const orderMap = new Map(existingOrders.map((row) => [row.poNo, row]));
+
+      let success = 0;
+      let generatedCases = 0;
+      const failures: Array<{ row: number; reason: string }> = [];
+      const overwriteIds: string[] = [];
+      const ordersToSave: PoOrder[] = [];
+      const itemsByPoNo = new Map<string, ReturnType<typeof itemRepo.create>[]>();
+      const touchedCaseIds = new Set<string>();
+
+      for (const parsed of chunk) {
+        try {
+          const region = parsed.province?.includes('云南') ? 'yunnan' : 'south_china';
+          if (scopedRegion && region !== scopedRegion) throw new Error('站长只能导入本区域PO');
+
+          let serviceCase = caseMap.get(parsed.gspCaseNo);
+          if (!serviceCase) {
+            serviceCase = caseRepo.create({
+              gspCaseNo: parsed.gspCaseNo,
+              projectName: parsed.projectName || parsed.poNo,
+              serviceType: parsed.demandType,
+              creator: parsed.submitter,
+              province: parsed.province,
+              city: parsed.projectRegion,
+              siteDesc: parsed.demandDesc || parsed.projectArea,
+              region,
+              status: 'settle_review',
+              finishTime:
+                parsed.dingtalkUpdatedAt ||
+                (parsed.demandDate ? new Date(`${parsed.demandDate}T12:00:00+08:00`) : new Date()),
+              importBatchId: batchId,
+              version: 1,
+            });
+            serviceCase = await caseRepo.save(serviceCase);
+            caseMap.set(parsed.gspCaseNo, serviceCase);
+            generatedCases += 1;
+          } else if (serviceCase.status === 'finished') {
+            serviceCase.status = 'settle_review';
+            await caseRepo.save(serviceCase);
+          }
+
+          let order = orderMap.get(parsed.poNo);
+          if (order?.id) overwriteIds.push(order.id);
+          else order = orderRepo.create();
+
+          Object.assign(order, parsed, {
+            poTotalAmount: money(parsed.poTotalAmount),
+            productQty: parsed.productQty === null ? null : money(parsed.productQty),
+            items: undefined,
+            serviceCaseId: serviceCase.id,
+            matchStatus: 'matched',
             importBatchId: batchId,
-            version: 1,
-          }),
-        );
-        generatedCase = true;
-      }
-      let order = await orderRepo.findOne({ where: { poNo: parsed.poNo } });
-      if (order) {
-        await logRepo.save(
-          logRepo.create({
-            entityType: 'po_order',
-            entityId: order.id,
-            field: 'import_overwrite',
-            oldValue: JSON.stringify(order),
-            newValue: JSON.stringify({ poNo: parsed.poNo, itemCount: parsed.items.length }),
-            operatorId,
-            reason: '同一PO重复导入覆盖',
-          }),
-        );
-        await itemRepo.delete({ poId: order.id });
-      } else order = orderRepo.create();
-      Object.assign(order, parsed, {
-        poTotalAmount: money(parsed.poTotalAmount),
-        productQty: parsed.productQty === null ? null : money(parsed.productQty),
-        items: undefined,
-        serviceCaseId: serviceCase?.id || null,
-        matchStatus: serviceCase ? 'matched' : 'pending',
-        importBatchId: batchId,
-      });
-      order = await orderRepo.save(order);
-      const contextItemNames = parsed.items
-        .filter((entry) => entry.itemCategory === 'special' && !isIgnoredItem(entry.itemCode))
-        .map((entry) => entry.itemCode);
-      const entities = parsed.items.map((item) => {
-        const ignored = isIgnoredItem(item.itemCode);
-        const settleMatch = pickMappedPrice(
-          prices,
-          item.itemCode,
-          parsed.projectScene,
-          parsed.productModel,
-          mappings,
-          contextItemNames,
-          parsed.demandType,
-        );
-        const settle = settleMatch?.price;
-        const perf = this.pickPrice(
-          prices,
-          'perf',
-          item.itemCode,
-          null,
-          parsed.productModel,
-          serviceCase?.region || (parsed.province?.includes('云南') ? 'yunnan' : 'south_china'),
-          'self',
-        );
-        return itemRepo.create({
-          ...item,
-          poId: order.id,
-          qty: money(item.qty),
-          settlePrice: settle?.unitPrice || null,
-          perfPrice: perf?.unitPrice || null,
-          itemRevenue: money(item.qty * Number(settle?.unitPrice || 0)),
-          itemPerf: money(item.qty * Number(perf?.unitPrice || 0)),
-          priceStatus: ignored ? 'ignored' : settle ? 'ok' : 'pending_price',
-        });
-      });
-      await itemRepo.save(entities);
-      if (serviceCase) {
-        // 巡检先完工、PO 后到达是正常业务顺序；PO 一旦匹配即进入结算审核。
-        if (serviceCase.status === 'finished') {
-          serviceCase.status = 'settle_review';
-          await caseRepo.save(serviceCase);
+          });
+          ordersToSave.push(order);
+          orderMap.set(parsed.poNo, order);
+
+          const contextItemNames = parsed.items
+            .filter((entry) => entry.itemCategory === 'special' && !isIgnoredItem(entry.itemCode))
+            .map((entry) => entry.itemCode);
+          itemsByPoNo.set(
+            parsed.poNo,
+            parsed.items.map((item) => {
+              const ignored = isIgnoredItem(item.itemCode);
+              const settleMatch = pickMappedPrice(
+                prices,
+                item.itemCode,
+                parsed.projectScene,
+                parsed.productModel,
+                mappings,
+                contextItemNames,
+                parsed.demandType,
+              );
+              const settle = settleMatch?.price;
+              const perf = this.pickPrice(
+                prices,
+                'perf',
+                item.itemCode,
+                null,
+                parsed.productModel,
+                serviceCase.region || region,
+                'self',
+              );
+              return itemRepo.create({
+                ...item,
+                poId: '',
+                qty: money(item.qty),
+                settlePrice: settle?.unitPrice || null,
+                perfPrice: perf?.unitPrice || null,
+                itemRevenue: money(item.qty * Number(settle?.unitPrice || 0)),
+                itemPerf: money(item.qty * Number(perf?.unitPrice || 0)),
+                priceStatus: ignored ? 'ignored' : settle ? 'ok' : 'pending_price',
+              });
+            }),
+          );
+          touchedCaseIds.add(serviceCase.id);
+          success += 1;
+        } catch (error) {
+          failures.push({
+            row: parsed.items[0]?.sourceRow || 0,
+            reason: `${parsed.poNo}: ${error instanceof Error ? error.message : '导入失败'}`,
+          });
         }
+      }
+
+      if (overwriteIds.length) {
+        await itemRepo.delete({ poId: In(overwriteIds) });
+      }
+      if (ordersToSave.length) {
+        await orderRepo.save(ordersToSave);
+      }
+
+      const allItems: PoItem[] = [];
+      for (const order of ordersToSave) {
+        const rows = itemsByPoNo.get(order.poNo) || [];
+        for (const row of rows) {
+          row.poId = order.id;
+          allItems.push(row);
+        }
+      }
+      for (let i = 0; i < allItems.length; i += PRICE_CHUNK) {
+        await itemRepo.save(allItems.slice(i, i + PRICE_CHUNK));
+      }
+
+      if (touchedCaseIds.size) {
+        const caseIds = [...touchedCaseIds];
         const totals = await itemRepo
           .createQueryBuilder('item')
           .innerJoin(PoOrder, 'po', 'po.id = item.po_id')
-          .select('COALESCE(SUM(item.item_revenue),0)', 'revenue')
+          .select('po.service_case_id', 'serviceCaseId')
+          .addSelect('COALESCE(SUM(item.item_revenue),0)', 'revenue')
           .addSelect('COALESCE(SUM(item.item_perf),0)', 'perf')
-          .where('po.service_case_id = :id', { id: serviceCase.id })
-          .getRawOne();
-        let ledger = await performanceRepo.findOne({ where: { serviceCaseId: serviceCase.id } });
-        ledger ||= performanceRepo.create({
-          serviceCaseId: serviceCase.id,
-          gspCaseNo: serviceCase.gspCaseNo,
-          inspectorId: serviceCase.inspectorId,
-          deduction: '0.00',
-          reviewStatus: 'pending',
+          .where('po.service_case_id IN (:...ids)', { ids: caseIds })
+          .groupBy('po.service_case_id')
+          .getRawMany<{ serviceCaseId: string; revenue: string; perf: string }>();
+        const totalMap = new Map(totals.map((row) => [row.serviceCaseId, row]));
+        const ledgers = await performanceRepo.find({
+          where: { serviceCaseId: In(caseIds) },
         });
-        ledger.caseRevenue = money(Number(totals.revenue));
-        ledger.perfBase = money(Number(totals.perf));
-        ledger.perfFinal = money(Number(totals.perf) - Number(ledger.deduction || 0));
-        await performanceRepo.save(ledger);
+        const ledgerMap = new Map(ledgers.map((row) => [row.serviceCaseId, row]));
+        const ledgersToSave: CasePerformance[] = [];
+        for (const caseId of caseIds) {
+          const serviceCase = [...caseMap.values()].find((row) => row.id === caseId);
+          if (!serviceCase) continue;
+          const total = totalMap.get(caseId);
+          let ledger = ledgerMap.get(caseId);
+          ledger ||= performanceRepo.create({
+            serviceCaseId: caseId,
+            gspCaseNo: serviceCase.gspCaseNo,
+            inspectorId: serviceCase.inspectorId,
+            deduction: '0.00',
+            reviewStatus: 'pending',
+          });
+          ledger.caseRevenue = money(Number(total?.revenue || 0));
+          ledger.perfBase = money(Number(total?.perf || 0));
+          ledger.perfFinal = money(Number(total?.perf || 0) - Number(ledger.deduction || 0));
+          ledgersToSave.push(ledger);
+        }
+        if (ledgersToSave.length) await performanceRepo.save(ledgersToSave);
       }
-      return { generatedCase, serviceCaseId: serviceCase.id };
+
+      return { success, generatedCases, failures };
     });
   }
 
