@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Alert, Button, Modal, Progress, Space, Upload, message } from 'antd';
 import { InboxOutlined } from '@ant-design/icons';
 import { uploadFinanceExcel } from '../../../api/finance';
@@ -20,41 +20,55 @@ export default function ImportDialog({
   onDone: () => void;
 }) {
   const [file, setFile] = useState<File>();
-  const [result, setResult] = useState<ImportResult>();
+  const [preview, setPreview] = useState<ImportResult>();
+  const [importStatus, setImportStatus] = useState<ImportResult>();
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
+  const resumeRef = useRef<{ offset: number; batchId?: string }>({ offset: 0 });
+
+  const reset = () => {
+    setFile(undefined);
+    setPreview(undefined);
+    setImportStatus(undefined);
+    setProgress(null);
+    resumeRef.current = { offset: 0 };
+  };
 
   const runPreview = async () => {
     if (!file) return message.warning('请先选择Excel文件');
     setLoading(true);
     setProgress(null);
+    setImportStatus(undefined);
+    resumeRef.current = { offset: 0 };
     try {
       const data = await uploadFinanceExcel(kind, file, true);
-      setResult(data);
+      setPreview(data);
+    } catch {
+      /* 全局拦截器已提示 */
     } finally {
       setLoading(false);
     }
   };
 
-  const runConfirm = async () => {
+  const runConfirm = async (resume = false) => {
     if (!file) return message.warning('请先选择Excel文件');
-    if (!result?.preview) return message.warning('请先解析预览');
+    if (!preview?.preview) return message.warning('请先解析预览');
     setLoading(true);
     try {
       if (kind === 'gsp') {
         const data = await uploadFinanceExcel(kind, file, false);
-        setResult(data);
+        setImportStatus(data);
         message.success(`导入完成：成功 ${data.successRows || 0}，失败 ${data.failRows || 0}`);
         onDone();
         return;
       }
 
       const totalHint =
-        kind === 'po' ? Number(result.totalOrders || 0) : Number(result.totalRows || 0);
-      let offset = 0;
-      let batchId: string | undefined;
+        kind === 'po' ? Number(preview.totalOrders || 0) : Number(preview.totalRows || 0);
+      let offset = resume ? resumeRef.current.offset : 0;
+      let batchId = resume ? resumeRef.current.batchId : undefined;
       let last: ImportResult | undefined;
-      setProgress({ current: 0, total: totalHint || 1 });
+      setProgress({ current: offset, total: totalHint || 1 });
 
       while (true) {
         last = await uploadFinanceExcel(kind, file, false, {
@@ -64,15 +78,16 @@ export default function ImportDialog({
         });
         batchId = last.batchId;
         const total = Number(last.totalOrders ?? last.totalRows ?? totalHint) || 1;
-        // 旧后端一次写完全部时没有 nextOffset/done，直接结束，避免重复入库
         if (last.nextOffset == null && last.done == null) {
           setProgress({ current: total, total });
-          setResult(last);
+          setImportStatus(last);
+          resumeRef.current = { offset: total, batchId };
           break;
         }
         offset = Number(last.nextOffset ?? total);
+        resumeRef.current = { offset, batchId };
         setProgress({ current: Math.min(offset, total), total });
-        setResult(last);
+        setImportStatus(last);
         if (last.done || offset >= total) break;
       }
 
@@ -80,11 +95,19 @@ export default function ImportDialog({
         `导入完成：成功 ${last?.successRows || 0}，失败 ${last?.failRows || 0}`,
       );
       onDone();
+    } catch {
+      message.warning('入库中断，可点击「继续入库」从断点续传');
     } finally {
       setLoading(false);
-      setProgress(null);
     }
   };
+
+  const canResume =
+    !!file &&
+    !!preview?.preview &&
+    !!importStatus &&
+    importStatus.done === false &&
+    Number(importStatus.nextOffset || 0) > 0;
 
   return (
     <Modal
@@ -95,14 +118,19 @@ export default function ImportDialog({
       footer={
         <Space>
           <Button onClick={onClose}>关闭</Button>
-          <Button disabled={!file} loading={loading} onClick={() => void runPreview()}>
+          <Button disabled={!file || loading} onClick={() => void runPreview()}>
             解析预览
           </Button>
+          {canResume && (
+            <Button loading={loading} onClick={() => void runConfirm(true)}>
+              继续入库
+            </Button>
+          )}
           <Button
             type="primary"
-            disabled={!file || !result?.preview}
+            disabled={!file || !preview?.preview}
             loading={loading}
-            onClick={() => void runConfirm()}
+            onClick={() => void runConfirm(false)}
           >
             确认入库
           </Button>
@@ -114,15 +142,13 @@ export default function ImportDialog({
         maxCount={1}
         beforeUpload={(f) => {
           setFile(f);
-          setResult(undefined);
+          setPreview(undefined);
+          setImportStatus(undefined);
           setProgress(null);
+          resumeRef.current = { offset: 0 };
           return false;
         }}
-        onRemove={() => {
-          setFile(undefined);
-          setResult(undefined);
-          setProgress(null);
-        }}
+        onRemove={reset}
       >
         <p>
           <InboxOutlined style={{ fontSize: 32, color: '#15936b' }} />
@@ -130,7 +156,7 @@ export default function ImportDialog({
         <p>点击或拖入 Excel 文件</p>
         <p className="ant-upload-hint">先解析前 20 行并校验，确认后才写入数据库</p>
       </Upload.Dragger>
-      {progress && (
+      {(loading || progress) && progress && (
         <div style={{ marginTop: 16 }}>
           <Alert
             showIcon
@@ -139,20 +165,29 @@ export default function ImportDialog({
           />
           <Progress
             percent={Math.round((progress.current / Math.max(progress.total, 1)) * 100)}
-            status="active"
+            status={loading ? 'active' : importStatus?.done ? 'success' : 'exception'}
             style={{ marginTop: 8 }}
           />
         </div>
       )}
-      {result && (
+      {importStatus && !loading && importStatus.done === false && (
         <div style={{ marginTop: 16 }}>
           <Alert
             showIcon
-            type={(result.failures?.length || 0) > 0 ? 'warning' : 'success'}
-            message={`解析完成：${result.totalOrders ?? result.totalRows ?? 0} 个主记录；原始条目 ${result.sourceItemRows ?? '-'}；标准化明细 ${result.normalizedItemCount ?? '-'}；问题 ${result.failures?.length || 0}`}
+            type="warning"
+            message={`已写入 ${importStatus.successRows || 0} / ${importStatus.totalOrders ?? importStatus.totalRows ?? 0}，未完成。请点「继续入库」。`}
+          />
+        </div>
+      )}
+      {preview && (
+        <div style={{ marginTop: 16 }}>
+          <Alert
+            showIcon
+            type={(preview.failures?.length || 0) > 0 ? 'warning' : 'success'}
+            message={`解析完成：${preview.totalOrders ?? preview.totalRows ?? 0} 个主记录；原始条目 ${preview.sourceItemRows ?? '-'}；标准化明细 ${preview.normalizedItemCount ?? '-'}；问题 ${preview.failures?.length || 0}`}
           />
           <pre className="finance-preview">
-            {JSON.stringify(result.preview ?? result.failures ?? result, null, 2)}
+            {JSON.stringify(preview.preview ?? preview.failures ?? preview, null, 2)}
           </pre>
         </div>
       )}

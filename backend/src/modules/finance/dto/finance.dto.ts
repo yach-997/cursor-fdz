@@ -19,8 +19,8 @@ export class ImportPreviewQueryDto {
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) offset?: number;
   /** 本批处理条数；不传则一次全部写入 */
   @IsOptional() @Type(() => Number) @IsNumber() @Min(1) @Max(100) limit?: number;
-  /** 续传同一导入批次 */
-  @IsOptional() @IsUUID() batchId?: string;
+  /** 续传同一导入批次（import_batch.id，bigint 字符串） */
+  @IsOptional() @IsString() @MaxLength(32) batchId?: string;
 }
 
 export class FinanceCaseQueryDto extends PaginationDto {
