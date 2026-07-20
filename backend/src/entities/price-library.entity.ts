@@ -10,8 +10,8 @@ import {
 export class PriceLibrary {
   @PrimaryGeneratedColumn({ type: 'bigint' }) id: string;
   @Column({ name: 'price_type', type: 'varchar', length: 16 }) priceType: 'settle' | 'perf';
-  @Column({ name: 'item_code', type: 'varchar', length: 255 }) itemCode: string;
-  @Column({ name: 'item_name', type: 'varchar', length: 255 }) itemName: string;
+  @Column({ name: 'item_code', type: 'text' }) itemCode: string;
+  @Column({ name: 'item_name', type: 'text' }) itemName: string;
   @Column({ name: 'item_desc', type: 'text', nullable: true }) itemDesc: string | null;
   @Column({ type: 'varchar', length: 32, nullable: true }) unit: string | null;
   @Column({ name: 'product_model', type: 'varchar', length: 64, nullable: true }) productModel:

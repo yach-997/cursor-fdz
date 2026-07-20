@@ -222,7 +222,10 @@ export class FinanceImportService {
     const toSave: PriceLibrary[] = [];
     for (const price of slice) {
       try {
-        const key = priceKey(price.itemCode, price.productModel, price.scene);
+        const itemCode = String(price.itemCode || '').trim();
+        const itemName = String(price.itemName || itemCode).trim();
+        if (!itemCode) throw new Error('条目编码为空');
+        const key = priceKey(itemCode, price.productModel, price.scene);
         let entity = priceMap.get(key);
         entity ||= this.prices.create({
           priceType: 'settle',
@@ -231,15 +234,18 @@ export class FinanceImportService {
           status: 'active',
           effectiveDate,
         });
-        Object.assign(entity, price, {
-          unitPrice: money(price.unitPrice),
-          workHours: price.workHours === null ? null : money(price.workHours),
-          createdBy: user.id,
-          changeRemark: `由${file.originalname}初始化，已应用0.990应答系数`,
-        });
+        entity.itemCode = itemCode;
+        entity.itemName = itemName;
+        entity.itemDesc = price.itemDesc;
+        entity.unit = price.unit ? String(price.unit).slice(0, 32) : null;
+        entity.productModel = price.productModel ? String(price.productModel).slice(0, 64) : null;
+        entity.scene = price.scene ? String(price.scene).slice(0, 32) : null;
+        entity.unitPrice = money(price.unitPrice);
+        entity.workHours = price.workHours === null ? null : money(price.workHours);
+        entity.createdBy = user.id;
+        entity.changeRemark = `由${file.originalname}初始化，已应用0.990应答系数`;
         toSave.push(entity);
         priceMap.set(key, entity);
-        success += 1;
       } catch (error) {
         failures.push({
           row: price.sourceRow,
@@ -247,13 +253,20 @@ export class FinanceImportService {
         });
       }
     }
-    for (let i = 0; i < toSave.length; i += PRICE_CHUNK) {
-      await this.prices.save(toSave.slice(i, i + PRICE_CHUNK));
+    // 逐条保存：单条超长/唯一约束冲突时跳过，不让整批 500
+    for (const entity of toSave) {
+      try {
+        await this.prices.save(entity);
+        success += 1;
+      } catch (error) {
+        failures.push({
+          row: 0,
+          reason: `${entity.itemCode}: ${error instanceof Error ? error.message : '写入失败'}`,
+        });
+      }
     }
-    const mergedFailures = [
-      ...((offset === 0 ? [] : batch.failDetail) || []),
-      ...failures,
-    ];
+    const prevFailures = Array.isArray(batch.failDetail) ? batch.failDetail : [];
+    const mergedFailures = [...(offset === 0 ? [] : prevFailures), ...failures].slice(-500);
     const totalSuccess = Number(batch.successRows || 0) + success;
     await this.finishBatch(batch, totalSuccess, mergedFailures);
     return {

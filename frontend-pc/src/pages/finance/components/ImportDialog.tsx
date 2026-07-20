@@ -65,15 +65,20 @@ export default function ImportDialog({
 
       const totalHint =
         kind === 'po' ? Number(preview.totalOrders || 0) : Number(preview.totalRows || 0);
-      let offset = resume ? resumeRef.current.offset : 0;
-      let batchId = resume ? resumeRef.current.batchId : undefined;
+      let offset = resume
+        ? Number(importStatus?.nextOffset ?? resumeRef.current.offset || 0)
+        : 0;
+      let batchId = resume
+        ? importStatus?.batchId || resumeRef.current.batchId
+        : undefined;
       let last: ImportResult | undefined;
+      const chunkSize = kind === 'price' ? 15 : IMPORT_CHUNK;
       setProgress({ current: offset, total: totalHint || 1 });
 
       while (true) {
         last = await uploadFinanceExcel(kind, file, false, {
           offset,
-          limit: IMPORT_CHUNK,
+          limit: chunkSize,
           batchId,
         });
         batchId = last.batchId;
@@ -95,8 +100,9 @@ export default function ImportDialog({
         `导入完成：成功 ${last?.successRows || 0}，失败 ${last?.failRows || 0}`,
       );
       onDone();
-    } catch {
-      message.warning('入库中断，可点击「继续入库」从断点续传');
+    } catch (error) {
+      const detail = error instanceof Error && error.message ? `（${error.message}）` : '';
+      message.warning(`入库中断${detail}，可点击「继续入库」从断点续传`);
     } finally {
       setLoading(false);
     }
