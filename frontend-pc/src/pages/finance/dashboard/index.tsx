@@ -48,7 +48,7 @@ export default function FinanceDashboardPage() {
           <b>{s?.pendingPrice || 0}</b>
         </div>
         <div className="finance-stat">
-          <span>忽略条目</span>
+          <span>忽略条目（明细行）</span>
           <b>{s?.ignoredCount || 0}</b>
         </div>
         <div className="finance-stat">
@@ -112,7 +112,7 @@ export default function FinanceDashboardPage() {
         />
       )}
 
-      <Card className="finance-card" title="忽略条目汇总（不计入核算收入）" style={{ marginTop: 16 }}>
+      <Card className="finance-card" title="忽略条目汇总（按名称；不计入核算收入）" style={{ marginTop: 16 }}>
         <Table
           rowKey="itemCode"
           size="small"
@@ -121,7 +121,7 @@ export default function FinanceDashboardPage() {
           dataSource={ignoredItems}
           columns={[
             { title: 'PO 条目名称', dataIndex: 'itemCode' },
-            { title: '出现次数', dataIndex: 'count', width: 100 },
+            { title: '明细条数', dataIndex: 'count', width: 100 },
             {
               title: '数量合计',
               dataIndex: 'qty',
@@ -130,6 +130,12 @@ export default function FinanceDashboardPage() {
             },
           ]}
         />
+        {ignoredItems.length > 0 && (
+          <p className="finance-tip" style={{ marginTop: 12, marginBottom: 0 }}>
+            上表按名称汇总；看板「忽略条目（明细行）」= 各名称「明细条数」相加（例如「无」+「自定义」共{' '}
+            {ignoredItems.reduce((sum, row) => sum + Number(row.count || 0), 0)} 条）。
+          </p>
+        )}
       </Card>
 
       <Card className="finance-card" title="月度收入趋势" style={{ marginTop: 16 }}>

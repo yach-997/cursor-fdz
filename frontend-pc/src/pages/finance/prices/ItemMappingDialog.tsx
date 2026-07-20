@@ -75,6 +75,8 @@ export default function ItemMappingDialog({ open, onClose, onChanged }: Props) {
     }
   };
 
+  const ignoredRowCount = ignoredList.reduce((sum, row) => sum + Number(row.totalCount || 0), 0);
+
   return (
     <Modal
       width={1050}
@@ -97,7 +99,7 @@ export default function ItemMappingDialog({ open, onClose, onChanged }: Props) {
         items={[
           {
             key: 'map',
-            label: `映射与待定价（${rows.length}）`,
+            label: `映射与待定价（${rows.length} 种）`,
             children: (
               <Table
                 size="small"
@@ -164,31 +166,37 @@ export default function ItemMappingDialog({ open, onClose, onChanged }: Props) {
           },
           {
             key: 'ignored',
-            label: `已忽略（${ignoredList.length}）`,
+            label: `已忽略（${ignoredList.length} 种 / ${ignoredRowCount} 条）`,
             children: (
-              <Table
-                size="small"
-                rowKey="sourceItemName"
-                loading={loading}
-                dataSource={ignoredList}
-                pagination={{ pageSize: 10 }}
-                locale={{ emptyText: '没有忽略条目' }}
-                columns={[
-                  { title: 'PO 条目名称', dataIndex: 'sourceItemName' },
-                  { title: '出现次数', dataIndex: 'totalCount', width: 100 },
-                  {
-                    title: '数量合计',
-                    dataIndex: 'qty',
-                    width: 120,
-                    render: (v) => Number(v).toFixed(2),
-                  },
-                  {
-                    title: '说明',
-                    width: 220,
-                    render: () => '系统规则忽略，不参与结算收入核算',
-                  },
-                ]}
-              />
+              <>
+                <p className="finance-tip" style={{ marginBottom: 12 }}>
+                  这里按「条目名称」汇总：常见只有「无」「自定义」两种。看板「忽略条目」统计的是明细行数（当前约{' '}
+                  {ignoredRowCount} 条），两种数字口径不同，并不冲突。
+                </p>
+                <Table
+                  size="small"
+                  rowKey="sourceItemName"
+                  loading={loading}
+                  dataSource={ignoredList}
+                  pagination={{ pageSize: 10 }}
+                  locale={{ emptyText: '没有忽略条目' }}
+                  columns={[
+                    { title: 'PO 条目名称', dataIndex: 'sourceItemName' },
+                    { title: '出现次数（明细条数）', dataIndex: 'totalCount', width: 160 },
+                    {
+                      title: '数量合计',
+                      dataIndex: 'qty',
+                      width: 120,
+                      render: (v) => Number(v).toFixed(2),
+                    },
+                    {
+                      title: '说明',
+                      width: 220,
+                      render: () => '系统规则忽略，不参与结算收入核算',
+                    },
+                  ]}
+                />
+              </>
             ),
           },
         ]}
