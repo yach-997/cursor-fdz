@@ -15,6 +15,12 @@ import { PaginationDto } from '../../../common/dto/pagination.dto';
 
 export class ImportPreviewQueryDto {
   @IsOptional() @IsIn(['true', 'false']) preview?: string;
+  /** 分块入库起始下标（配合 limit，避免一次写入超时） */
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) offset?: number;
+  /** 本批处理条数；不传则一次全部写入 */
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(1) @Max(100) limit?: number;
+  /** 续传同一导入批次 */
+  @IsOptional() @IsUUID() batchId?: string;
 }
 
 export class FinanceCaseQueryDto extends PaginationDto {

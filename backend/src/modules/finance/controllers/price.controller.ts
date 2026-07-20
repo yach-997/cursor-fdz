@@ -74,7 +74,11 @@ export class FinancePriceController {
     @Query() query: ImportPreviewQueryDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
-    return this.importer.importSettlePrices(file, user, query.preview === 'true');
+    return this.importer.importSettlePrices(file, user, query.preview === 'true', {
+      offset: query.offset,
+      limit: query.limit,
+      batchId: query.batchId,
+    });
   }
   @Get(':id/history') @Roles(UserRole.SUPER_ADMIN) history(@Param('id') id: string) {
     return this.service.history(id);

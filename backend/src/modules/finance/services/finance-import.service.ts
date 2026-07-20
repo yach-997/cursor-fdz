@@ -91,7 +91,12 @@ export class FinanceImportService {
     };
   }
 
-  async importPo(file: Express.Multer.File, user: CurrentUserContext, preview = false) {
+  async importPo(
+    file: Express.Multer.File,
+    user: CurrentUserContext,
+    preview = false,
+    options: { offset?: number; limit?: number; batchId?: string } = {},
+  ) {
     this.assertExcel(file);
     const parsed = await this.parser.parsePo(file.buffer);
     if (preview)
@@ -102,11 +107,20 @@ export class FinanceImportService {
         normalizedItemCount: parsed.normalizedItemCount,
         failures: parsed.failures,
       };
+
+    const totalOrders = parsed.orders.length;
+    const offset = Math.max(0, options.offset ?? 0);
+    const limit = options.limit ?? totalOrders;
+    const slice = parsed.orders.slice(offset, offset + limit);
+    const nextOffset = Math.min(totalOrders, offset + slice.length);
+    const done = nextOffset >= totalOrders;
+
     const scopedRegion = await this.scope.region(user);
-    const batch = await this.createBatch(
+    const batch = await this.resolveBatch(
+      options.batchId,
       'po_order',
       file.originalname,
-      parsed.orders.length,
+      totalOrders,
       user.id,
     );
     const activePrices = await this.prices.find({
@@ -116,10 +130,11 @@ export class FinanceImportService {
     const activeMappings = await this.mappings.find({ where: { status: 'active' } });
     let success = 0;
     let generatedCases = 0;
-    const failures = [...parsed.failures];
+    const failures: Array<{ row: number; reason: string }> =
+      offset === 0 ? [...parsed.failures] : [];
 
-    for (let offset = 0; offset < parsed.orders.length; offset += PO_CHUNK) {
-      const chunk = parsed.orders.slice(offset, offset + PO_CHUNK);
+    for (let i = 0; i < slice.length; i += PO_CHUNK) {
+      const chunk = slice.slice(i, i + PO_CHUNK);
       try {
         const result = await this.savePoChunk(
           chunk,
@@ -141,20 +156,34 @@ export class FinanceImportService {
       }
     }
 
-    await this.finishBatch(batch, success, failures);
+    const mergedFailures = [
+      ...((offset === 0 ? [] : batch.failDetail) || []),
+      ...failures,
+    ];
+    const totalSuccess = Number(batch.successRows || 0) + success;
+    await this.finishBatch(batch, totalSuccess, mergedFailures);
     return {
       batchId: batch.id,
-      totalOrders: parsed.orders.length,
+      totalOrders,
       sourceItemRows: parsed.sourceItemRows,
       normalizedItemCount: parsed.normalizedItemCount,
-      successRows: success,
-      failRows: failures.length,
+      successRows: totalSuccess,
+      failRows: mergedFailures.length,
       generatedCases,
-      matchedOrders: success,
+      matchedOrders: totalSuccess,
+      offset,
+      nextOffset,
+      done,
+      chunkSuccess: success,
     };
   }
 
-  async importSettlePrices(file: Express.Multer.File, user: CurrentUserContext, preview = false) {
+  async importSettlePrices(
+    file: Express.Multer.File,
+    user: CurrentUserContext,
+    preview = false,
+    options: { offset?: number; limit?: number; batchId?: string } = {},
+  ) {
     this.assertExcel(file);
     const parsed = await this.parser.parseSettlePrices(file.buffer);
     if (preview)
@@ -163,10 +192,19 @@ export class FinanceImportService {
         totalRows: parsed.prices.length,
         failures: parsed.failures,
       };
-    const batch = await this.createBatch(
+
+    const totalRows = parsed.prices.length;
+    const offset = Math.max(0, options.offset ?? 0);
+    const limit = options.limit ?? totalRows;
+    const slice = parsed.prices.slice(offset, offset + limit);
+    const nextOffset = Math.min(totalRows, offset + slice.length);
+    const done = nextOffset >= totalRows;
+
+    const batch = await this.resolveBatch(
+      options.batchId,
       'settle_price',
       file.originalname,
-      parsed.prices.length,
+      totalRows,
       user.id,
     );
     const effectiveDate = new Date().toISOString().slice(0, 10);
@@ -179,9 +217,10 @@ export class FinanceImportService {
       existing.map((row) => [priceKey(row.itemCode, row.productModel, row.scene), row]),
     );
     let success = 0;
-    const failures = [...parsed.failures];
+    const failures: Array<{ row: number; reason: string }> =
+      offset === 0 ? [...parsed.failures] : [];
     const toSave: PriceLibrary[] = [];
-    for (const price of parsed.prices) {
+    for (const price of slice) {
       try {
         const key = priceKey(price.itemCode, price.productModel, price.scene);
         let entity = priceMap.get(key);
@@ -211,12 +250,21 @@ export class FinanceImportService {
     for (let i = 0; i < toSave.length; i += PRICE_CHUNK) {
       await this.prices.save(toSave.slice(i, i + PRICE_CHUNK));
     }
-    await this.finishBatch(batch, success, failures);
+    const mergedFailures = [
+      ...((offset === 0 ? [] : batch.failDetail) || []),
+      ...failures,
+    ];
+    const totalSuccess = Number(batch.successRows || 0) + success;
+    await this.finishBatch(batch, totalSuccess, mergedFailures);
     return {
       batchId: batch.id,
-      totalRows: parsed.prices.length,
-      successRows: success,
-      failRows: failures.length,
+      totalRows,
+      successRows: totalSuccess,
+      failRows: mergedFailures.length,
+      offset,
+      nextOffset,
+      done,
+      chunkSuccess: success,
     };
   }
 
@@ -263,14 +311,17 @@ export class FinanceImportService {
       const itemsByPoNo = new Map<string, ReturnType<typeof itemRepo.create>[]>();
       const touchedCaseIds = new Set<string>();
 
+      const missingCaseInputs = new Map<string, ParsedPoOrder>();
       for (const parsed of chunk) {
-        try {
-          const region = parsed.province?.includes('云南') ? 'yunnan' : 'south_china';
-          if (scopedRegion && region !== scopedRegion) throw new Error('站长只能导入本区域PO');
-
-          let serviceCase = caseMap.get(parsed.gspCaseNo);
-          if (!serviceCase) {
-            serviceCase = caseRepo.create({
+        if (!caseMap.has(parsed.gspCaseNo) && !missingCaseInputs.has(parsed.gspCaseNo)) {
+          missingCaseInputs.set(parsed.gspCaseNo, parsed);
+        }
+      }
+      if (missingCaseInputs.size) {
+        const created = await caseRepo.save(
+          [...missingCaseInputs.values()].map((parsed) => {
+            const region = parsed.province?.includes('云南') ? 'yunnan' : 'south_china';
+            return caseRepo.create({
               gspCaseNo: parsed.gspCaseNo,
               projectName: parsed.projectName || parsed.poNo,
               serviceType: parsed.demandType,
@@ -286,12 +337,23 @@ export class FinanceImportService {
               importBatchId: batchId,
               version: 1,
             });
-            serviceCase = await caseRepo.save(serviceCase);
-            caseMap.set(parsed.gspCaseNo, serviceCase);
-            generatedCases += 1;
-          } else if (serviceCase.status === 'finished') {
+          }),
+        );
+        for (const row of created) caseMap.set(row.gspCaseNo, row);
+        generatedCases += created.length;
+      }
+
+      const finishedCases: ServiceCase[] = [];
+      for (const parsed of chunk) {
+        try {
+          const region = parsed.province?.includes('云南') ? 'yunnan' : 'south_china';
+          if (scopedRegion && region !== scopedRegion) throw new Error('站长只能导入本区域PO');
+
+          const serviceCase = caseMap.get(parsed.gspCaseNo);
+          if (!serviceCase) throw new Error('案例创建失败');
+          if (serviceCase.status === 'finished') {
             serviceCase.status = 'settle_review';
-            await caseRepo.save(serviceCase);
+            finishedCases.push(serviceCase);
           }
 
           let order = orderMap.get(parsed.poNo);
@@ -356,6 +418,7 @@ export class FinanceImportService {
           });
         }
       }
+      if (finishedCases.length) await caseRepo.save(finishedCases);
 
       if (overwriteIds.length) {
         await itemRepo.delete({ poId: In(overwriteIds) });
@@ -449,6 +512,21 @@ export class FinanceImportService {
     if (!file.originalname.toLowerCase().endsWith('.xlsx'))
       throw new BadRequestException('仅支持.xlsx文件');
   }
+  private async resolveBatch(
+    batchId: string | undefined,
+    type: any,
+    fileName: string,
+    totalRows: number,
+    operatorId: string,
+  ) {
+    if (batchId) {
+      const existing = await this.batches.findOne({ where: { id: batchId } });
+      if (!existing) throw new NotFoundException('导入批次不存在');
+      return existing;
+    }
+    return this.createBatch(type, fileName, totalRows, operatorId);
+  }
+
   private async createBatch(type: any, fileName: string, totalRows: number, operatorId: string) {
     return this.batches.save(
       this.batches.create({

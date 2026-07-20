@@ -144,4 +144,8 @@ export interface ImportResult {
   batchId?: string;
   generatedCases?: number;
   matchedOrders?: number;
+  offset?: number;
+  nextOffset?: number;
+  done?: boolean;
+  chunkSuccess?: number;
 }

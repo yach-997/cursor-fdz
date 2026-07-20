@@ -144,6 +144,7 @@ export async function uploadFinanceExcel(
   kind: 'gsp' | 'po' | 'price',
   file: File,
   preview: boolean,
+  chunk?: { offset?: number; limit?: number; batchId?: string },
 ) {
   const form = new FormData();
   form.append('file', file);
@@ -151,9 +152,14 @@ export async function uploadFinanceExcel(
     kind === 'gsp' ? '/import/gsp-cases' : kind === 'po' ? '/import/po-orders' : '/prices/import';
   return unwrap(
     await request.post<ApiResponse<ImportResult>>(url, form, {
-      params: { preview: String(preview) },
+      params: {
+        preview: String(preview),
+        ...(chunk?.offset != null ? { offset: chunk.offset } : {}),
+        ...(chunk?.limit != null ? { limit: chunk.limit } : {}),
+        ...(chunk?.batchId ? { batchId: chunk.batchId } : {}),
+      },
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 120000,
+      timeout: 180000,
     }),
   );
 }

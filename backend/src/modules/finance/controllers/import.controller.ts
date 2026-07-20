@@ -41,7 +41,11 @@ export class FinanceImportController {
     @Query() query: ImportPreviewQueryDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
-    return this.service.importPo(file, user, query.preview === 'true');
+    return this.service.importPo(file, user, query.preview === 'true', {
+      offset: query.offset,
+      limit: query.limit,
+      batchId: query.batchId,
+    });
   }
   @Get('batches') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) batches(
     @Query('type') type?: string,
