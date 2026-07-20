@@ -59,6 +59,7 @@ export interface ItemPriceMappingRow {
 }
 export interface ItemPriceMappingList {
   list: ItemPriceMappingRow[];
+  ignoredList?: Array<{ sourceItemName: string; totalCount: number; qty: number }>;
   targetCodes: string[];
 }
 export interface FinanceDashboard {
@@ -69,11 +70,15 @@ export interface FinanceDashboard {
     caseCount: number;
     pendingMatch: number;
     pendingPrice: number;
+    ignoredCount?: number;
+    okCount?: number;
+    varianceAmount?: number;
     varianceRate: number;
     performanceExpense?: number;
     otherCost?: number;
     grossProfit?: number;
   };
+  ignoredItems?: Array<{ itemCode: string; count: number; qty: number }>;
   trend: Array<{ month: string; income: string }>;
 }
 

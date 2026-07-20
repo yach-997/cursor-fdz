@@ -44,6 +44,16 @@ export class PriceMappingService {
         .orderBy("COUNT(*) FILTER (WHERE item.price_status='pending_price')", 'DESC')
         .addOrderBy('item.item_code', 'ASC')
         .getRawMany();
+    const ignoredRows: Array<{ sourceItemName: string; totalCount: string; qty: string }> =
+      await this.items
+        .createQueryBuilder('item')
+        .select('item.item_code', 'sourceItemName')
+        .addSelect('COUNT(*)', 'totalCount')
+        .addSelect('COALESCE(SUM(item.qty::numeric),0)', 'qty')
+        .where("item.price_status = 'ignored'")
+        .groupBy('item.item_code')
+        .orderBy('COUNT(*)', 'DESC')
+        .getRawMany();
     const mappings = await this.mappings.find({ where: { status: 'active' } });
     const targetCodes = [
       ...new Set(
@@ -69,6 +79,11 @@ export class PriceMappingService {
           confidence: saved ? Number(saved.confidence) : suggestion?.confidence || null,
         };
       }),
+      ignoredList: ignoredRows.map((row) => ({
+        sourceItemName: row.sourceItemName,
+        totalCount: Number(row.totalCount),
+        qty: Number(row.qty || 0),
+      })),
       targetCodes,
     };
   }

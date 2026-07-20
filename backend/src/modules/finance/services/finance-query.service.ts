@@ -322,6 +322,8 @@ export class FinanceQueryService {
       .addSelect('COALESCE(p.case_revenue,0)', 'caseRevenue')
       .addSelect('COALESCE(SUM(item.item_revenue),0)', 'pricedRevenue')
       .addSelect("COUNT(item.id) FILTER (WHERE item.price_status='pending_price')", 'pendingPrice')
+      .addSelect("COUNT(item.id) FILTER (WHERE item.price_status='ignored')", 'ignoredCount')
+      .addSelect("COUNT(item.id) FILTER (WHERE item.price_status='ok')", 'okCount')
       .addSelect("COALESCE(SUM(CASE WHEN item.item_category='general' THEN item.item_revenue ELSE 0 END),0)", 'otherCost')
       .addSelect('COALESCE(p.perf_final,0)', 'perfFinal')
       .groupBy('po.id')
@@ -357,6 +359,35 @@ export class FinanceQueryService {
     rows.forEach((row) => row.caseId && performanceByCase.set(row.caseId, Number(row.perfFinal || 0)));
     const performanceExpense = [...performanceByCase.values()].reduce((sum, value) => sum + value, 0);
     const otherCost = rows.reduce((sum, row) => sum + Number(row.otherCost || 0), 0);
+    const ignoredCount = rows.reduce((sum, row) => sum + Number(row.ignoredCount || 0), 0);
+    const okCount = rows.reduce((sum, row) => sum + Number(row.okCount || 0), 0);
+    const pendingPrice = rows.reduce((sum, row) => sum + Number(row.pendingPrice || 0), 0);
+    const varianceAmount = Math.round((poTotalAmount - income) * 100) / 100;
+
+    const ignoredQb = this.items
+      .createQueryBuilder('item')
+      .innerJoin(PoOrder, 'po', 'po.id = item.po_id')
+      .leftJoin(ServiceCase, 'c', 'c.id = po.service_case_id')
+      .select('item.item_code', 'itemCode')
+      .addSelect('COUNT(*)', 'count')
+      .addSelect('COALESCE(SUM(item.qty::numeric),0)', 'qty')
+      .where("item.price_status = 'ignored'")
+      .groupBy('item.item_code')
+      .orderBy('COUNT(*)', 'DESC')
+      .limit(50);
+    if (region)
+      ignoredQb.andWhere(
+        "COALESCE(c.region, CASE WHEN po.province LIKE '%云南%' THEN 'yunnan' ELSE 'south_china' END)=:region",
+        { region },
+      );
+    if (query.from) ignoredQb.andWhere('po.demand_date>=:from', { from: query.from });
+    if (query.to) ignoredQb.andWhere('po.demand_date<=:to', { to: query.to });
+    if (query.project) ignoredQb.andWhere('po.project_name=:project', { project: query.project });
+    if (query.province) ignoredQb.andWhere('po.province=:province', { province: query.province });
+    if (query.demandType)
+      ignoredQb.andWhere('po.demand_type=:demandType', { demandType: query.demandType });
+    const ignoredRows = await ignoredQb.getRawMany<{ itemCode: string; count: string; qty: string }>();
+
     const adminOnly = user.role === UserRole.SUPER_ADMIN
       ? { performanceExpense, otherCost, grossProfit: income - performanceExpense - otherCost }
       : {};
@@ -364,13 +395,21 @@ export class FinanceQueryService {
       summary: {
         income,
         poTotalAmount,
+        varianceAmount,
         varianceRate: poTotalAmount ? Math.abs(income - poTotalAmount) / poTotalAmount : 0,
         poCount: rows.length,
         caseCount: cases.size,
         pendingMatch: rows.filter((row) => row.matchStatus === 'pending').length,
-        pendingPrice: rows.reduce((sum, row) => sum + Number(row.pendingPrice || 0), 0),
+        pendingPrice,
+        ignoredCount,
+        okCount,
         ...adminOnly,
       },
+      ignoredItems: ignoredRows.map((row) => ({
+        itemCode: row.itemCode,
+        count: Number(row.count || 0),
+        qty: Number(row.qty || 0),
+      })),
       trend: [...monthlyIncome.entries()]
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([month, value]) => ({

@@ -236,11 +236,32 @@ export default function FinanceCasesPage() {
                       { title: '条目', dataIndex: 'itemName' },
                       { title: '数量', dataIndex: 'qty' },
                       {
+                        title: '状态',
+                        dataIndex: 'priceStatus',
+                        width: 100,
+                        render: (v: string) => {
+                          if (v === 'ignored') return <Tag>已忽略</Tag>;
+                          if (v === 'pending_price') return <Tag color="warning">待定价</Tag>;
+                          if (v === 'ok') return <Tag color="success">已定价</Tag>;
+                          return <Tag>{v || '-'}</Tag>;
+                        },
+                      },
+                      {
                         title: '结算单价',
                         dataIndex: 'settlePrice',
-                        render: (v) => (v ? `¥${v}` : '待定价'),
+                        render: (v, row: { priceStatus?: string }) =>
+                          row.priceStatus === 'ignored'
+                            ? '—'
+                            : v
+                              ? `¥${v}`
+                              : '待定价',
                       },
-                      { title: '收入', dataIndex: 'itemRevenue', render: (v) => `¥${v}` },
+                      {
+                        title: '收入',
+                        dataIndex: 'itemRevenue',
+                        render: (v, row: { priceStatus?: string }) =>
+                          row.priceStatus === 'ignored' ? '—' : `¥${v}`,
+                      },
                     ]}
                   />
                 </Card>
