@@ -268,7 +268,7 @@ export default function InspectionPage() {
     activeEntryRef.current = currentTpl?.id;
     setUploadNotice('');
     setUploadProgress(0);
-    lastFileRef.current = null;
+    lastFilesRef.current = [];
     if (pendingPreviewRef.current) URL.revokeObjectURL(pendingPreviewRef.current);
     pendingPreviewRef.current = '';
     setPendingPreview('');
