@@ -85,11 +85,15 @@
   position: sticky;
   top: 0;
   z-index: 20;
-  height: 68px;
-  padding: 0 28px !important;
+  /* Ant Design Header 默认 line-height:64px，会把双行标题/用户名裁切 */
+  height: auto !important;
+  min-height: 68px;
+  line-height: normal !important;
+  padding: 12px 28px !important;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  overflow: visible;
   background: rgba(255, 255, 255, .86) !important;
   border-bottom: 1px solid rgba(23, 72, 54, 0.08);
   backdrop-filter: blur(18px);
@@ -113,13 +117,15 @@
   margin: 0;
   font-size: 18px;
   font-weight: 700;
+  line-height: 1.3;
   color: #17382d;
 }
 
 .app-page-subtitle {
-  margin-top: 1px;
+  margin-top: 2px;
   color: #87988f;
   font-size: 11px;
+  line-height: 1.3;
 }
 
 .app-user {
@@ -137,8 +143,26 @@
   box-shadow: 0 5px 14px rgba(22, 131, 95, .2);
 }
 
-.app-user__name { font-weight: 600; color: #24493d; }
-.app-user__role { color: #87988f; font-size: 12px; }
+.app-user__meta {
+  line-height: 1.3;
+  min-width: 0;
+}
+
+.app-user__name {
+  font-weight: 600;
+  color: #24493d;
+  line-height: 1.3;
+  max-width: 140px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.app-user__role {
+  color: #87988f;
+  font-size: 12px;
+  line-height: 1.3;
+}
 
 .app-content {
   margin: 0 !important;
@@ -169,7 +193,12 @@
     max-width: 100vw;
   }
 
-  .app-header { height: 60px; padding: 0 10px !important; }
+  .app-header {
+    height: auto !important;
+    min-height: 60px;
+    line-height: normal !important;
+    padding: 10px !important;
+  }
   .app-header__left { min-width: 0; gap: 6px; }
   .app-menu-toggle { flex: 0 0 40px; }
   .app-header__left > div:last-child { min-width: 0; }
