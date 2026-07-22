@@ -371,7 +371,7 @@ export default function TemplatesPage() {
         </Button>
       </div>
     ),
-    [entries, form, moveEntry, sites],
+    [entries, form, moveEntry, sites, uploadingEntry],
   );
 
   return (
