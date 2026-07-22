@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as qiniu from 'qiniu';
-import { Readable } from 'stream';
 
 /** 七牛云对象存储（华南 z2） */
 @Injectable()
@@ -66,6 +65,7 @@ export class QiniuService {
     const putExtra = new qiniu.form_up.PutExtra();
     putExtra.mimeType = contentType;
 
+    // Vercel Serverless 上 putStream(Readable) 偶发失败，改用 put(Buffer) 更稳。
     await new Promise<void>((resolve, reject) => {
       let settled = false;
       const finish = (error?: Error) => {
@@ -77,23 +77,17 @@ export class QiniuService {
       };
       const timer = setTimeout(
         () => finish(new Error('七牛上传超时，请检查存储区域和网络配置')),
-        20_000,
+        55_000,
       );
-      formUploader.putStream(
-        token,
-        objectName,
-        Readable.from(buffer),
-        putExtra,
-        (err, body, info) => {
-          if (err) return finish(err);
-          if (info.statusCode !== 200) {
-            return finish(
-              new Error(`七牛上传失败: ${info.statusCode} ${JSON.stringify(body)}`),
-            );
-          }
-          finish();
-        },
-      );
+      formUploader.put(token, objectName, buffer, putExtra, (err, body, info) => {
+        if (err) return finish(err);
+        if (info.statusCode !== 200) {
+          return finish(
+            new Error(`七牛上传失败: ${info.statusCode} ${JSON.stringify(body)}`),
+          );
+        }
+        finish();
+      });
     });
 
     return `${this.domain}/${objectName}`;

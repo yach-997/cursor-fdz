@@ -14,6 +14,7 @@ export async function uploadImage(
     ApiResponse<{ url: string; objectName: string }>
   >('/upload/photo', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000,
   });
   return data.data;
 }
