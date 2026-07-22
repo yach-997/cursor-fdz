@@ -4,6 +4,7 @@ import {
   Card,
   Checkbox,
   Form,
+  Image,
   Input,
   Modal,
   Popconfirm,
@@ -57,6 +58,7 @@ export default function TemplatesPage() {
   const [cloneOpen, setCloneOpen] = useState(false);
   const [cloneTpl, setCloneTpl] = useState<TemplateItem | null>(null);
   const [cloneSiteId, setCloneSiteId] = useState<string>();
+  const [uploadingEntry, setUploadingEntry] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -272,51 +274,74 @@ export default function TemplatesPage() {
                 />
               </Space>
               {(entry.samplePhotos || []).length > 0 && (
-                <Space wrap>
-                  {entry.samplePhotos!.map((url) => (
-                    <div key={url} style={{ position: 'relative' }}>
-                      <img src={displayPhotoUrl(url)} alt="" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6 }} />
-                      <Button
-                        size="small"
-                        type="link"
-                        danger
-                        onClick={() => {
-                          const next = [...entries];
-                          next[index] = {
-                            ...entry,
-                            samplePhotos: entry.samplePhotos!.filter((u) => u !== url),
-                          };
-                          setEntries(next);
-                        }}
-                      >
-                        删除
-                      </Button>
-                    </div>
-                  ))}
-                </Space>
+                <Image.PreviewGroup>
+                  <Space wrap>
+                    {entry.samplePhotos!.map((url) => (
+                      <div key={url} style={{ position: 'relative' }}>
+                        <Image
+                          src={displayPhotoUrl(url)}
+                          width={72}
+                          height={72}
+                          style={{ objectFit: 'cover', borderRadius: 6, cursor: 'pointer' }}
+                        />
+                        <Button
+                          size="small"
+                          type="link"
+                          danger
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const next = [...entries];
+                            next[index] = {
+                              ...entry,
+                              samplePhotos: entry.samplePhotos!.filter((u) => u !== url),
+                            };
+                            setEntries(next);
+                          }}
+                        >
+                          删除
+                        </Button>
+                      </div>
+                    ))}
+                  </Space>
+                </Image.PreviewGroup>
               )}
               <Upload
                 accept="image/*"
                 showUploadList={false}
+                disabled={uploadingEntry === index}
                 beforeUpload={(file) => {
                   const siteName = form.getFieldValue('siteId')
                     ? sites.find((s) => s.id === form.getFieldValue('siteId'))?.name
                     : '全局模板';
+                  setUploadingEntry(index);
+                  const hide = message.loading('正在压缩并上传样本图…', 0);
                   uploadImage(file as File, { siteName, serialNumber: '样本图' })
                     .then((res) => {
-                      const next = [...entries];
-                      next[index] = {
-                        ...entry,
-                        samplePhotos: [...(entry.samplePhotos || []), res.url],
-                      };
-                      setEntries(next);
+                      setEntries((prev) => {
+                        const next = [...prev];
+                        const cur = next[index];
+                        if (!cur) return prev;
+                        next[index] = {
+                          ...cur,
+                          samplePhotos: [...(cur.samplePhotos || []), res.url],
+                        };
+                        return next;
+                      });
                       message.success('样本图已上传');
                     })
-                    .catch(() => undefined);
+                    .catch(() => undefined)
+                    .finally(() => {
+                      hide();
+                      setUploadingEntry(null);
+                    });
                   return false;
                 }}
               >
-                <Button size="small" icon={<UploadOutlined />}>
+                <Button
+                  size="small"
+                  icon={<UploadOutlined />}
+                  loading={uploadingEntry === index}
+                >
                   上传样本图
                 </Button>
               </Upload>
