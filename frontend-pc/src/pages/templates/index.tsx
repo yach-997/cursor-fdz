@@ -307,33 +307,86 @@ export default function TemplatesPage() {
               )}
               <Upload
                 accept="image/*"
+                multiple
                 showUploadList={false}
                 disabled={uploadingEntry === index}
-                beforeUpload={(file) => {
+                beforeUpload={(file, fileList) => {
+                  // multiple 时每个文件都会触发一次；只在最后一份时统一批量上传
+                  if (file !== fileList[fileList.length - 1]) return false;
+
                   const siteName = form.getFieldValue('siteId')
                     ? sites.find((s) => s.id === form.getFieldValue('siteId'))?.name
                     : '全局模板';
+                  const files = fileList.filter((f) => f.type?.startsWith('image/') || !f.type);
+                  if (!files.length) {
+                    message.warning('请选择图片文件');
+                    return false;
+                  }
+
                   setUploadingEntry(index);
-                  const hide = message.loading('正在压缩并上传样本图…', 0);
-                  uploadImage(file as File, { siteName, serialNumber: '样本图' })
-                    .then((res) => {
+                  const hide = message.loading(
+                    files.length > 1
+                      ? `正在压缩并上传 ${files.length} 张样本图…`
+                      : '正在压缩并上传样本图…',
+                    0,
+                  );
+
+                  void (async () => {
+                    let ok = 0;
+                    let fail = 0;
+                    const urls: string[] = [];
+                    // 限流并发，避免一次打满直传
+                    const concurrency = 3;
+                    let cursor = 0;
+                    const workers = Array.from(
+                      { length: Math.min(concurrency, files.length) },
+                      async () => {
+                        while (cursor < files.length) {
+                          const current = files[cursor++];
+                          try {
+                            const res = await uploadImage(current as File, {
+                              siteName,
+                              serialNumber: '样本图',
+                            });
+                            urls.push(res.url);
+                            ok += 1;
+                          } catch {
+                            fail += 1;
+                          }
+                        }
+                      },
+                    );
+                    await Promise.all(workers);
+
+                    if (urls.length) {
                       setEntries((prev) => {
                         const next = [...prev];
                         const cur = next[index];
                         if (!cur) return prev;
                         next[index] = {
                           ...cur,
-                          samplePhotos: [...(cur.samplePhotos || []), res.url],
+                          samplePhotos: [...(cur.samplePhotos || []), ...urls],
                         };
                         return next;
                       });
-                      message.success('样本图已上传');
-                    })
+                    }
+
+                    if (fail === 0) {
+                      message.success(
+                        files.length > 1 ? `已上传 ${ok} 张样本图` : '样本图已上传',
+                      );
+                    } else if (ok > 0) {
+                      message.warning(`成功 ${ok} 张，失败 ${fail} 张`);
+                    } else {
+                      message.error('样本图上传失败，请重试');
+                    }
+                  })()
                     .catch(() => undefined)
                     .finally(() => {
                       hide();
                       setUploadingEntry(null);
                     });
+
                   return false;
                 }}
               >
@@ -342,7 +395,7 @@ export default function TemplatesPage() {
                   icon={<UploadOutlined />}
                   loading={uploadingEntry === index}
                 >
-                  上传样本图
+                  上传样本图（可多选）
                 </Button>
               </Upload>
             </Space>
