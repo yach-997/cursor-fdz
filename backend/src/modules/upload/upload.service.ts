@@ -167,15 +167,21 @@ export class UploadService {
     buffer: Buffer,
     contentType: string,
   ) {
+    const onVercel = Boolean(process.env.VERCEL || process.env.SERVERLESS === 'true');
     if (this.qiniu.isEnabled()) {
       try {
         return await this.qiniu.putObject(objectName, buffer, contentType);
       } catch (err) {
-        this.logger.warn(`七牛上传失败，回退 MinIO: ${(err as Error).message}`);
+        const detail = (err as Error).message || '未知错误';
+        this.logger.warn(`七牛上传失败，回退 MinIO: ${detail}`);
+        if (onVercel) {
+          throw new BadRequestException(`七牛上传失败: ${detail}`);
+        }
       }
-    }
-    if (process.env.VERCEL || process.env.SERVERLESS === 'true') {
-      throw new BadRequestException('Vercel 后端必须正确配置七牛云存储');
+    } else if (onVercel) {
+      throw new BadRequestException(
+        'Vercel 后端必须正确配置七牛云存储（缺少 QINIU_ACCESS_KEY/SECRET_KEY/BUCKET/DOMAIN）',
+      );
     }
     return this.minio.putObject(objectName, buffer, contentType);
   }
