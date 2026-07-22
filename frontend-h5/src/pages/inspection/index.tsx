@@ -202,7 +202,7 @@ export default function InspectionPage() {
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const pendingPreviewRef = useRef('');
-  const lastFileRef = useRef<File | null>(null);
+  const lastFilesRef = useRef<File[]>([]);
   const locationProofRef = useRef<LiveLocationProof | null>(null);
   const pollRefs = useRef<Record<string, number>>({});
   const activeEntryRef = useRef<string | undefined>(undefined);
@@ -518,62 +518,99 @@ export default function InspectionPage() {
       .catch(() => undefined);
   };
 
-  const handleCapture = async (file: File, source: 'camera' | 'gallery') => {
+  const handleCaptureFiles = async (files: File[], source: 'camera' | 'gallery') => {
     if (!record || !currentTpl || !taskId) return;
+    const imageFiles = files.filter(
+      (f) => !f.type || f.type.startsWith('image/'),
+    );
+    if (!imageFiles.length) {
+      Toast.info('请选择图片文件');
+      return;
+    }
+
     if (pendingPreviewRef.current) URL.revokeObjectURL(pendingPreviewRef.current);
-    const previewUrl = URL.createObjectURL(file);
+    const previewUrl = URL.createObjectURL(imageFiles[0]);
     pendingPreviewRef.current = previewUrl;
     setPendingPreview(previewUrl);
-    lastFileRef.current = file;
+    lastFilesRef.current = imageFiles;
     setUploadSource(source);
     setUploadProgress(0);
-    setUploadNotice('正在优化照片并获取定位…');
+    setUploadNotice(
+      imageFiles.length > 1
+        ? `正在优化并上传 ${imageFiles.length} 张照片…`
+        : '正在优化照片并获取定位…',
+    );
     setUploading(true);
+
     let uploadCompleted = false;
     const capturedRecordId = record.id;
     const capturedEntryId = currentTpl.id;
     const capturedSamplePhotos = currentTpl.samplePhotos || [];
+    const uploadedUrls: string[] = [];
+
     try {
       const currentProof = locationProofRef.current;
-      const proofPromise: Promise<LiveLocationProof> =
+      const proof =
         currentProof && Date.now() - Date.parse(currentProof.capturedAt) < 120_000
-          ? Promise.resolve(currentProof)
-          : verifyLocation();
-      const [compressed, proof] = await Promise.all([
-        compressImage(file),
-        proofPromise,
-      ]);
+          ? currentProof
+          : await verifyLocation();
 
-      setUploadNotice('正在安全上传照片…');
-      const uploaded = await uploadPhoto(
-        compressed,
-        {
-          taskId,
-          ...proof,
-          // 相册照片与现场拍照都以本次巡检上传时间登记；现场真实性由实时定位校验。
-          photoTakenAt: new Date().toISOString(),
-        },
-        (percent) => {
-          setUploadProgress(percent);
-          if (percent >= 99) {
-            setUploadNotice('照片已传送，云端正在保存原图…');
-          }
-        },
-      );
-      const photos = [...(currentEntry?.photos || []), uploaded.url];
+      for (let i = 0; i < imageFiles.length; i += 1) {
+        const file = imageFiles[i];
+        if (pendingPreviewRef.current) URL.revokeObjectURL(pendingPreviewRef.current);
+        const nextPreview = URL.createObjectURL(file);
+        pendingPreviewRef.current = nextPreview;
+        setPendingPreview(nextPreview);
+
+        setUploadNotice(
+          imageFiles.length > 1
+            ? `正在上传第 ${i + 1}/${imageFiles.length} 张…`
+            : '正在安全上传照片…',
+        );
+        const compressed = await compressImage(file);
+        const uploaded = await uploadPhoto(
+          compressed,
+          {
+            taskId,
+            ...proof,
+            // 相册照片与现场拍照都以本次巡检上传时间登记；现场真实性由实时定位校验。
+            photoTakenAt: new Date().toISOString(),
+          },
+          (percent) => {
+            const overall = Math.round(
+              ((i + percent / 100) / imageFiles.length) * 100,
+            );
+            setUploadProgress(Math.min(99, overall));
+            if (percent >= 99 && imageFiles.length === 1) {
+              setUploadNotice('照片已传送，云端正在保存原图…');
+            }
+          },
+        );
+        uploadedUrls.push(uploaded.url);
+        lastFilesRef.current = imageFiles.slice(i + 1);
+      }
+
+      const basePhotos = currentEntry?.photos || [];
+      const photos = [...basePhotos, ...uploadedUrls];
       uploadCompleted = true;
       setUploadProgress(100);
       patchEntry({ photos });
       if (pendingPreviewRef.current) URL.revokeObjectURL(pendingPreviewRef.current);
       pendingPreviewRef.current = '';
       setPendingPreview('');
+      lastFilesRef.current = [];
       const entriesSnapshot = record.entries.map((entry) =>
         entry.templateEntryId === capturedEntryId ? { ...entry, photos } : entry,
       );
       localStorage.setItem(`draft:${capturedRecordId}`, JSON.stringify(entriesSnapshot));
       setUploading(false);
-      setUploadNotice('照片已上传，可以继续下一步；正在后台保存…');
+      setUploadNotice(
+        uploadedUrls.length > 1
+          ? `已上传 ${uploadedUrls.length} 张，可以继续下一步；正在后台保存…`
+          : '照片已上传，可以继续下一步；正在后台保存…',
+      );
 
+      const lastUrl = uploadedUrls[uploadedUrls.length - 1];
       // 草稿和 AI 在后台继续，不再阻塞现场操作。
       void (async () => {
         try {
@@ -602,10 +639,14 @@ export default function InspectionPage() {
             };
           });
           if (activeEntryRef.current === capturedEntryId) {
-            setUploadNotice('照片已安全保存');
+            setUploadNotice(
+              uploadedUrls.length > 1
+                ? `已安全保存 ${uploadedUrls.length} 张照片`
+                : '照片已安全保存',
+            );
           }
 
-          if (task?.aiEnabled !== false) {
+          if (task?.aiEnabled !== false && lastUrl) {
             setAnalyzingIds((ids) =>
               ids.includes(capturedEntryId) ? ids : [...ids, capturedEntryId],
             );
@@ -613,7 +654,7 @@ export default function InspectionPage() {
               await analyzeAi({
                 recordId: capturedRecordId,
                 templateEntryId: capturedEntryId,
-                photoUrl: uploaded.url,
+                photoUrl: lastUrl,
                 samplePhotoUrls: capturedSamplePhotos,
               });
               startPoll(capturedRecordId, capturedEntryId);
@@ -629,14 +670,31 @@ export default function InspectionPage() {
       })();
     } catch (error) {
       const message = error instanceof Error ? error.message : '上传失败';
+      // 已成功的先落本地，剩余可重试
+      if (uploadedUrls.length) {
+        const photos = [...(currentEntry?.photos || []), ...uploadedUrls];
+        patchEntry({ photos });
+        const entriesSnapshot = record.entries.map((entry) =>
+          entry.templateEntryId === capturedEntryId ? { ...entry, photos } : entry,
+        );
+        localStorage.setItem(`draft:${capturedRecordId}`, JSON.stringify(entriesSnapshot));
+      }
       setUploadNotice(
         message.includes('timeout')
-          ? '网络响应超时，请点击重试，不会丢失已选照片'
-          : '上传没有完成，照片仍保留在页面，请检查网络后重试',
+          ? uploadedUrls.length
+            ? `已上传 ${uploadedUrls.length} 张，其余超时，请点击重试`
+            : '网络响应超时，请点击重试，不会丢失已选照片'
+          : uploadedUrls.length
+            ? `已上传 ${uploadedUrls.length} 张，其余失败，请点击重试`
+            : '上传没有完成，照片仍保留在页面，请检查网络后重试',
       );
     } finally {
       if (!uploadCompleted) setUploading(false);
     }
+  };
+
+  const handleCapture = async (file: File, source: 'camera' | 'gallery') => {
+    await handleCaptureFiles([file], source);
   };
 
   /** 仅校验必检项是否已拍照，不要求逐步人工确认 */
@@ -1177,10 +1235,11 @@ export default function InspectionPage() {
                   ref={galleryRef}
                   type="file"
                   accept="image/*"
+                  multiple
                   style={{ display: 'none' }}
                   onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) void handleCapture(f, 'gallery');
+                    const list = e.target.files ? Array.from(e.target.files) : [];
+                    if (list.length) void handleCaptureFiles(list, 'gallery');
                     e.target.value = '';
                   }}
                 />
@@ -1191,10 +1250,10 @@ export default function InspectionPage() {
                       marginTop: 12,
                       padding: '10px 12px',
                       borderRadius: 10,
-                      background: uploadNotice.includes('没有完成') || uploadNotice.includes('超时')
+                      background: uploadNotice.includes('没有完成') || uploadNotice.includes('超时') || uploadNotice.includes('失败')
                         ? '#fff4f2'
                         : '#eef8f3',
-                      color: uploadNotice.includes('没有完成') || uploadNotice.includes('超时')
+                      color: uploadNotice.includes('没有完成') || uploadNotice.includes('超时') || uploadNotice.includes('失败')
                         ? '#b33a2b'
                         : '#176b4d',
                       fontSize: 13,
@@ -1204,13 +1263,16 @@ export default function InspectionPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ flex: 1 }}>{uploadNotice}</span>
                       {!uploading &&
-                        lastFileRef.current &&
-                        (uploadNotice.includes('没有完成') || uploadNotice.includes('超时')) && (
+                        lastFilesRef.current.length > 0 &&
+                        (uploadNotice.includes('没有完成') ||
+                          uploadNotice.includes('超时') ||
+                          uploadNotice.includes('失败') ||
+                          uploadNotice.includes('重试')) && (
                           <button
                             type="button"
                             onClick={() =>
-                              void handleCapture(
-                                lastFileRef.current!,
+                              void handleCaptureFiles(
+                                lastFilesRef.current,
                                 uploadSource || 'gallery',
                               )
                             }
@@ -1259,7 +1321,7 @@ export default function InspectionPage() {
                     className="inspection-gallery-button"
                     onClick={() => galleryRef.current?.click()}
                   >
-                    从相册选择
+                    从相册选择（可多选）
                   </Button>
                   <Button
                     type="primary"
@@ -1274,7 +1336,7 @@ export default function InspectionPage() {
                 </div>
                 <div className="inspection-upload-tip">
                   {locationStatus === 'verified'
-                    ? '定位已通过，支持从相册选择或现场拍照'
+                    ? '定位已通过：相册可一次多选；现场拍照仍单张拍摄'
                     : '请先完成现场定位；定位通过后才可选择照片或拍照'}
                 </div>
               </div>
