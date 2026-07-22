@@ -54,7 +54,7 @@ const DEVICE_TYPE_OPTIONS = Object.entries(DEVICE_TYPE_LABEL).map(([value, label
 /**
  * 任务管理：
  * - 管理员/站长可创建、列表、筛选、编辑、归档
- * - 字段：任务名称、设备序列号、设备类型、所属区域/现场（及指派巡检员）
+ * - 字段：任务名称、设备序列号、设备类型、所属区域/现场（及指派工程师）
  */
 export default function TasksPage() {
   const [loading, setLoading] = useState(false);
@@ -208,7 +208,7 @@ export default function TasksPage() {
           : '-',
     },
     {
-      title: '巡检员',
+      title: '工程师',
       width: 100,
       render: (_, r) => r.inspector?.realName || '-',
     },
@@ -398,8 +398,8 @@ export default function TasksPage() {
           </Form.Item>
           <Form.Item
             name="inspectorId"
-            label="巡检员"
-            rules={[{ required: true, message: '请选择巡检员' }]}
+            label="工程师"
+            rules={[{ required: true, message: '请选择工程师' }]}
           >
             <Select
               options={inspectors.map((i) => ({

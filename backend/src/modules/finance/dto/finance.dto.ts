@@ -122,11 +122,22 @@ export class SaveAssessmentDto {
   @IsString() month: string;
   @IsUUID() userId: string;
   @Type(() => Number) @IsNumber() @Min(0) @Max(100) internalScore: number;
-  @Type(() => Number) @IsNumber() @Min(0) @Max(100) sungrowScore: number;
+  /** 已取消阳光加权，保留字段兼容旧客户端，写入时忽略 */
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(100) sungrowScore?: number;
   @IsOptional() @Type(() => Number) @IsNumber() rewardAmount?: number;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) toolSubsidy?: number;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) otherSubsidy?: number;
   @IsOptional() @IsString() @MaxLength(500) subsidyRemark?: string;
+}
+
+export class CreateAssessmentEventDto {
+  @IsString() month: string;
+  @IsUUID() userId: string;
+  @IsString() @MaxLength(64) catalogId: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0.01) qty?: number;
+  /** 自定义金额项必填；标准项可省略（按标准×次数） */
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) amount?: number;
+  @IsOptional() @IsString() @MaxLength(500) remark?: string;
 }
 
 export class MonthlyQueryDto {

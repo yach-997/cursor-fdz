@@ -249,7 +249,7 @@ export default function TemplatesPage() {
                     next[index] = {
                       ...entry,
                       isOptionalModule: e.target.checked,
-                      // 可选分项默认非必填，由巡检员现场开启后再检
+                      // 可选分项默认非必填，由工程师现场开启后再检
                       isRequired: e.target.checked ? false : entry.isRequired,
                     };
                     setEntries(next);

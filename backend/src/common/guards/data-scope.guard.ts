@@ -57,7 +57,7 @@ export class DataScopeGuard implements CanActivate {
       return true;
     }
 
-    // 巡检员：限定加入的站点
+    // 工程师：限定加入的站点
     if (user.role === UserRole.INSPECTOR) {
       const memberIds = user.memberSiteIds || [];
       user.scopedSiteIds = memberIds;

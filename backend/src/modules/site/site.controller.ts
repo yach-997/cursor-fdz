@@ -30,7 +30,7 @@ import { ParsePostgresUuidPipe } from '../../common/pipes/parse-postgres-uuid.pi
 export class SiteController {
   constructor(private readonly siteService: SiteService) {}
 
-  /** 站点列表（超管全量，站长/巡检员按数据范围） */
+  /** 站点列表（超管全量，站长/工程师按数据范围） */
   @Get()
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   async findAll(@Query() query: QuerySiteDto, @CurrentUser() user: CurrentUserContext) {
@@ -106,7 +106,7 @@ export class SiteController {
     return this.siteService.removeDeputy(id, userId, user);
   }
 
-  /** 站点成员列表（含副站长/巡检员，可按 role 过滤） */
+  /** 站点成员列表（含副站长/工程师，可按 role 过滤） */
   @Get(':id/members')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async getMembers(
@@ -117,7 +117,7 @@ export class SiteController {
     return this.siteService.getMembers(id, user, role);
   }
 
-  /** 聘用巡检员（超管/正站长/副站长；巡检员可同时属于多个站点） */
+  /** 聘用工程师（超管/正站长/副站长；工程师可同时属于多个站点） */
   @Post(':id/members')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async addMember(
@@ -128,7 +128,7 @@ export class SiteController {
     return this.siteService.addMember(id, dto, user);
   }
 
-  /** 解聘巡检员 */
+  /** 解聘工程师 */
   @Delete(':id/members/:userId')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   @HttpCode(HttpStatus.OK)

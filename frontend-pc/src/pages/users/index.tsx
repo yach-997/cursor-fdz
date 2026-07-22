@@ -28,7 +28,7 @@ import { useAuthStore } from '../../stores/auth';
 import type { UserInfo, SiteItem, UserRole, CommonStatus } from '../../types';
 import { ROLE_LABEL } from '../../types';
 
-/** 用户管理：站长/巡检员列表 + 人才池 Tab（聘用/解聘） */
+/** 用户管理：站长/工程师列表 + 人才池 Tab（聘用/解聘） */
 export default function UsersPage() {
   const currentUser = useAuthStore((s) => s.user);
   const isAdmin = currentUser?.role === 'super_admin';
@@ -324,7 +324,7 @@ export default function UsersPage() {
                 }}
                 options={[
                   { value: 'site_manager', label: '站长' },
-                  { value: 'inspector', label: '巡检员' },
+                  { value: 'inspector', label: '工程师' },
                   { value: 'super_admin', label: '超级管理员' },
                 ]}
               />
@@ -417,7 +417,7 @@ export default function UsersPage() {
             name="roles"
             label="角色（可多选）"
             rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个角色' }]}
-            extra="可同时勾选站长和巡检员：电脑登录管理端，手机登录巡检端"
+            extra="可同时勾选站长和工程师：电脑登录管理端，手机登录巡检端"
           >
             <Checkbox.Group
               disabled={!isAdmin}
@@ -425,9 +425,9 @@ export default function UsersPage() {
                 isAdmin
                   ? [
                       { value: 'site_manager', label: '站长（含可任副站长）' },
-                      { value: 'inspector', label: '巡检员' },
+                      { value: 'inspector', label: '工程师' },
                     ]
-                  : [{ value: 'inspector', label: '巡检员' }]
+                  : [{ value: 'inspector', label: '工程师' }]
               }
             />
           </Form.Item>
@@ -468,7 +468,7 @@ export default function UsersPage() {
       </Modal>
 
       <Modal
-        title={`聘用巡检员 - ${hireUser?.realName || ''}`}
+        title={`聘用工程师 - ${hireUser?.realName || ''}`}
         open={hireOpen}
         onCancel={() => setHireOpen(false)}
         onOk={submitHire}

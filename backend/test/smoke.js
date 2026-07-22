@@ -266,7 +266,7 @@ async function validateAiErrorFallsBackToAudit() {
   assert.equal(
     detail.aiSummary.fail,
     1,
-    'AI 不合格统计不能被巡检员人工确认结果覆盖',
+    'AI 不合格统计不能被工程师人工确认结果覆盖',
   );
   assert.equal(detail.needsAudit, true);
 }
@@ -687,7 +687,7 @@ async function validateInspectionLocationGuard() {
   const inspector = {
     id: seededUuid,
     role: 'inspector',
-    realName: '现场巡检员',
+    realName: '现场工程师',
   };
   const now = new Date().toISOString();
   const onsite = await service.assertOnSite(

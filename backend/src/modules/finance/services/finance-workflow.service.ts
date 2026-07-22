@@ -81,7 +81,7 @@ export class FinanceWorkflowService {
     }
     const inspector = await this.users.findOne({ where: { id: inspectorId } });
     if (!inspector || inspector.status !== CommonStatus.ACTIVE || !userHasRole(inspector, UserRole.INSPECTOR)) {
-      throw new BadRequestException('所选账号不是可用巡检员');
+      throw new BadRequestException('所选账号不是可用工程师');
     }
     const crossRegion = inspector.region !== serviceCase.region;
     if (crossRegion && user.role !== UserRole.SUPER_ADMIN) {
@@ -93,7 +93,7 @@ export class FinanceWorkflowService {
     const busy = await this.cases.findOne({
       where: { inspectorId, status: In([...ACTIVE_CASE_STATUSES]) },
     });
-    if (busy) throw new BadRequestException(`该巡检员正在处理案例 ${busy.gspCaseNo}`);
+    if (busy) throw new BadRequestException(`该工程师正在处理案例 ${busy.gspCaseNo}`);
 
     const before = { status: serviceCase.status, inspectorId: serviceCase.inspectorId };
     serviceCase.status = 'assigned';
@@ -158,7 +158,7 @@ export class FinanceWorkflowService {
     serviceCase.status = 'working';
     await this.cases.save(serviceCase);
     await this.work.update({ serviceCaseId: caseId }, { startedAt: new Date() });
-    await this.logs.write('service_case', caseId, 'status', 'assigned', 'working', user.id, '巡检员开始作业');
+    await this.logs.write('service_case', caseId, 'status', 'assigned', 'working', user.id, '工程师开始作业');
     return serviceCase;
   }
 
@@ -201,7 +201,7 @@ export class FinanceWorkflowService {
     record.completedAt = new Date();
     await this.work.save(record);
     if (hasPo) await this.refreshLedger(serviceCase, true);
-    await this.logs.write('service_case', caseId, 'status', 'working', serviceCase.status, user.id, '巡检员完工确认');
+    await this.logs.write('service_case', caseId, 'status', 'working', serviceCase.status, user.id, '工程师完工确认');
     return serviceCase;
   }
 
@@ -253,7 +253,7 @@ export class FinanceWorkflowService {
   async approve(caseId: string, comment: string | undefined, user: CurrentUserContext) {
     const serviceCase = await this.caseForManager(caseId, user);
     if (serviceCase.status !== 'settle_review') throw new BadRequestException('当前案例不在待结算审核状态');
-    if (!serviceCase.inspectorId) throw new BadRequestException('案例尚未关联巡检员，不能审核结算');
+    if (!serviceCase.inspectorId) throw new BadRequestException('案例尚未关联工程师，不能审核结算');
     const missingPerf = await this.items
       .createQueryBuilder('item')
       .innerJoin(PoOrder, 'po', 'po.id=item.po_id')
@@ -395,7 +395,7 @@ export class FinanceWorkflowService {
   }
 
   private assertInspector(user: CurrentUserContext) {
-    if (user.role !== UserRole.INSPECTOR) throw new ForbiddenException('仅巡检员可执行此操作');
+    if (user.role !== UserRole.INSPECTOR) throw new ForbiddenException('仅工程师可执行此操作');
   }
 
   /**

@@ -46,7 +46,7 @@ export class LocationGuardService {
     const task = await this.taskRepo.findOne({ where: { id: taskId } });
     if (!task) throw new BadRequestException('巡检任务不存在');
 
-    // 管理员可代为处理历史数据；巡检员必须是任务本人且处于现场。
+    // 管理员可代为处理历史数据；工程师必须是任务本人且处于现场。
     if (currentUser.role !== UserRole.INSPECTOR) {
       return {
         verified: true,

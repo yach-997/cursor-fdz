@@ -291,7 +291,7 @@ export default function SiteFormModal({
           label="巡检定位范围"
           initialValue={500}
           rules={[{ required: true, message: '请设置巡检定位范围' }]}
-          extra="巡检员只有在这个范围内才能现场拍照和提交报告。建议普通站点 300–500 米，大型园区可适当放宽。"
+          extra="工程师只有在这个范围内才能现场拍照和提交报告。建议普通站点 300–500 米，大型园区可适当放宽。"
         >
           <InputNumber
             min={50}

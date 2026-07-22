@@ -154,7 +154,7 @@ export class AppointDeputyDto {
   userId: string;
 }
 
-/** 聘用巡检员 DTO（同一巡检员可加入多个站点） */
+/** 聘用工程师 DTO（同一工程师可加入多个站点） */
 export class AddMemberDto {
   @IsPostgresUuid({ message: '用户ID格式不正确' })
   @IsNotEmpty()

@@ -79,8 +79,8 @@ export default function LoginPage() {
 
         <div className="h5-login-card">
           <div className="h5-login-card__head">
-            <h2>巡检员登录</h2>
-            <span>请使用已聘用的巡检员账号</span>
+            <h2>工程师登录</h2>
+            <span>请使用已聘用的工程师账号</span>
           </div>
           <Form>
             {token && user && (

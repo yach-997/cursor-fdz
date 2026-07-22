@@ -11,7 +11,7 @@ const DEVICE_TYPE_LABEL: Record<string, string> = {
   energy_storage: '储能系统',
 };
 
-/** 巡检员创建任务：名称 + 现场 + 设备序列号 */
+/** 工程师创建任务：名称 + 现场 + 设备序列号 */
 export default function CreateTaskPage() {
   const navigate = useNavigate();
   const { user, currentSite, setCurrentSite } = useAuthStore();

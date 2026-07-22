@@ -22,8 +22,9 @@ import {
   ChangeLog,
   ItemPriceMapping,
     CaseWorkRecord,
-    Assessment,
-    MonthlySettlement,
+  Assessment,
+  MonthlySettlement,
+  AssessmentEvent,
 } from './entities';
 import { AuthModule } from './modules/auth/auth.module';
 import { SiteModule } from './modules/site/site.module';
@@ -99,6 +100,7 @@ import { HealthController } from './modules/health/health.controller';
               CaseWorkRecord,
               Assessment,
               MonthlySettlement,
+              AssessmentEvent,
           ],
           synchronize,
           logging: config.get<string>('NODE_ENV') === 'development',

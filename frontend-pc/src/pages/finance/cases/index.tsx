@@ -150,16 +150,16 @@ export default function FinanceCasesPage() {
             return;
           }
           await assignFinanceCase(assigning.id, inspectorId, assignReason || undefined);
-          message.success('派单成功，巡检员可在手机端接单作业');
+          message.success('派单成功，工程师可在手机端接单作业');
           setAssigning(undefined);
           await load();
         }}
       >
-        <p>仅显示与案例同区域的巡检员；正在处理其他费用案例的人员不可选择。</p>
+        <p>仅显示与案例同区域的工程师；正在处理其他费用案例的人员不可选择。</p>
         <Select
           style={{ width: '100%' }}
           value={inspectorId}
-          placeholder="选择空闲巡检员"
+          placeholder="选择空闲工程师"
           onChange={setInspectorId}
           options={inspectors.map((item) => ({
             value: item.id,

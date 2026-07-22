@@ -33,11 +33,11 @@ test('接口英文异常统一转换为中文提示', async () => {
   assert.match(request, /chineseErrorMessage/);
 });
 
-test('审核页同时展示 AI 结论与巡检员现场结论', async () => {
+test('审核页同时展示 AI 结论与工程师现场结论', async () => {
   const audit = await source('src/pages/audit/index.tsx');
 
   assert.match(audit, /AI 不合格 \{row\.aiSummary\?\.fail\} 项/);
   assert.match(audit, /AI 异常 \{row\.aiSummary\?\.error\} 项/);
-  assert.match(audit, /巡检员现场确认/);
-  assert.match(audit, /巡检员未确认/);
+  assert.match(audit, /工程师现场确认/);
+  assert.match(audit, /工程师未确认/);
 });

@@ -36,7 +36,7 @@ export class SiteScopeService {
     return [...new Set([...primary.map((s) => s.id), ...deputies.map((d) => d.siteId)])];
   }
 
-  /** 作为巡检员加入的站点（可多站） */
+  /** 作为工程师加入的站点（可多站） */
   async getInspectorSiteIds(userId: string): Promise<string[]> {
     const memberships = await this.siteMemberRepo.find({
       where: {

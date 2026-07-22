@@ -95,9 +95,30 @@ export interface FinanceAssessment {
   totalScore?: string;
   rankResult?: string;
   rewardAmount?: string;
+  eventPenalty?: string;
   toolSubsidy?: string;
   otherSubsidy?: string;
   subsidyRemark?: string;
+}
+export interface AssessmentEventCatalogItem {
+  id: string;
+  category: string;
+  content: string;
+  unit: string;
+  unitAmount: number | null;
+  remark?: string;
+}
+export interface AssessmentEventRow {
+  id: string;
+  month: string;
+  userId: string;
+  category: string;
+  content: string;
+  unit: string;
+  qty: string;
+  unitAmount?: string | null;
+  amount: string;
+  remark?: string | null;
 }
 export interface FinanceMonthlySettlement {
   id: string;
@@ -105,6 +126,7 @@ export interface FinanceMonthlySettlement {
   userId: string;
   perfTotal: string;
   rewardTotal: string;
+  eventPenalty?: string;
   subsidyTotal: string;
   correctionTotal: string;
   finalAmount: string;

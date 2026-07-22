@@ -17,11 +17,13 @@ test('iteration 3 registers assessment and monthly settlement pages and APIs', (
   assert.match(layout, /完整结算闭环/);
 });
 
-test('settlement service implements weighted score, ranking, locking and role-based profit visibility', () => {
+test('settlement service implements ranking rewards, event penalty and locking', () => {
   const service = read('backend/src/modules/finance/services/finance-settlement.service.ts');
   const query = read('backend/src/modules/finance/services/finance-query.service.ts');
-  assert.match(service, /dto\.internalScore \* 0\.6 \+ dto\.sungrowScore \* 0\.4/);
-  assert.match(service, /index < quota \? '优秀'/);
+  assert.match(service, /row\.totalScore = dto\.internalScore\.toFixed\(2\)/);
+  assert.match(service, /不称职/);
+  assert.match(service, /rankRewardAmount/);
+  assert.match(service, /eventPenalty/);
   assert.match(service, /row\.status = 'locked'/);
   assert.match(service, /row\?\.status === 'locked'/);
   assert.match(query, /user\.role === UserRole\.SUPER_ADMIN/);
@@ -50,7 +52,9 @@ test('mobile income page displays assessment, monthly settlement and locked stat
 
 test('monthly settlement list exposes only safe user fields', () => {
   const service = read('backend/src/modules/finance/services/finance-settlement.service.ts');
-  const mapper = service.slice(service.indexOf('async listMonthly'), service.indexOf('async correctMonthly'));
+  const start = service.indexOf('async listMonthly');
+  const end = service.indexOf('async correct', start);
+  const mapper = service.slice(start, end > start ? end : undefined);
   assert.match(mapper, /username: person\.username/);
   assert.match(mapper, /realName: person\.realName/);
   assert.doesNotMatch(mapper, /password/);

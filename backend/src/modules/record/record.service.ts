@@ -256,7 +256,7 @@ export class RecordService {
     const expectedStatus = record.status;
     if (record.status === RecordStatus.REJECTED) {
       record.status = RecordStatus.DRAFT;
-      // 保留 rejectReason 供巡检员查看；只记追溯，不抹掉驳回信息
+      // 保留 rejectReason 供工程师查看；只记追溯，不抹掉驳回信息
       this.pushTrail(record, {
         action: 'reopened',
         at: new Date().toISOString(),
@@ -427,7 +427,7 @@ export class RecordService {
         at: new Date().toISOString(),
         by: currentUser.id,
         byName: currentUser.realName,
-        summary: withLocation(isResubmit ? '驳回后重新提交' : '巡检员提交报告'),
+        summary: withLocation(isResubmit ? '驳回后重新提交' : '工程师提交报告'),
         reason: prevReject?.reason,
         entryIds: prevReject?.entryIds,
       });
@@ -502,7 +502,7 @@ export class RecordService {
       byName: currentUser.realName,
       reason: dto.reason,
       entryIds,
-      summary: '管理员驳回，待巡检员返工',
+      summary: '管理员驳回，待工程师返工',
     });
     await this.recordRepo.save(record);
 
@@ -567,7 +567,7 @@ export class RecordService {
           aiResult.status === CheckResult.PASS ||
           aiResult.status === CheckResult.FAIL
         ) {
-          // 人工结论优先：巡检员已经确认后，后到的 AI 结果不能覆盖人工判断。
+          // 人工结论优先：工程师已经确认后，后到的 AI 结果不能覆盖人工判断。
           if (!e.manualResult || e.manualResult === CheckResult.PENDING) {
             next.finalResult = aiResult.status as
               | CheckResult.PASS
@@ -756,7 +756,7 @@ export class RecordService {
     let pending = 0;
     let error = 0;
     for (const e of entries) {
-      // 此处只统计 AI 原始判断。巡检员现场确认保存在 manualResult/finalResult，
+      // 此处只统计 AI 原始判断。工程师现场确认保存在 manualResult/finalResult，
       // 不能覆盖 AI 统计，否则后台会出现“详情 5 项 AI 不合格、列表只显示 1 项”的口径冲突。
       const st = e.aiResult?.status;
       if (st === CheckResult.FAIL) fail += 1;

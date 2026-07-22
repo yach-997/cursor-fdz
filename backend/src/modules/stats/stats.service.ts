@@ -290,7 +290,7 @@ export class StatsService {
         站点: site?.name || '',
         设备序列号: device?.serialNumber || '',
         设备类型: rec.deviceType,
-        巡检员: inspector?.realName || '',
+        工程师: inspector?.realName || '',
         状态: rec.status,
         提交时间: rec.submittedAt
           ? new Date(rec.submittedAt).toLocaleString('zh-CN')
@@ -318,7 +318,7 @@ export class StatsService {
     return Buffer.from(output);
   }
 
-  /** 巡检员个人统计（H5 我的页） */
+  /** 工程师个人统计（H5 我的页） */
   async getInspectorSummary(
     currentUser: CurrentUserContext,
     siteId?: string,

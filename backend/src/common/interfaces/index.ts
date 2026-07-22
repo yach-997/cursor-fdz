@@ -39,7 +39,7 @@ export interface CurrentUserContext {
   client?: LoginClient;
   /** 站长/副站长管理的站点 ID 列表 */
   managedSiteIds: string[];
-  /** 巡检员加入的站点 ID 列表 */
+  /** 工程师加入的站点 ID 列表 */
   memberSiteIds: string[];
   /** 数据范围可用的站点 ID（由 DataScope 计算） */
   scopedSiteIds: string[];

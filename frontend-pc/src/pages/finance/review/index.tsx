@@ -56,13 +56,13 @@ export default function FinanceReviewPage() {
         columns={[
           { title: '案例号', dataIndex: 'gspCaseNo', width: 145 },
           { title: '项目', dataIndex: 'projectName', ellipsis: true },
-          { title: '巡检员', dataIndex: 'inspectorName', width: 100, render: (v) => v || '-' },
+          { title: '工程师', dataIndex: 'inspectorName', width: 100, render: (v) => v || '-' },
           {
             title: '资料完整性',
             width: 135,
             render: (_, row) => row.approvalReady
               ? <Tag color="green">可审核</Tag>
-              : <Tag color="orange">{!row.inspectorName ? '未派巡检员' : `缺绩效价 ${row.missingPerf} 项`}</Tag>,
+              : <Tag color="orange">{!row.inspectorName ? '未派工程师' : `缺绩效价 ${row.missingPerf} 项`}</Tag>,
           },
           { title: '完工时间', dataIndex: 'finishTime', width: 160, render: (v) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-') },
           {

@@ -45,7 +45,7 @@ export class User {
   })
   role: UserRole;
 
-  /** 一账号多角色，如同时具备站长 + 巡检员 */
+  /** 一账号多角色，如同时具备站长 + 工程师 */
   @Column({ type: 'jsonb', default: () => "'[]'" })
   roles: UserRole[];
 
@@ -73,7 +73,7 @@ export class User {
   @OneToMany(() => Site, (site) => site.manager)
   managedSites: Site[];
 
-  /** 作为巡检员加入的站点关联 */
+  /** 作为工程师加入的站点关联 */
   @OneToMany(() => SiteMember, (member) => member.user)
   siteMemberships: SiteMember[];
 }

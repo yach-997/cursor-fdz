@@ -11,7 +11,7 @@ import { CommonStatus, SiteMemberRole } from '../common/enums';
 import { Site } from './site.entity';
 import { User } from './user.entity';
 
-/** 站点成员：副站长 / 巡检员（一人可属多站） */
+/** 站点成员：副站长 / 工程师（一人可属多站） */
 @Entity('site_members')
 @Unique(['siteId', 'userId'])
 export class SiteMember {

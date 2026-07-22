@@ -86,7 +86,7 @@ export default function PortalPage() {
           </span>
           <span className="portal-card__text">
             <span className="portal-card__title">手机巡检端</span>
-            <span className="portal-card__desc">巡检员现场巡检入口</span>
+            <span className="portal-card__desc">工程师现场巡检入口</span>
           </span>
           <span className="portal-card__arrow">›</span>
         </button>

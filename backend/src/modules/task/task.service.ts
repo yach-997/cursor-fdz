@@ -171,7 +171,7 @@ export class TaskService {
     };
   }
 
-  /** 批量挂载站点/设备/巡检员，避免 find relations 的 TypeORM orderBy 缺陷 */
+  /** 批量挂载站点/设备/工程师，避免 find relations 的 TypeORM orderBy 缺陷 */
   private async attachRelations(tasks: InspectionTask[]) {
     if (!tasks.length) return;
     const siteIds = [...new Set(tasks.map((t) => t.siteId))];
@@ -233,7 +233,7 @@ export class TaskService {
       order: { createdAt: 'DESC' },
     });
     const record = records[0];
-    // 若当前是新开的空进度、驳回信息在历史记录上，一并带回给巡检员
+    // 若当前是新开的空进度、驳回信息在历史记录上，一并带回给工程师
     const rejectReason =
       record?.rejectReason ||
       records.find((r) => r.rejectReason?.reason)?.rejectReason ||
@@ -252,7 +252,7 @@ export class TaskService {
     };
   }
 
-  /** 创建任务：管理员/巡检员均可；按站点+序列号关联设备，存模板快照 */
+  /** 创建任务：管理员/工程师均可；按站点+序列号关联设备，存模板快照 */
   async create(dto: CreateTaskDto, currentUser: CurrentUserContext) {
     if (
       currentUser.role !== UserRole.SUPER_ADMIN &&
@@ -272,11 +272,11 @@ export class TaskService {
 
     let inspectorId = dto.inspectorId;
     if (currentUser.role === UserRole.INSPECTOR) {
-      // 巡检员自建任务：默认本人
+      // 工程师自建任务：默认本人
       inspectorId = currentUser.id;
     }
     if (!inspectorId) {
-      throw new BadRequestException('请指定巡检员');
+      throw new BadRequestException('请指定工程师');
     }
     await this.assertHiredInspector(dto.siteId, inspectorId);
 
@@ -358,7 +358,7 @@ export class TaskService {
     const task = await this.getTaskOrThrow(id);
     this.assertTaskAccess(task, currentUser);
 
-    // 巡检员只能开始自己的任务；站长/超管也可代开始
+    // 工程师只能开始自己的任务；站长/超管也可代开始
     if (
       currentUser.role === UserRole.INSPECTOR &&
       task.inspectorId !== currentUser.id
@@ -457,7 +457,7 @@ export class TaskService {
   }
 
   /**
-   * 删除未完成任务（管理员本站 / 巡检员本人）
+   * 删除未完成任务（管理员本站 / 工程师本人）
    * 已提交、已通过的不可删
    */
   async remove(id: string, currentUser: CurrentUserContext) {
@@ -476,7 +476,7 @@ export class TaskService {
     return { success: true, id };
   }
 
-  /** 改派巡检员 */
+  /** 改派工程师 */
   async reassign(id: string, dto: ReassignTaskDto, currentUser: CurrentUserContext) {
     const task = await this.getTaskOrThrow(id);
     this.assertTaskManage(task, currentUser);
@@ -533,10 +533,10 @@ export class TaskService {
   private async assertHiredInspector(siteId: string, inspectorId: string) {
     const user = await this.userRepo.findOne({ where: { id: inspectorId } });
     if (!user || !userHasRole(user, UserRole.INSPECTOR)) {
-      throw new BadRequestException('巡检员不存在或角色不正确');
+      throw new BadRequestException('工程师不存在或角色不正确');
     }
     if (user.status !== CommonStatus.ACTIVE) {
-      throw new BadRequestException('巡检员已停用');
+      throw new BadRequestException('工程师已停用');
     }
 
     const member = await this.memberRepo.findOne({
@@ -563,7 +563,7 @@ export class TaskService {
     });
     if (deputy) return;
 
-    throw new BadRequestException('该巡检员未聘用到本站点，无法分配任务');
+    throw new BadRequestException('该工程师未聘用到本站点，无法分配任务');
   }
 
   private async getTaskOrThrow(id: string) {
@@ -613,7 +613,7 @@ export class TaskService {
     throw new ForbiddenException('无权管理任务');
   }
 
-  /** 删除/归档权限：管理员管站内；巡检员只能动自己的任务 */
+  /** 删除/归档权限：管理员管站内；工程师只能动自己的任务 */
   private assertTaskDelete(task: InspectionTask, currentUser: CurrentUserContext) {
     if (currentUser.role === UserRole.SUPER_ADMIN) return;
     if (currentUser.role === UserRole.SITE_MANAGER) {

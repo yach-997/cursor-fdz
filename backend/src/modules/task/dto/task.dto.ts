@@ -31,7 +31,7 @@ export class CreateTaskDto {
   taskName: string;
 
   /**
-   * 巡检员：管理员可指定；巡检员自建时可省略（默认本人）
+   * 工程师：管理员可指定；工程师自建时可省略（默认本人）
    */
   @IsOptional()
   @IsPostgresUuid()
@@ -117,7 +117,7 @@ export class QueryTaskDto extends PaginationDto {
   deviceType?: DeviceType;
 }
 
-/** 改派巡检员 */
+/** 改派工程师 */
 export class ReassignTaskDto {
   @IsPostgresUuid()
   inspectorId: string;

@@ -11,6 +11,8 @@ import type {
   FinanceInspectorOption,
   FinanceReviewItem,
   FinanceAssessment,
+  AssessmentEventCatalogItem,
+  AssessmentEventRow,
   FinanceMonthlySettlement,
 } from '../types/finance';
 
@@ -27,6 +29,22 @@ export async function saveFinanceAssessment(payload: Record<string, unknown>) {
 }
 export async function rankFinanceAssessments(month: string) {
   return unwrap(await request.post<ApiResponse<FinanceAssessment[]>>(`/assessments/${month}/rank`));
+}
+export async function fetchAssessmentEventCatalog() {
+  return unwrap(await request.get<ApiResponse<AssessmentEventCatalogItem[]>>('/assessments/event-catalog'));
+}
+export async function fetchAssessmentEvents(month: string, userId: string) {
+  return unwrap(
+    await request.get<ApiResponse<AssessmentEventRow[]>>('/assessments/events', {
+      params: { month, userId },
+    }),
+  );
+}
+export async function createAssessmentEvent(payload: Record<string, unknown>) {
+  return unwrap(await request.post<ApiResponse<AssessmentEventRow>>('/assessments/events', payload));
+}
+export async function deleteAssessmentEvent(id: string) {
+  return unwrap(await request.delete<ApiResponse<{ id: string }>>(`/assessments/events/${id}`));
 }
 export async function fetchMonthlySettlements(month: string) {
   return unwrap(await request.get<ApiResponse<FinanceMonthlySettlement[]>>('/monthly-settlements', { params: { month } }));

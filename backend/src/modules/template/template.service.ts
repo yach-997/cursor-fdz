@@ -57,7 +57,7 @@ export class TemplateService {
         qb.andWhere('tpl.is_global = true');
       }
     } else {
-      // 巡检员只读全局 + 自己加入站点的模板
+      // 工程师只读全局 + 自己加入站点的模板
       const siteIds = currentUser.memberSiteIds || [];
       if (siteIds.length) {
         qb.andWhere('(tpl.is_global = true OR tpl.site_id IN (:...siteIds))', {

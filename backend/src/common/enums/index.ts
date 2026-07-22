@@ -4,7 +4,7 @@ export enum UserRole {
   SUPER_ADMIN = 'super_admin',
   /** 站长（可作为正站长/副站长任职，具体以站点任命为准） */
   SITE_MANAGER = 'site_manager',
-  /** 巡检员（可同时加入多个站点） */
+  /** 工程师（可同时加入多个站点） */
   INSPECTOR = 'inspector',
 }
 
@@ -12,7 +12,7 @@ export enum UserRole {
 export enum SiteMemberRole {
   /** 副站长 */
   DEPUTY_MANAGER = 'deputy_manager',
-  /** 巡检员 */
+  /** 工程师 */
   INSPECTOR = 'inspector',
 }
 

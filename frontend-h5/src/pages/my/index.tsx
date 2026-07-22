@@ -45,7 +45,7 @@ export default function MyPage() {
           </div>
           <div className="my-hero__meta">
             <h1>{user?.realName || '-'}</h1>
-            <p>{user?.phone || user?.username || '巡检员账号'}</p>
+            <p>{user?.phone || user?.username || '工程师账号'}</p>
           </div>
         </div>
       </header>

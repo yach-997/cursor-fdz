@@ -234,12 +234,12 @@ export class SiteService implements OnModuleInit {
     site.managerId = dto.userId;
     await this.siteRepo.save(site);
 
-    // 正站长可以同时保留巡检员身份；仅卸去与正站长冲突的副站长任职。
+    // 正站长可以同时保留工程师身份；仅卸去与正站长冲突的副站长任职。
     await this.deactivateDeputyMembership(id, dto.userId);
 
     const user = await this.userRepo.findOne({ where: { id: dto.userId } });
     if (user) {
-      // 保留原有巡检员角色，同时赋予站长角色（一账号多角色）
+      // 保留原有工程师角色，同时赋予站长角色（一账号多角色）
       ensureUserHasRole(user, UserRole.SITE_MANAGER);
       await this.userRepo.save(user);
     }
@@ -352,7 +352,7 @@ export class SiteService implements OnModuleInit {
   }
 
   /**
-   * 聘用巡检员（同一巡检员可同时加入多个站点）
+   * 聘用工程师（同一工程师可同时加入多个站点）
    * 超管 / 正站长 / 副站长均可操作本站
    */
   async addMember(id: string, dto: AddMemberDto, currentUser: CurrentUserContext) {
@@ -365,7 +365,7 @@ export class SiteService implements OnModuleInit {
     }
     if (!userHasRole(user, UserRole.INSPECTOR)) {
       throw new BadRequestException(
-        '只能聘用具备「巡检员」角色的用户（可在用户管理中勾选巡检员）',
+        '只能聘用具备「工程师」角色的用户（可在用户管理中勾选工程师）',
       );
     }
     if (user.status !== CommonStatus.ACTIVE) {
@@ -381,13 +381,13 @@ export class SiteService implements OnModuleInit {
         existing.status === CommonStatus.ACTIVE &&
         existing.memberRole === SiteMemberRole.DEPUTY_MANAGER
       ) {
-        throw new ConflictException('该用户已是本站副站长，无法同时任巡检员');
+        throw new ConflictException('该用户已是本站副站长，无法同时任工程师');
       }
       if (
         existing.status === CommonStatus.ACTIVE &&
         existing.memberRole === SiteMemberRole.INSPECTOR
       ) {
-        throw new ConflictException('该巡检员已在本站聘用中');
+        throw new ConflictException('该工程师已在本站聘用中');
       }
       existing.memberRole = SiteMemberRole.INSPECTOR;
       existing.status = CommonStatus.ACTIVE;
@@ -405,7 +405,7 @@ export class SiteService implements OnModuleInit {
     return this.toMemberDto(saved, user);
   }
 
-  /** 解聘巡检员（不影响其在其他站点的聘用） */
+  /** 解聘工程师（不影响其在其他站点的聘用） */
   async removeMember(id: string, userId: string, currentUser: CurrentUserContext) {
     const site = await this.getActiveSite(id);
     this.assertLeadershipAccess(site, currentUser);
@@ -419,7 +419,7 @@ export class SiteService implements OnModuleInit {
     });
 
     if (!member || member.status !== CommonStatus.ACTIVE) {
-      throw new NotFoundException('该巡检员未在本站聘用');
+      throw new NotFoundException('该工程师未在本站聘用');
     }
 
     member.status = CommonStatus.INACTIVE;
@@ -481,7 +481,7 @@ export class SiteService implements OnModuleInit {
     ) {
       return user;
     }
-    throw new BadRequestException('只能任命具备站长或巡检员角色的用户为正站长');
+    throw new BadRequestException('只能任命具备站长或工程师角色的用户为正站长');
   }
 
   /** 校验当前用户是否有权访问该站点 */
@@ -514,7 +514,7 @@ export class SiteService implements OnModuleInit {
     throw new ForbiddenException('仅超级管理员或本站正站长可管理副站长');
   }
 
-  /** 正站长 / 副站长 / 超管（聘用巡检员） */
+  /** 正站长 / 副站长 / 超管（聘用工程师） */
   private assertLeadershipAccess(site: Site, currentUser: CurrentUserContext) {
     if (currentUser.role === UserRole.SUPER_ADMIN) return;
     if (currentUser.role === UserRole.SITE_MANAGER) {

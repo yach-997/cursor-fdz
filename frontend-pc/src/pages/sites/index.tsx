@@ -40,7 +40,7 @@ import SiteFormModal from './SiteFormModal';
 import { composeFullAddress } from '../../utils/addressParse';
 import { useAuthStore } from '../../stores/auth';
 
-/** 站点管理：正站长 / 多副站长 / 多巡检员（巡检员可跨站） */
+/** 站点管理：正站长 / 多副站长 / 多工程师（工程师可跨站） */
 export default function SitesPage() {
   const isAdmin = useAuthStore((state) => state.user?.role === 'super_admin');
   const [loading, setLoading] = useState(false);
@@ -213,11 +213,11 @@ export default function SitesPage() {
 
   const onAddInspector = async () => {
     if (!staffSite || !pickInspectorId) {
-      message.warning('请选择巡检员');
+      message.warning('请选择工程师');
       return;
     }
     await addSiteMember(staffSite.id, pickInspectorId);
-    message.success('已聘用巡检员（该员仍可同时服务于其他站点）');
+    message.success('已聘用工程师（该员仍可同时服务于其他站点）');
     setPickInspectorId(undefined);
     await loadStaff(staffSite);
   };
@@ -364,7 +364,7 @@ export default function SitesPage() {
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
         {regionHint
           ? `当前筛选：${regionHint} → 共 ${total} 个电站`
-          : `一站一名正站长、多名副站长；正/副站长可聘多名巡检员；巡检员可跨多个站点`}
+          : `一站一名正站长、多名副站长；正/副站长可聘多名工程师；工程师可跨多个站点`}
       </Typography.Paragraph>
 
       <Table
@@ -397,7 +397,7 @@ export default function SitesPage() {
         onOk={() => void submitAppoint()}
       >
         <Typography.Paragraph type="secondary">
-          每站仅一名正站长。可从站长账号或巡检员中选择（选巡检员将提升为站长角色）。
+          每站仅一名正站长。可从站长账号或工程师中选择（选工程师将提升为站长角色）。
         </Typography.Paragraph>
         <Select
           showSearch
@@ -410,7 +410,7 @@ export default function SitesPage() {
             const roles = m.roles?.length ? m.roles : [m.role];
             return {
               value: m.id,
-              label: `${m.realName}（${m.username} / ${roles.includes('site_manager') ? '站长' : '巡检员'}）`,
+              label: `${m.realName}（${m.username} / ${roles.includes('site_manager') ? '站长' : '工程师'}）`,
             };
           })}
         />
@@ -445,12 +445,12 @@ export default function SitesPage() {
               </Typography.Text>
             )}
             {staffSite?.manager && inspectors.some((item) => item.userId === staffSite.manager?.id) && (
-              <Tag color="blue" style={{ margin: 0 }}>兼任巡检员</Tag>
+              <Tag color="blue" style={{ margin: 0 }}>兼任工程师</Tag>
             )}
           </Space>
         </div>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          同一账号可兼任正站长和巡检员：从电脑端站长入口登录进入管理端，从手机端巡检员入口登录进入巡检端。
+          同一账号可兼任正站长和工程师：从电脑端站长入口登录进入管理端，从手机端工程师入口登录进入巡检端。
         </Typography.Paragraph>
         <Tabs
           items={[
@@ -508,21 +508,21 @@ export default function SitesPage() {
             },
             {
               key: 'inspector',
-              label: `巡检员（${inspectors.length}）`,
+              label: `工程师（${inspectors.length}）`,
               children: (
                 <div>
                   <Space style={{ marginBottom: 12 }} wrap>
                     <Select
                       showSearch
                       style={{ width: 280 }}
-                      placeholder="选择巡检员账号"
+                      placeholder="选择工程师账号"
                       value={pickInspectorId}
                       onChange={setPickInspectorId}
                       optionFilterProp="label"
                       options={inspectorOptions}
                     />
                     <Button type="primary" onClick={() => void onAddInspector()}>
-                      聘用巡检员
+                      聘用工程师
                     </Button>
                   </Space>
                   <Table

@@ -34,7 +34,7 @@ export class TaskController {
     return this.taskService.findAll(query, user);
   }
 
-  /** 管理员与巡检员均可创建 */
+  /** 管理员与工程师均可创建 */
   @Post()
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   async create(@Body() dto: CreateTaskDto, @CurrentUser() user: CurrentUserContext) {
@@ -71,7 +71,7 @@ export class TaskController {
     return this.taskService.start(id, user);
   }
 
-  /** 删除未完成任务（管理员 / 巡检员本人） */
+  /** 删除未完成任务（管理员 / 工程师本人） */
   @Delete(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   @HttpCode(HttpStatus.OK)

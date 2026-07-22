@@ -95,7 +95,7 @@ export default function AuditPage() {
       return;
     }
     await rejectRecord(detail.id, rejectReason.trim(), rejectEntryIds);
-    message.success('已驳回，巡检员可见原因与检查项');
+    message.success('已驳回，工程师可见原因与检查项');
     setRejectOpen(false);
     setRejectReason('');
     setRejectEntryIds([]);
@@ -282,10 +282,10 @@ export default function AuditPage() {
                         color={manualResult === 'fail' ? 'error' : 'success'}
                         style={{ marginLeft: 8 }}
                       >
-                        巡检员现场确认{manualResult === 'fail' ? '不合格' : '合格'}
+                        工程师现场确认{manualResult === 'fail' ? '不合格' : '合格'}
                       </Tag>
                     ) : (
-                      <Tag style={{ marginLeft: 8 }}>巡检员未确认</Tag>
+                      <Tag style={{ marginLeft: 8 }}>工程师未确认</Tag>
                     )}
                     {needRedo ? (
                       <Tag color="error" style={{ marginLeft: 8 }}>
@@ -301,10 +301,10 @@ export default function AuditPage() {
                   <div style={{ marginBottom: 8, color: '#666' }}>
                     现场结论：
                     {manualResult === 'pass'
-                      ? '巡检员确认合格'
+                      ? '工程师确认合格'
                       : manualResult === 'fail'
-                        ? '巡检员确认不合格'
-                        : '巡检员未选择，以管理员审核为准'}
+                        ? '工程师确认不合格'
+                        : '工程师未选择，以管理员审核为准'}
                   </div>
                   <Image.PreviewGroup>
                     <Space wrap>
@@ -364,7 +364,7 @@ export default function AuditPage() {
           rows={4}
           value={rejectReason}
           onChange={(e) => setRejectReason(e.target.value)}
-          placeholder="请填写驳回原因（巡检员可见，并记入追溯链）"
+          placeholder="请填写驳回原因（工程师可见，并记入追溯链）"
         />
       </Modal>
     </div>

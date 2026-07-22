@@ -10,6 +10,8 @@ export class MonthlySettlement {
   @Column({ name: 'reward_total', type: 'numeric', precision: 12, scale: 2, default: 0 }) rewardTotal: string;
   @Column({ name: 'subsidy_total', type: 'numeric', precision: 12, scale: 2, default: 0 }) subsidyTotal: string;
   @Column({ name: 'correction_total', type: 'numeric', precision: 12, scale: 2, default: 0 }) correctionTotal: string;
+  /** 专业指标事件扣罚合计（正数，结算时从最终金额中扣减） */
+  @Column({ name: 'event_penalty', type: 'numeric', precision: 12, scale: 2, default: 0 }) eventPenalty: string;
   @Column({ name: 'final_amount', type: 'numeric', precision: 12, scale: 2, default: 0 }) finalAmount: string;
   @Column({ type: 'varchar', length: 16, default: 'draft' }) status: 'draft' | 'corrected' | 'locked';
   @Column({ name: 'locked_by', type: 'uuid', nullable: true }) lockedBy: string | null;

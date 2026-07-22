@@ -13,6 +13,7 @@ import {
   CaseWorkRecord,
   Assessment,
   MonthlySettlement,
+  AssessmentEvent,
 } from '../../entities';
 import { UploadModule } from '../upload/upload.module';
 import { FinanceImportController } from './controllers/import.controller';
@@ -50,6 +51,7 @@ import { FinanceSettlementService } from './services/finance-settlement.service'
       CaseWorkRecord,
       Assessment,
       MonthlySettlement,
+      AssessmentEvent,
     ]),
   ],
   controllers: [

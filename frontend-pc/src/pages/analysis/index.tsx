@@ -203,7 +203,7 @@ export default function AnalysisPage() {
         />
         <Select
           allowClear
-          placeholder="巡检员"
+          placeholder="工程师"
           style={{ width: 120 }}
           value={inspectorId}
           onChange={setInspectorId}
@@ -266,7 +266,7 @@ export default function AnalysisPage() {
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title="巡检员合格率排名">
+          <Card title="工程师合格率排名">
             <ReactECharts option={rankOption} style={{ height: 300 }} />
           </Card>
         </Col>

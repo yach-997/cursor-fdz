@@ -109,5 +109,5 @@ export const DEVICE_TYPE_LABEL: Record<DeviceType, string> = {
 export const ROLE_LABEL: Record<UserRole, string> = {
   super_admin: '超级管理员',
   site_manager: '站长',
-  inspector: '巡检员',
+  inspector: '工程师',
 };

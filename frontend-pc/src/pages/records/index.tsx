@@ -255,7 +255,7 @@ export default function RecordsPage() {
   return (
     <div>
       <p style={{ color: '#666', marginBottom: 12 }}>
-        巡检员提交后的报告都会出现在这里（含 AI 合格与不合格）。不合格待审报告可在「报告审核」处理；详情内可看完整操作链。
+        工程师提交后的报告都会出现在这里（含 AI 合格与不合格）。不合格待审报告可在「报告审核」处理；详情内可看完整操作链。
       </p>
       <Space wrap style={{ marginBottom: 16 }}>
         <Input
@@ -313,7 +313,7 @@ export default function RecordsPage() {
         />
         <Select
           allowClear
-          placeholder="巡检员"
+          placeholder="工程师"
           style={{ width: 120 }}
           value={inspectorId}
           onChange={setInspectorId}

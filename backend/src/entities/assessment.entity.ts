@@ -18,6 +18,8 @@ export class Assessment {
   @Column({ name: 'subsidy_remark', type: 'text', nullable: true }) subsidyRemark: string | null;
   @Column({ name: 'correction_amount', type: 'numeric', precision: 12, scale: 2, default: 0 }) correctionAmount: string;
   @Column({ name: 'correction_reason', type: 'text', nullable: true }) correctionReason: string | null;
+  /** 专业指标事件扣罚合计（正数表示从月结中扣减） */
+  @Column({ name: 'event_penalty', type: 'numeric', precision: 12, scale: 2, default: 0 }) eventPenalty: string;
   @Column({ name: 'updated_by', type: 'uuid', nullable: true }) updatedBy: string | null;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
   @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;

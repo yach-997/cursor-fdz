@@ -167,7 +167,7 @@ export class AuthService {
     const memberSites = await this.siteScope.getInspectorSiteIds(user.id);
     if (memberSites.length) return UserRole.INSPECTOR;
     throw new ForbiddenException(
-      '该账号无巡检端权限。请使用 PC 管理端登录，或在用户管理中勾选「巡检员」角色',
+      '该账号无巡检端权限。请使用 PC 管理端登录，或在用户管理中勾选「工程师」角色',
     );
   }
 

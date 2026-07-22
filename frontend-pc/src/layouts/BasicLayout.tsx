@@ -45,7 +45,7 @@ const iconMap: Record<string, React.ReactNode> = {
 const roleLabel: Record<string, string> = {
   super_admin: '超级管理员',
   site_manager: '站长',
-  inspector: '巡检员',
+  inspector: '工程师',
 };
 
 /** 主布局：左侧动态菜单 + 顶部用户信息 */
@@ -76,7 +76,7 @@ export default function BasicLayout() {
 
   useEffect(() => {
     if (!user) return;
-    // 巡检员默认不进仪表盘
+    // 工程师默认不进仪表盘
     if (user.role === 'inspector' && location.pathname === '/dashboard') {
       navigate('/settings', { replace: true });
     }

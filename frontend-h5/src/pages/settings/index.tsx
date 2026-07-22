@@ -4,7 +4,7 @@ import { NavBar, Form, Field, Button, Toast, Dialog } from 'react-vant';
 import { useAuthStore } from '../../stores/auth';
 import { updateProfileApi, changePasswordApi } from '../../api/auth';
 
-/** H5 设置：资料与改密（巡检员可完善个人信息） */
+/** H5 设置：资料与改密（工程师可完善个人信息） */
 export default function SettingsPage() {
   const navigate = useNavigate();
   const { user, fetchMe } = useAuthStore();
