@@ -159,7 +159,7 @@ export async function fetchFinanceDashboard(params: Record<string, unknown> = {}
   return unwrap(await request.get<ApiResponse<FinanceDashboard>>('/finance/dashboard', { params }));
 }
 export async function uploadFinanceExcel(
-  kind: 'gsp' | 'po' | 'price',
+  kind: 'gsp' | 'po' | 'price' | 'perf-price',
   file: File,
   preview: boolean,
   chunk?: { offset?: number; limit?: number; batchId?: string },
@@ -167,7 +167,13 @@ export async function uploadFinanceExcel(
   const form = new FormData();
   form.append('file', file);
   const url =
-    kind === 'gsp' ? '/import/gsp-cases' : kind === 'po' ? '/import/po-orders' : '/prices/import';
+    kind === 'gsp'
+      ? '/import/gsp-cases'
+      : kind === 'po'
+        ? '/import/po-orders'
+        : kind === 'perf-price'
+          ? '/prices/import-perf'
+          : '/prices/import';
   return unwrap(
     await request.post<ApiResponse<ImportResult>>(url, form, {
       params: {

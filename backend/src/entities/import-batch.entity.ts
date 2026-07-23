@@ -6,7 +6,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-export type FinanceImportType = 'gsp_case' | 'po_order' | 'settle_price';
+export type FinanceImportType = 'gsp_case' | 'po_order' | 'settle_price' | 'perf_price';
 
 @Entity('import_batch')
 export class ImportBatch {

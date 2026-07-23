@@ -14,7 +14,7 @@ export default function ImportDialog({
   onDone,
 }: {
   open: boolean;
-  kind: 'gsp' | 'po' | 'price';
+  kind: 'gsp' | 'po' | 'price' | 'perf-price';
   title: string;
   onClose: () => void;
   onDone: () => void;
@@ -72,7 +72,7 @@ export default function ImportDialog({
         ? importStatus?.batchId || resumeRef.current.batchId
         : undefined;
       let last: ImportResult | undefined;
-      const chunkSize = kind === 'price' ? 15 : IMPORT_CHUNK;
+      const chunkSize = kind === 'price' || kind === 'perf-price' ? 15 : IMPORT_CHUNK;
       setProgress({ current: offset, total: totalHint || 1 });
 
       while (true) {

@@ -281,6 +281,192 @@ export class FinanceImportService {
     };
   }
 
+  async importPerfPrices(
+    file: Express.Multer.File,
+    user: CurrentUserContext,
+    preview = false,
+    options: { offset?: number; limit?: number; batchId?: string } = {},
+  ) {
+    this.assertExcel(file);
+    const parsed = await this.parser.parsePerfPrices(file.buffer);
+    if (preview)
+      return {
+        preview: parsed.prices.slice(0, 20),
+        totalRows: parsed.prices.length,
+        failures: parsed.failures,
+      };
+
+    const totalRows = parsed.prices.length;
+    const offset = Math.max(0, options.offset ?? 0);
+    const limit = options.limit ?? totalRows;
+    const slice = parsed.prices.slice(offset, offset + limit);
+    const nextOffset = Math.min(totalRows, offset + slice.length);
+    const done = nextOffset >= totalRows;
+
+    const batch = await this.resolveBatch(
+      options.batchId,
+      'perf_price',
+      file.originalname,
+      totalRows,
+      user.id,
+    );
+    const fallbackDate = new Date().toISOString().slice(0, 10);
+    const existing = await this.prices.find({ where: { priceType: 'perf' } });
+    const priceKey = (
+      itemCode: string,
+      productModel: string | null,
+      scene: string | null,
+      region: string | null,
+      coopType: string | null,
+      effectiveDate: string,
+    ) =>
+      `${itemCode}|${productModel || ''}|${scene || ''}|${region || ''}|${coopType || ''}|${effectiveDate}`;
+    const priceMap = new Map(
+      existing.map((row) => [
+        priceKey(
+          row.itemCode,
+          row.productModel,
+          row.scene,
+          row.region,
+          row.coopType,
+          row.effectiveDate,
+        ),
+        row,
+      ]),
+    );
+    let success = 0;
+    const failures: Array<{ row: number; reason: string }> =
+      offset === 0 ? [...parsed.failures] : [];
+    const toSave: PriceLibrary[] = [];
+    for (const price of slice) {
+      try {
+        const itemCode = String(price.itemCode || '').trim();
+        const itemName = String(price.itemName || itemCode).trim();
+        if (!itemCode) throw new Error('条目编码为空');
+        const effectiveDate = price.effectiveDate || fallbackDate;
+        const key = priceKey(
+          itemCode,
+          price.productModel,
+          price.scene,
+          price.region,
+          price.coopType,
+          effectiveDate,
+        );
+        let entity = priceMap.get(key);
+        entity ||= this.prices.create({
+          priceType: 'perf',
+          status: price.status,
+          effectiveDate,
+        });
+        entity.itemCode = itemCode;
+        entity.itemName = itemName;
+        entity.itemDesc = price.itemDesc;
+        entity.unit = price.unit ? String(price.unit).slice(0, 32) : null;
+        entity.productModel = price.productModel ? String(price.productModel).slice(0, 64) : null;
+        entity.scene = price.scene ? String(price.scene).slice(0, 32) : null;
+        entity.region = price.region;
+        entity.coopType = price.coopType;
+        entity.unitPrice = money(price.unitPrice);
+        entity.workHours = price.workHours === null ? null : money(price.workHours);
+        entity.status = price.status;
+        entity.effectiveDate = effectiveDate;
+        entity.createdBy = user.id;
+        entity.changeRemark = `由${file.originalname}导入内部绩效价`;
+        toSave.push(entity);
+        priceMap.set(key, entity);
+      } catch (error) {
+        failures.push({
+          row: price.sourceRow,
+          reason: error instanceof Error ? error.message : '绩效价导入失败',
+        });
+      }
+    }
+    for (const entity of toSave) {
+      try {
+        await this.prices.save(entity);
+        success += 1;
+      } catch (error) {
+        failures.push({
+          row: 0,
+          reason: `${entity.itemCode}: ${error instanceof Error ? error.message : '写入失败'}`,
+        });
+      }
+    }
+    const prevFailures = Array.isArray(batch.failDetail) ? batch.failDetail : [];
+    const mergedFailures = [...(offset === 0 ? [] : prevFailures), ...failures].slice(-500);
+    const totalSuccess = Number(batch.successRows || 0) + success;
+    await this.finishBatch(batch, totalSuccess, mergedFailures);
+
+    let refreshedItems = 0;
+    if (done) refreshedItems = await this.refreshPerfOnItems();
+
+    return {
+      batchId: batch.id,
+      totalRows,
+      successRows: totalSuccess,
+      failRows: mergedFailures.length,
+      offset,
+      nextOffset,
+      done,
+      chunkSuccess: success,
+      refreshedItems,
+    };
+  }
+
+  /** 导入绩效价后，按最新库刷新 PO 明细上的绩效单价 */
+  private async refreshPerfOnItems() {
+    const [prices, orders, cases, items] = await Promise.all([
+      this.prices.find({ where: { priceType: 'perf', status: 'active' } }),
+      this.orders.find(),
+      this.cases.find(),
+      this.items.find(),
+    ]);
+    if (!prices.length || !items.length) return 0;
+    const orderMap = new Map(orders.map((order) => [order.id, order]));
+    const caseMap = new Map(cases.map((item) => [item.id, item]));
+    let updated = 0;
+    const toSave: PoItem[] = [];
+    for (const item of items) {
+      if (isIgnoredItem(item.itemCode)) {
+        if (item.perfPrice != null || Number(item.itemPerf || 0) !== 0) {
+          item.perfPrice = null;
+          item.itemPerf = '0.00';
+          toSave.push(item);
+          updated += 1;
+        }
+        continue;
+      }
+      const order = orderMap.get(item.poId);
+      if (!order) continue;
+      const serviceCase = order.serviceCaseId ? caseMap.get(order.serviceCaseId) : null;
+      const codes = [...new Set([item.itemCode].filter(Boolean))];
+      const perf =
+        codes
+          .map((code) =>
+            this.pickPrice(
+              prices,
+              'perf',
+              code,
+              order.projectScene,
+              order.productModel,
+              serviceCase?.region || null,
+              'self',
+            ),
+          )
+          .find(Boolean) || null;
+      const nextPrice = perf?.unitPrice || null;
+      const nextPerf = money(Number(item.qty) * Number(nextPrice || 0));
+      if (item.perfPrice !== nextPrice || item.itemPerf !== nextPerf) {
+        item.perfPrice = nextPrice;
+        item.itemPerf = nextPerf;
+        toSave.push(item);
+        updated += 1;
+      }
+    }
+    if (toSave.length) await this.items.save(toSave, { chunk: 100 });
+    return updated;
+  }
+
   async listBatches(type?: string) {
     return this.batches.find({
       where: type ? { importType: type as any } : {},
@@ -401,15 +587,21 @@ export class FinanceImportService {
                 parsed.demandType,
               );
               const settle = settleMatch?.price;
-              const perf = this.pickPrice(
-                prices,
-                'perf',
-                item.itemCode,
-                null,
-                parsed.productModel,
-                serviceCase.region || region,
-                'self',
-              );
+              const perfCodes = [...new Set([settle?.itemCode, item.itemCode].filter(Boolean))] as string[];
+              const perf =
+                perfCodes
+                  .map((code) =>
+                    this.pickPrice(
+                      prices,
+                      'perf',
+                      code,
+                      parsed.projectScene,
+                      parsed.productModel,
+                      serviceCase.region || region,
+                      'self',
+                    ),
+                  )
+                  .find(Boolean) || null;
               return itemRepo.create({
                 ...item,
                 poId: '',

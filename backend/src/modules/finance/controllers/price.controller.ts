@@ -80,6 +80,22 @@ export class FinancePriceController {
       batchId: query.batchId,
     });
   }
+  @Post('import-perf')
+  @Roles(UserRole.SUPER_ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } }),
+  )
+  importPerf(
+    @UploadedFile() file: Express.Multer.File,
+    @Query() query: ImportPreviewQueryDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.importer.importPerfPrices(file, user, query.preview === 'true', {
+      offset: query.offset,
+      limit: query.limit,
+      batchId: query.batchId,
+    });
+  }
   @Get(':id/history') @Roles(UserRole.SUPER_ADMIN) history(@Param('id') id: string) {
     return this.service.history(id);
   }

@@ -12,7 +12,7 @@ import {
   Tabs,
   message,
 } from 'antd';
-import { ApartmentOutlined, DownloadOutlined, PlusOutlined } from '@ant-design/icons';
+import { ApartmentOutlined, DownloadOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import { createPrice, fetchPrices, updatePrice } from '../../../api/finance';
 import type { PriceItem } from '../../../types/finance';
 import { useAuthStore } from '../../../stores/auth';
@@ -31,6 +31,7 @@ export default function PricesPage() {
     [editing, setEditing] = useState<PriceItem | null>(),
     [modalOpen, setModalOpen] = useState(false),
     [importOpen, setImportOpen] = useState(false),
+    [perfImportOpen, setPerfImportOpen] = useState(false),
     [mappingOpen, setMappingOpen] = useState(false),
     [form] = Form.useForm();
   const admin = user?.role === 'super_admin';
@@ -84,6 +85,9 @@ export default function PricesPage() {
             </Button>
             <Button icon={<DownloadOutlined />} onClick={() => setImportOpen(true)}>
               从附件1初始化结算价
+            </Button>
+            <Button icon={<UploadOutlined />} onClick={() => setPerfImportOpen(true)}>
+              导入内部绩效价
             </Button>
             <Button icon={<ApartmentOutlined />} onClick={() => setMappingOpen(true)}>
               条目映射维护
@@ -228,6 +232,18 @@ export default function PricesPage() {
         onClose={() => setImportOpen(false)}
         onDone={() => {
           setImportOpen(false);
+          void load();
+        }}
+      />
+      <ImportDialog
+        open={perfImportOpen}
+        kind="perf-price"
+        title="导入内部绩效价"
+        onClose={() => setPerfImportOpen(false)}
+        onDone={() => {
+          setPerfImportOpen(false);
+          setType('perf');
+          setPage(1);
           void load();
         }}
       />

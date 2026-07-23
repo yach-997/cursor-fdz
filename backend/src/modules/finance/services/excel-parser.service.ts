@@ -62,6 +62,22 @@ export interface ParsedSettlePrice {
   unitPrice: number;
 }
 
+export interface ParsedPerfPrice {
+  sourceRow: number;
+  itemCode: string;
+  itemName: string;
+  itemDesc: string | null;
+  unit: string | null;
+  productModel: string | null;
+  scene: string | null;
+  region: string | null;
+  coopType: string | null;
+  workHours: number | null;
+  unitPrice: number;
+  effectiveDate: string | null;
+  status: 'active' | 'inactive';
+}
+
 // 《服务报价单-中邮建技术有限公司-0630.pdf》“通用”部分的最终应答单价。
 // 这几项不是 BOQ 的现场工时价，不能再按 工时 × 81.25 × 0.99 推导。
 const QUOTE_GENERAL_PRICES: Array<{
@@ -476,4 +492,115 @@ export class ExcelParserService {
     }
     return { prices, failures: [] as Array<{ row: number; reason: string }> };
   }
+
+  /**
+   * 内部绩效价清单（表头行）：
+   * 条目编码 / 条目名称 / 产品型号 / 项目场景 / 区域 / 合作类型 / 单位 / 工时 / 单价 / 状态 / 生效日期 / 定价依据
+   */
+  async parsePerfPrices(buffer: Buffer) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
+    const sheet =
+      workbook.worksheets.find((item) => /绩效/.test(item.name)) || workbook.worksheets[0];
+    if (!sheet) throw new BadRequestException('绩效价文件中没有工作表');
+
+    let headerRow = 1;
+    const headerIndex = new Map<string, number>();
+    for (let r = 1; r <= Math.min(10, sheet.rowCount); r += 1) {
+      const labels: string[] = [];
+      for (let c = 1; c <= Math.min(20, sheet.columnCount || 20); c += 1) {
+        const label = cellText(sheet.getCell(r, c).value);
+        if (label) labels.push(label);
+      }
+      if (labels.some((label) => /条目编码|编码/.test(label))) {
+        headerRow = r;
+        for (let c = 1; c <= Math.min(20, sheet.columnCount || 20); c += 1) {
+          const label = cellText(sheet.getCell(r, c).value);
+          if (label) headerIndex.set(label, c);
+        }
+        break;
+      }
+    }
+    const col = (...names: string[]) => {
+      for (const name of names) {
+        const hit = [...headerIndex.entries()].find(([label]) => label.includes(name));
+        if (hit) return hit[1];
+      }
+      return 0;
+    };
+    const cCode = col('条目编码', '编码');
+    const cName = col('条目名称', '名称');
+    const cModel = col('产品型号', '型号');
+    const cScene = col('项目场景', '场景');
+    const cRegion = col('区域');
+    const cCoop = col('合作');
+    const cUnit = col('单位');
+    const cHours = col('工时');
+    const cPrice = col('单价');
+    const cStatus = col('状态');
+    const cDate = col('生效');
+    const cDesc = col('定价依据', '说明', '描述');
+    if (!cCode || !cPrice) {
+      throw new BadRequestException('未识别到「条目编码」「单价」列，请使用绩效价导入清单模板');
+    }
+
+    const prices: ParsedPerfPrice[] = [];
+    const failures: Array<{ row: number; reason: string }> = [];
+    for (let r = headerRow + 1; r <= sheet.rowCount; r += 1) {
+      const itemCode = cellText(sheet.getCell(r, cCode).value);
+      if (!itemCode) continue;
+      const unitPrice = numberValue(sheet.getCell(r, cPrice).value);
+      if (unitPrice === null) {
+        failures.push({ row: r, reason: '单价无效' });
+        continue;
+      }
+      const statusText = cStatus ? cellText(sheet.getCell(r, cStatus).value) : '启用';
+      const dateRaw = cDate ? sheet.getCell(r, cDate).value : null;
+      let effectiveDate: string | null = null;
+      if (dateRaw instanceof Date) {
+        effectiveDate = dateRaw.toISOString().slice(0, 10);
+      } else {
+        const text = cellText(dateRaw);
+        if (/^\d{4}-\d{2}-\d{2}/.test(text)) effectiveDate = text.slice(0, 10);
+      }
+      prices.push({
+        sourceRow: r,
+        itemCode,
+        itemName: (cName ? cellText(sheet.getCell(r, cName).value) : '') || itemCode,
+        itemDesc: cDesc ? cellText(sheet.getCell(r, cDesc).value) || null : null,
+        unit: cUnit ? cellText(sheet.getCell(r, cUnit).value) || null : null,
+        productModel: normalizeBlank(cModel ? cellText(sheet.getCell(r, cModel).value) : ''),
+        scene: normalizeBlank(cScene ? cellText(sheet.getCell(r, cScene).value) : ''),
+        region: normalizePerfRegion(cRegion ? cellText(sheet.getCell(r, cRegion).value) : ''),
+        coopType: normalizePerfCoop(cCoop ? cellText(sheet.getCell(r, cCoop).value) : ''),
+        workHours: cHours ? numberValue(sheet.getCell(r, cHours).value) : null,
+        unitPrice,
+        effectiveDate,
+        status: /停用|inactive|disabled/i.test(statusText) ? 'inactive' : 'active',
+      });
+    }
+    return { prices, failures };
+  }
+}
+
+function normalizeBlank(value: string): string | null {
+  const text = String(value || '').trim();
+  if (!text || text === '通用' || text === '-' || text === '/') return null;
+  return text;
+}
+
+function normalizePerfRegion(value: string): string | null {
+  const text = String(value || '').trim();
+  if (!text || text === '通用') return null;
+  if (/云南|yunnan/i.test(text)) return 'yunnan';
+  if (/华南|south/i.test(text)) return 'south_china';
+  return text.slice(0, 16);
+}
+
+function normalizePerfCoop(value: string): string | null {
+  const text = String(value || '').trim();
+  if (!text || text === '通用') return null;
+  if (/自做|self/i.test(text)) return 'self';
+  if (/外包|外协|out/i.test(text)) return 'outsource';
+  return text.slice(0, 16);
 }
