@@ -21,8 +21,9 @@ export class VisionService {
   }
 
   async comparePhoto(
-    photoUrl: string,
+    photoUrlsInput: string | string[],
     samplePhotoUrls: string[],
+    checkCriteria?: string,
   ): Promise<VisionCompareResult> {
     const apiKey = (this.config.get<string>('VISION_API_KEY') || '').trim();
     if (!apiKey) {
@@ -44,12 +45,44 @@ export class VisionService {
     const model =
       this.config.get<string>('VISION_MODEL') || 'Qwen/Qwen3-VL-8B-Instruct';
 
+    const fieldPhotos = (Array.isArray(photoUrlsInput) ? photoUrlsInput : [photoUrlsInput])
+      .map((url) => String(url || '').trim())
+      .filter(Boolean)
+      .slice(0, 6);
+    if (!fieldPhotos.length) {
+      return {
+        status: CheckResult.ERROR,
+        confidence: 0,
+        reason: '缺少现场照片，无法分析',
+        provider: 'siliconflow',
+      };
+    }
     const samples = (samplePhotoUrls || []).filter(Boolean).slice(0, 3);
 
     try {
       // SiliconFlow 必须能直接下载图片。localhost/内网地址和证书异常的
       // 七牛测试域名都无法由模型服务读取，因此在服务端转为 data URL。
-      const photoInput = await this.toImageDataUrl(photoUrl);
+      const photoInputs = (
+        await Promise.all(
+          fieldPhotos.map(async (url) => {
+            try {
+              return await this.toImageDataUrl(url);
+            } catch (err) {
+              this.logger.warn(`现场图读取失败，已跳过: ${(err as Error).message}`);
+              return null;
+            }
+          }),
+        )
+      ).filter((url): url is string => Boolean(url));
+      if (!photoInputs.length) {
+        return {
+          status: CheckResult.ERROR,
+          confidence: 0,
+          reason: '现场照片无法读取，请重新上传后再分析',
+          provider: 'siliconflow',
+        };
+      }
+
       const sampleInputs = (
         await Promise.all(
           samples.map(async (url) => {
@@ -63,37 +96,50 @@ export class VisionService {
         )
       ).filter((url): url is string => Boolean(url));
 
+      const criteria = String(checkCriteria || '').trim();
       const content: Array<Record<string, unknown>> = [
-      {
-        type: 'text',
-        text: [
-          '你是光伏/储能设备现场巡检质检助手。请对比「现场照片」与「合格样本图」。',
-          '重点看：安装完整性、接线端子、标识、防护、明显缺损或脏污、与样本规范是否一致。',
-          '只输出 JSON（不要 Markdown）：',
-          '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明"}',
-          samples.length
-            ? '已提供合格样本，请严格参照样本判断。'
-            : '无样本时根据通用安装规范给出建议结论。',
-        ].join('\n'),
-      },
-      { type: 'text', text: '【现场照片】' },
-      {
-        type: 'image_url',
-        image_url: { url: photoInput },
-      },
+        {
+          type: 'text',
+          text: [
+            '你是光伏/储能设备现场巡检质检助手。',
+            '请综合查看全部「现场照片」（可含多角度），并参考「合格样本图」与检查要求，给出一项总结论。',
+            '判定原则：',
+            '1) 多张现场照是互补证据：某一张拍到关键信息即可，不必每张都与样本长得一模一样；',
+            '2) 样本图是合格参考，不是必须像素级一致；角度、光线、裁切差异不应单独作为不合格理由；',
+            '3) 仅当关键缺陷明确、或关键要求明显缺失时才判 fail；',
+            '4) 证据越充分（多角度覆盖）越应提高 confidence。',
+            criteria ? `检查要求：\n${criteria}` : '未提供文字检查要求时，按通用现场质检规范判断。',
+            '只输出 JSON（不要 Markdown）：',
+            '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明"}',
+            sampleInputs.length
+              ? '已提供合格样本，请作参考，不要过度苛刻。'
+              : '无样本时根据检查要求与通用安装规范给出建议结论。',
+          ].join('\n'),
+        },
       ];
 
-    for (let i = 0; i < sampleInputs.length; i += 1) {
-      content.push({ type: 'text', text: `【合格样本 ${i + 1}】` });
-      content.push({
-        type: 'image_url',
-        image_url: { url: sampleInputs[i] },
+      photoInputs.forEach((photoInput, i) => {
+        content.push({
+          type: 'text',
+          text: photoInputs.length > 1 ? `【现场照片 ${i + 1}/${photoInputs.length}】` : '【现场照片】',
+        });
+        content.push({
+          type: 'image_url',
+          image_url: { url: photoInput },
+        });
       });
-    }
+
+      for (let i = 0; i < sampleInputs.length; i += 1) {
+        content.push({ type: 'text', text: `【合格样本 ${i + 1}】` });
+        content.push({
+          type: 'image_url',
+          image_url: { url: sampleInputs[i] },
+        });
+      }
 
       const resp = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
-        signal: AbortSignal.timeout(45_000),
+        signal: AbortSignal.timeout(60_000),
         headers: {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',

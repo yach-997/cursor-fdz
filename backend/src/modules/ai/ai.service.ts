@@ -23,8 +23,9 @@ const RESULT_PREFIX = 'ai:result:';
 interface AiJob {
   recordId: string;
   templateEntryId: string;
-  photoUrl: string;
+  photoUrls: string[];
   samplePhotoUrls: string[];
+  checkCriteria?: string;
   enqueuedAt: string;
 }
 
@@ -79,11 +80,28 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
     const entry = record.entries.find((e) => e.templateEntryId === dto.templateEntryId);
     if (!entry) throw new BadRequestException('条目不存在');
 
+    const photoUrls = uniqueUrls([
+      ...(dto.photoUrls || []),
+      dto.photoUrl,
+      ...(entry.photos || []),
+    ]).slice(0, 6);
+    if (!photoUrls.length) {
+      throw new BadRequestException('请先上传现场照片再进行 AI 分析');
+    }
+
+    const snapshotEntry = (task.templateSnapshot || []).find(
+      (item: { id?: string }) => item.id === dto.templateEntryId,
+    ) as { name?: string; description?: string } | undefined;
+    const checkCriteria = [snapshotEntry?.name, snapshotEntry?.description]
+      .filter(Boolean)
+      .join('\n')
+      .slice(0, 800);
+
     // 标记 pending
     entry.aiResult = {
       status: CheckResult.PENDING,
       confidence: 0,
-      reason: '分析中...',
+      reason: photoUrls.length > 1 ? `分析中（共 ${photoUrls.length} 张）...` : '分析中...',
     };
     await this.recordRepo.save(record);
 
@@ -97,8 +115,9 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
     const job: AiJob = {
       recordId: dto.recordId,
       templateEntryId: dto.templateEntryId,
-      photoUrl: dto.photoUrl,
+      photoUrls,
       samplePhotoUrls: dto.samplePhotoUrls || [],
+      checkCriteria: checkCriteria || undefined,
       enqueuedAt: new Date().toISOString(),
     };
 
@@ -197,8 +216,9 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
 
   private async processJob(job: AiJob) {
     const compared = await this.vision.comparePhoto(
-      job.photoUrl,
+      job.photoUrls,
       job.samplePhotoUrls || [],
+      job.checkCriteria,
     );
     let reason = compared.reason;
     if (compared.status !== CheckResult.ERROR) {
@@ -253,4 +273,16 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
   private sleep(ms: number) {
     return new Promise((r) => setTimeout(r, ms));
   }
+}
+
+function uniqueUrls(urls: Array<string | undefined | null>) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of urls) {
+    const url = String(raw || '').trim();
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push(url);
+  }
+  return out;
 }

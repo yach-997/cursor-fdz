@@ -8,8 +8,16 @@ export class AnalyzeDto {
   @IsString()
   templateEntryId: string;
 
+  /** 兼容旧客户端：单张现场照片 */
+  @IsOptional()
   @IsString()
-  photoUrl: string;
+  photoUrl?: string;
+
+  /** 多角度现场照片（优先使用） */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  photoUrls?: string[];
 
   @IsOptional()
   @IsArray()

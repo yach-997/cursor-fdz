@@ -646,7 +646,7 @@ export default function InspectionPage() {
             );
           }
 
-          if (task?.aiEnabled !== false && lastUrl) {
+          if (task?.aiEnabled !== false && photos.length) {
             setAnalyzingIds((ids) =>
               ids.includes(capturedEntryId) ? ids : [...ids, capturedEntryId],
             );
@@ -654,7 +654,7 @@ export default function InspectionPage() {
               await analyzeAi({
                 recordId: capturedRecordId,
                 templateEntryId: capturedEntryId,
-                photoUrl: lastUrl,
+                photoUrls: photos,
                 samplePhotoUrls: capturedSamplePhotos,
               });
               startPoll(capturedRecordId, capturedEntryId);

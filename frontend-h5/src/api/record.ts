@@ -121,7 +121,8 @@ export async function checkTaskLocation(payload: {
 export async function analyzeAi(payload: {
   recordId: string;
   templateEntryId: string;
-  photoUrl: string;
+  photoUrl?: string;
+  photoUrls?: string[];
   samplePhotoUrls?: string[];
 }) {
   const { data } = await request.post<
