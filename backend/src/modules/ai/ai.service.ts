@@ -26,6 +26,7 @@ interface AiJob {
   photoUrls: string[];
   samplePhotoUrls: string[];
   checkCriteria?: string;
+  remark?: string;
   enqueuedAt: string;
 }
 
@@ -118,6 +119,7 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
       photoUrls,
       samplePhotoUrls: dto.samplePhotoUrls || [],
       checkCriteria: checkCriteria || undefined,
+      remark: entry.remark || undefined,
       enqueuedAt: new Date().toISOString(),
     };
 
@@ -219,6 +221,7 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
       job.photoUrls,
       job.samplePhotoUrls || [],
       job.checkCriteria,
+      { remark: job.remark },
     );
     let reason = compared.reason;
     if (compared.status !== CheckResult.ERROR) {

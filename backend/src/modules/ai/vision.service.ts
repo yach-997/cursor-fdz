@@ -24,6 +24,7 @@ export class VisionService {
     photoUrlsInput: string | string[],
     samplePhotoUrls: string[],
     checkCriteria?: string,
+    options?: { remark?: string },
   ): Promise<VisionCompareResult> {
     const apiKey = (this.config.get<string>('VISION_API_KEY') || '').trim();
     if (!apiKey) {
@@ -97,6 +98,7 @@ export class VisionService {
       ).filter((url): url is string => Boolean(url));
 
       const criteria = String(checkCriteria || '').trim();
+      const remark = String(options?.remark || '').trim();
       const content: Array<Record<string, unknown>> = [
         {
           type: 'text',
@@ -105,14 +107,20 @@ export class VisionService {
             '请综合查看全部「现场照片」（可含多角度），并参考「合格样本图」与检查要求，给出一项总结论。',
             '判定原则：',
             '1) 多张现场照是互补证据：某一张拍到关键信息即可，不必每张都与样本长得一模一样；',
-            '2) 样本图是合格参考，不是必须像素级一致；角度、光线、裁切差异不应单独作为不合格理由；',
-            '3) 仅当关键缺陷明确、或关键要求明显缺失时才判 fail；',
+            '2) 样本图只作版式/角度参考，禁止把样本图里的文字、告警、缺陷当成现场证据；',
+            '3) 仅当现场照片本身关键缺陷明确、或关键要求明显缺失时才判 fail；拿不准时优先 pass，并在 reason 说明存疑点；',
             '4) 证据越充分（多角度覆盖）越应提高 confidence。',
+            '故障/告警截图专项：',
+            '- 若「实时故障」页显示「暂无数据」或空白无告警，应判 pass；',
+            '- 「历史故障」中已结束/已恢复的历史记录，不单独构成不合格；',
+            '- 仅当实时页仍有未恢复的严重告警，且工程师备注未说明处置时，才可判 fail；',
+            '- 不要因为样本图里出现过告警文字，就推断现场不合格。',
             criteria ? `检查要求：\n${criteria}` : '未提供文字检查要求时，按通用现场质检规范判断。',
+            remark ? `工程师备注：${remark}` : '工程师备注：无',
             '只输出 JSON（不要 Markdown）：',
             '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明"}',
             sampleInputs.length
-              ? '已提供合格样本，请作参考，不要过度苛刻。'
+              ? '已提供合格样本，请作版式参考，不要过度苛刻。'
               : '无样本时根据检查要求与通用安装规范给出建议结论。',
           ].join('\n'),
         },
