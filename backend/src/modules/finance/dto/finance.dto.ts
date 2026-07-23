@@ -5,13 +5,13 @@ import {
   IsObject,
   IsOptional,
   IsString,
-  IsUUID,
   MaxLength,
   Min,
   Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
+import { IsPostgresUuid } from '../../../common/decorators/postgres-uuid.decorator';
 
 export class ImportPreviewQueryDto {
   @IsOptional() @IsIn(['true', 'false']) preview?: string;
@@ -80,7 +80,8 @@ export class DashboardQueryDto {
 }
 
 export class AssignCaseDto {
-  @IsUUID() inspectorId: string;
+  /** 种子账号可能是非 RFC UUID，按 Postgres uuid 文本格式校验 */
+  @IsPostgresUuid({ message: '工程师ID格式不正确' }) inspectorId: string;
   @IsOptional() @IsString() @MaxLength(200) reason?: string;
 }
 
@@ -120,7 +121,7 @@ export class AssessmentQueryDto {
 
 export class SaveAssessmentDto {
   @IsString() month: string;
-  @IsUUID() userId: string;
+  @IsPostgresUuid({ message: '用户ID格式不正确' }) userId: string;
   @Type(() => Number) @IsNumber() @Min(0) @Max(100) internalScore: number;
   /** 已取消阳光加权，保留字段兼容旧客户端，写入时忽略 */
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(100) sungrowScore?: number;
@@ -132,7 +133,7 @@ export class SaveAssessmentDto {
 
 export class CreateAssessmentEventDto {
   @IsString() month: string;
-  @IsUUID() userId: string;
+  @IsPostgresUuid({ message: '用户ID格式不正确' }) userId: string;
   @IsString() @MaxLength(64) catalogId: string;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0.01) qty?: number;
   /** 自定义金额项必填；标准项可省略（按标准×次数） */
@@ -145,7 +146,7 @@ export class MonthlyQueryDto {
 }
 
 export class CorrectMonthlyDto {
-  @IsUUID() userId: string;
+  @IsPostgresUuid({ message: '用户ID格式不正确' }) userId: string;
   @Type(() => Number) @IsNumber() amount: number;
   @IsString() @MaxLength(500) reason: string;
 }
