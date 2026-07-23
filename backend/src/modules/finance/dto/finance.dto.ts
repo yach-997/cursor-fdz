@@ -56,8 +56,8 @@ export class CreatePriceDto {
   @IsOptional() @IsString() scene?: string;
   @IsOptional() @IsString() region?: string;
   @IsOptional() @IsString() coopType?: string;
-  workHours?: number;
-  unitPrice: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) workHours?: number;
+  @Type(() => Number) @IsNumber() @Min(0) unitPrice: number;
   @IsOptional() @IsString() effectiveDate?: string;
   @IsOptional() @IsString() changeRemark?: string;
 }
