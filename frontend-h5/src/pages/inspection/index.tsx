@@ -610,7 +610,6 @@ export default function InspectionPage() {
           : '照片已上传，可以继续下一步；正在后台保存…',
       );
 
-      const lastUrl = uploadedUrls[uploadedUrls.length - 1];
       // 草稿和 AI 在后台继续，不再阻塞现场操作。
       void (async () => {
         try {
