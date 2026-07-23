@@ -1,10 +1,15 @@
 /** 客户端压缩图片，减小上传体积；兼容不支持 createImageBitmap 的手机浏览器。 */
-export async function compressImage(file: File, maxEdge = 1280, quality = 0.78): Promise<File> {
+export async function compressImage(file: File, maxEdge = 1280, quality = 0.82): Promise<File> {
   if (!file.type.startsWith('image/')) return file;
 
   const source = await loadImageSource(file);
   const { width, height } = source;
-  const scale = Math.min(1, maxEdge / Math.max(width, height));
+  const aspect = height / Math.max(width, 1);
+  // 阳光云等超长截图：按宽度压，高度可更高，避免内容被压糊
+  const scale =
+    aspect > 2.2
+      ? Math.min(1, Math.max(maxEdge, 1440) / width, 4096 / height)
+      : Math.min(1, maxEdge / Math.max(width, height));
   const w = Math.round(width * scale);
   const h = Math.round(height * scale);
 

@@ -87,7 +87,7 @@ export default function PhotoViewerOverlay({ urls, initialIndex = 0, onClose }: 
           </>
         )}
       </div>
-      <footer className="photo-viewer-footer">现场原图 · 左右滑动可切换</footer>
+      <footer className="photo-viewer-footer">可上下滑动查看长图 · 左右滑动切换</footer>
     </div>,
     document.body,
   );

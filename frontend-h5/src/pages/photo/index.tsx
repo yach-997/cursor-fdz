@@ -48,11 +48,10 @@ export default function PhotoPreviewPage() {
       <div
         style={{
           flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
           position: 'relative',
           padding: 12,
+          overflow: 'auto',
+          WebkitOverflowScrolling: 'touch',
         }}
         onClick={() => navigate(-1)}
       >
@@ -60,8 +59,11 @@ export default function PhotoPreviewPage() {
           src={displayPhotoUrl(urls[index])}
           alt=""
           style={{
+            display: 'block',
+            width: '100%',
             maxWidth: '100%',
-            maxHeight: 'calc(100vh - 140px)',
+            height: 'auto',
+            margin: '0 auto',
             objectFit: 'contain',
             userSelect: 'none',
           }}
