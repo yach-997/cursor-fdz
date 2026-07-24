@@ -13,7 +13,7 @@ import {
 import { CurrentUserContext } from '../../../common/interfaces';
 import { ExcelParserService, ParsedPoOrder } from './excel-parser.service';
 import { FinanceScopeService } from './finance-scope.service';
-import { isIgnoredItem, pickMappedPrice } from './item-matcher';
+import { isIgnoredItem, modelMatches, pickMappedPrice } from './item-matcher';
 
 const money = (value: number) => (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2);
 const PO_CHUNK = 40;
@@ -699,7 +699,7 @@ export class FinanceImportService {
         (p) =>
           p.priceType === type &&
           p.itemCode === code &&
-          (!p.productModel || p.productModel === model) &&
+          (!p.productModel || modelMatches(p.productModel, model)) &&
           (!p.scene || p.scene === scene) &&
           (!p.region || p.region === region) &&
           (!p.coopType || p.coopType === coop),

@@ -401,22 +401,25 @@ export class ExcelParserService {
       }
     }
     for (let r = 8; r <= sheet.rowCount; r += 1) {
-      const productModel = cellText(sheet.getCell(r, 6).value);
+      const productModelRaw = cellText(sheet.getCell(r, 6).value);
       const serviceProduct = cellText(sheet.getCell(r, 7).value);
       if (!serviceProduct) continue;
-      const codes = new Set<string>([
+      const modelList = productModelRaw
+        ? [
+            ...new Set(
+              productModelRaw
+                .split(/[\/、,，]/)
+                .map((value) => value.trim())
+                .filter(Boolean),
+            ),
+          ]
+        : [];
+      const baseCodes = new Set<string>([
         serviceProduct,
         serviceProduct.startsWith('运维_')
           ? serviceProduct.replace(/^运维_/, '维护_')
           : serviceProduct,
       ]);
-      if (serviceProduct.startsWith('整机更换_') && productModel) {
-        for (const model of productModel.split(/[\/、,，]/).map((value) => value.trim())) {
-          if (!model) continue;
-          codes.add(`整机更换_${model}_维修`);
-          codes.add(`整机更换_${model}_整改`);
-        }
-      }
       // “在途”工时位于独立列，不属于平地/水上等现场场景。
       // 附件 1 的“其他_在途”需要生成一条通用价，否则 PO 中“在途1”永远无法定价。
       if (serviceProduct === '其他_在途') {
@@ -435,23 +438,36 @@ export class ExcelParserService {
           });
         }
       }
-      for (const scene of scenes) {
-        const workHours = numberValue(sheet.getCell(r, scene.hours).value);
-        if (workHours === null || workHours <= 0) continue;
-        const unitPrice = workHours * 81.25 * 0.99;
-        for (const itemCode of codes) {
+      const pushScenePrices = (itemCode: string, productModel: string | null) => {
+        for (const scene of scenes) {
+          const workHours = numberValue(sheet.getCell(r, scene.hours).value);
+          if (workHours === null || workHours <= 0) continue;
+          const unitPrice = workHours * 81.25 * 0.99;
           prices.push({
             sourceRow: r,
             itemCode,
             itemName: itemCode,
             itemDesc: cellText(sheet.getCell(r, 8).value) || null,
             unit: cellText(sheet.getCell(r, 9).value) || null,
-            // 条目编码本身已带型号；留空可兼容 PO 中“SG320HX/SG225HX”等组合型号。
-            productModel: null,
+            // 附件1有产品型号则写入；为空则留 null，页面显示「通用」
+            productModel,
             scene: scene.name,
             workHours,
             unitPrice: Math.round(unitPrice * 100) / 100,
           });
+        }
+      };
+      const modelsOrGeneral = modelList.length ? modelList : [null];
+      for (const itemCode of baseCodes) {
+        for (const model of modelsOrGeneral) {
+          pushScenePrices(itemCode, model);
+        }
+      }
+      // 整机更换：按型号展开编码，型号字段与编码保持一致
+      if (serviceProduct.startsWith('整机更换_') && modelList.length) {
+        for (const model of modelList) {
+          pushScenePrices(`整机更换_${model}_维修`, model);
+          pushScenePrices(`整机更换_${model}_整改`, model);
         }
       }
     }
@@ -477,7 +493,7 @@ export class ExcelParserService {
             itemName: `${kind}（${model} / ${serviceProject}）`,
             itemDesc: description || null,
             unit,
-            productModel: null,
+            productModel: model.slice(0, 64),
             scene: null,
             workHours: hours,
             unitPrice: Math.round(hours * 81.25 * 0.99 * 100) / 100,

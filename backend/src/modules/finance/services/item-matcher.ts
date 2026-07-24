@@ -146,7 +146,7 @@ export function pickMappedPrice(
     .filter(
       (price) =>
         price.itemCode === match.targetItemCode &&
-        (!price.productModel || price.productModel === model) &&
+        modelMatches(price.productModel, model) &&
         (!price.scene || price.scene === scene),
     )
     .sort(
@@ -165,6 +165,22 @@ function generalKind(source: string): '在途' | '入离场' | '搬运' | null {
   if (/^入离场$/i.test(source)) return '入离场';
   if (/^搬运\d*$/i.test(source)) return '搬运';
   return null;
+}
+
+/** 价格库型号为空=通用；PO 可为组合型号（SG320HX/SG225HX） */
+export function modelMatches(priceModel: string | null, poModel: string | null): boolean {
+  if (!priceModel) return true;
+  if (!poModel) return false;
+  if (priceModel === poModel) return true;
+  const parts = poModel
+    .split(/[\/、,，]/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return (
+    parts.includes(priceModel) ||
+    poModel.includes(priceModel) ||
+    priceModel.includes(poModel)
+  );
 }
 
 function quotedGeneralCode(source: string): string | null {
