@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -21,6 +22,7 @@ import {
   PriceQueryDto,
   UpdatePriceDto,
   SaveItemMappingDto,
+  ClearPriceQueryDto,
 } from '../dto/finance.dto';
 import { FinanceImportService } from '../services/finance-import.service';
 import { PriceService } from '../services/price.service';
@@ -56,6 +58,18 @@ export class FinancePriceController {
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.service.create(dto, user);
+  }
+  @Delete('clear') @Roles(UserRole.SUPER_ADMIN) clear(
+    @Query() query: ClearPriceQueryDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.service.clear(query.type, user);
+  }
+  @Delete(':id') @Roles(UserRole.SUPER_ADMIN) remove(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.service.remove(id, user);
   }
   @Put(':id') @Roles(UserRole.SUPER_ADMIN) update(
     @Param('id') id: string,

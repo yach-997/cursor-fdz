@@ -78,4 +78,40 @@ export class PriceService {
   history(id: string) {
     return this.logs.list('price_library', id);
   }
+
+  async remove(id: string, user: CurrentUserContext) {
+    if (user.role !== UserRole.SUPER_ADMIN) throw new ForbiddenException('仅管理员可删除价格');
+    const item = await this.repo.findOne({ where: { id } });
+    if (!item) throw new NotFoundException('价格记录不存在');
+    await this.repo.remove(item);
+    await this.logs.write(
+      'price_library',
+      id,
+      'price_delete',
+      item,
+      null,
+      user.id,
+      `删除${item.priceType === 'perf' ? '内部绩效价' : '甲方结算价'}：${item.itemCode}`,
+    );
+    return { id, deleted: true };
+  }
+
+  async clear(type: 'settle' | 'perf', user: CurrentUserContext) {
+    if (user.role !== UserRole.SUPER_ADMIN) throw new ForbiddenException('仅管理员可清空价格库');
+    if (type !== 'settle' && type !== 'perf') {
+      throw new ForbiddenException('请指定要清空的价格类型');
+    }
+    const result = await this.repo.delete({ priceType: type });
+    const deleted = result.affected || 0;
+    await this.logs.write(
+      'price_library',
+      type,
+      'price_clear',
+      { priceType: type },
+      { deleted },
+      user.id,
+      `清空全部${type === 'perf' ? '内部绩效价' : '甲方结算价'}，共 ${deleted} 条`,
+    );
+    return { priceType: type, deleted };
+  }
 }

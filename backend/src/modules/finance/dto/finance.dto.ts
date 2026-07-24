@@ -42,6 +42,10 @@ export class PriceQueryDto extends PaginationDto {
   @IsOptional() @IsString() region?: string;
 }
 
+export class ClearPriceQueryDto {
+  @IsIn(['settle', 'perf']) type: 'settle' | 'perf';
+}
+
 export class MatchPoDto {
   @IsString() @MaxLength(32) gspCaseNo: string;
 }

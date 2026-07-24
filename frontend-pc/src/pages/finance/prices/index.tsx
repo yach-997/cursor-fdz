@@ -6,14 +6,28 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Select,
+  Space,
   Table,
   Tag,
   Tabs,
   message,
 } from 'antd';
-import { ApartmentOutlined, DownloadOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
-import { createPrice, fetchPrices, updatePrice } from '../../../api/finance';
+import {
+  ApartmentOutlined,
+  DeleteOutlined,
+  DownloadOutlined,
+  PlusOutlined,
+  UploadOutlined,
+} from '@ant-design/icons';
+import {
+  clearPrices,
+  createPrice,
+  deletePrice,
+  fetchPrices,
+  updatePrice,
+} from '../../../api/finance';
 import type { PriceItem } from '../../../types/finance';
 import { useAuthStore } from '../../../stores/auth';
 import ImportDialog from '../components/ImportDialog';
@@ -28,6 +42,7 @@ export default function PricesPage() {
     [page, setPage] = useState(1),
     [keyword, setKeyword] = useState(''),
     [loading, setLoading] = useState(false),
+    [clearing, setClearing] = useState(false),
     [editing, setEditing] = useState<PriceItem | null>(),
     [modalOpen, setModalOpen] = useState(false),
     [importOpen, setImportOpen] = useState(false),
@@ -35,6 +50,7 @@ export default function PricesPage() {
     [mappingOpen, setMappingOpen] = useState(false),
     [form] = Form.useForm();
   const admin = user?.role === 'super_admin';
+  const typeLabel = type === 'perf' ? '内部绩效价' : '甲方结算价';
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -67,6 +83,31 @@ export default function PricesPage() {
     setModalOpen(false);
     void load();
   };
+  const onClear = () => {
+    Modal.confirm({
+      title: `清空全部${typeLabel}？`,
+      content: `将删除当前「${typeLabel}」库中的全部记录，且不可恢复。已核算到案例里的历史单价不会自动回滚，需重新导入后再做条目映射重算。`,
+      okText: '确认清空',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        setClearing(true);
+        try {
+          const result = await clearPrices(type);
+          message.success(`已清空 ${result.deleted} 条${typeLabel}`);
+          setPage(1);
+          await load();
+        } finally {
+          setClearing(false);
+        }
+      },
+    });
+  };
+  const onDelete = async (row: PriceItem) => {
+    await deletePrice(row.id);
+    message.success('已删除');
+    void load();
+  };
   return (
     <Card className="finance-card">
       <div className="finance-toolbar">
@@ -91,6 +132,9 @@ export default function PricesPage() {
             </Button>
             <Button icon={<ApartmentOutlined />} onClick={() => setMappingOpen(true)}>
               条目映射维护
+            </Button>
+            <Button danger icon={<DeleteOutlined />} loading={clearing} onClick={onClear}>
+              清空当前价格库
             </Button>
           </>
         )}
@@ -144,12 +188,19 @@ export default function PricesPage() {
           { title: '生效日期', dataIndex: 'effectiveDate', width: 110 },
           {
             title: '操作',
-            width: 80,
+            width: 140,
             render: (_, r) =>
               admin ? (
-                <Button type="link" onClick={() => openEdit(r)}>
-                  编辑
-                </Button>
+                <Space size={0}>
+                  <Button type="link" onClick={() => openEdit(r)}>
+                    编辑
+                  </Button>
+                  <Popconfirm title="确认删除这条价格？" onConfirm={() => void onDelete(r)}>
+                    <Button type="link" danger>
+                      删除
+                    </Button>
+                  </Popconfirm>
+                </Space>
               ) : null,
           },
         ]}

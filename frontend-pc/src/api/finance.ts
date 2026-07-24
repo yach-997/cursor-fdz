@@ -120,6 +120,16 @@ export async function createPrice(payload: Record<string, unknown>) {
 export async function updatePrice(id: string, payload: Record<string, unknown>) {
   return unwrap(await request.put<ApiResponse<PriceItem>>(`/prices/${id}`, payload));
 }
+export async function deletePrice(id: string) {
+  return unwrap(await request.delete<ApiResponse<{ id: string; deleted: boolean }>>(`/prices/${id}`));
+}
+export async function clearPrices(type: 'settle' | 'perf') {
+  return unwrap(
+    await request.delete<ApiResponse<{ priceType: string; deleted: number }>>('/prices/clear', {
+      params: { type },
+    }),
+  );
+}
 export async function fetchItemPriceMappings() {
   return unwrap(await request.get<ApiResponse<ItemPriceMappingList>>('/prices/mappings'));
 }
