@@ -6,6 +6,7 @@ import { CurrentUserContext } from '../../../common/interfaces';
 import { ChangeLogService } from './change-log.service';
 import { CreatePriceDto, PriceQueryDto, UpdatePriceDto } from '../dto/finance.dto';
 import { UserRole } from '../../../common/enums';
+import { assertFinanceClearAllowed } from '../../../common/utils/finance-clear-guard';
 
 @Injectable()
 export class PriceService {
@@ -96,8 +97,9 @@ export class PriceService {
     return { id, deleted: true };
   }
 
-  async clear(type: 'settle' | 'perf', user: CurrentUserContext) {
+  async clear(type: 'settle' | 'perf', confirm: string | undefined, user: CurrentUserContext) {
     if (user.role !== UserRole.SUPER_ADMIN) throw new ForbiddenException('仅管理员可清空价格库');
+    assertFinanceClearAllowed(confirm);
     if (type !== 'settle' && type !== 'perf') {
       throw new ForbiddenException('请指定要清空的价格类型');
     }

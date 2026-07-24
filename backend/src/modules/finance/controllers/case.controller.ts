@@ -5,7 +5,7 @@ import { Roles } from '../../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { UserRole } from '../../../common/enums';
 import { CurrentUserContext } from '../../../common/interfaces';
-import { AssignCaseDto, FinanceCaseQueryDto, SaveCaseWorkDto } from '../dto/finance.dto';
+import { AssignCaseDto, ClearConfirmQueryDto, FinanceCaseQueryDto, SaveCaseWorkDto } from '../dto/finance.dto';
 import { FinanceQueryService } from '../services/finance-query.service';
 import { FinanceWorkflowService } from '../services/finance-workflow.service';
 import { UploadService } from '../../upload/upload.service';
@@ -23,8 +23,11 @@ export class FinanceCaseController {
   ) {
     return this.service.listCases(query, user);
   }
-  @Delete('clear') @Roles(UserRole.SUPER_ADMIN) clear(@CurrentUser() user: CurrentUserContext) {
-    return this.service.clearCases(user);
+  @Delete('clear') @Roles(UserRole.SUPER_ADMIN) clear(
+    @Query() query: ClearConfirmQueryDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.service.clearCases(user, query.confirm);
   }
   @Get('my/list') @Roles(UserRole.INSPECTOR) myList(@CurrentUser() user: CurrentUserContext) {
     return this.workflow.myCases(user);

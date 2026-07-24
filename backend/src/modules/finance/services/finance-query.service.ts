@@ -7,6 +7,7 @@ import { ChangeLogService } from './change-log.service';
 import { FinanceScopeService } from './finance-scope.service';
 import { DashboardQueryDto, FinanceCaseQueryDto, PoOrderQueryDto } from '../dto/finance.dto';
 import { UserRole } from '../../../common/enums';
+import { assertFinanceClearAllowed } from '../../../common/utils/finance-clear-guard';
 
 @Injectable()
 export class FinanceQueryService {
@@ -19,10 +20,11 @@ export class FinanceQueryService {
     private readonly logs: ChangeLogService,
   ) {}
 
-  async clearCases(user: CurrentUserContext) {
+  async clearCases(user: CurrentUserContext, confirm?: string) {
     if (user.role !== UserRole.SUPER_ADMIN) {
       throw new ForbiddenException('仅管理员可清空案例');
     }
+    assertFinanceClearAllowed(confirm);
     const total = await this.cases.count();
     await this.cases.manager.transaction(async (em) => {
       // 兼容部分环境未配齐 cascade 的情况，先删依赖再删案例
@@ -42,10 +44,11 @@ export class FinanceQueryService {
     return { deleted: total };
   }
 
-  async clearPoOrders(user: CurrentUserContext) {
+  async clearPoOrders(user: CurrentUserContext, confirm?: string) {
     if (user.role !== UserRole.SUPER_ADMIN) {
       throw new ForbiddenException('仅管理员可清空 PO');
     }
+    assertFinanceClearAllowed(confirm);
     const total = await this.orders.count();
     await this.orders.manager.transaction(async (em) => {
       await em.query('DELETE FROM po_item');

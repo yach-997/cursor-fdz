@@ -32,6 +32,7 @@ import type { PriceItem } from '../../../types/finance';
 import { useAuthStore } from '../../../stores/auth';
 import ImportDialog from '../components/ImportDialog';
 import ItemMappingDialog from './ItemMappingDialog';
+import { canUseDangerousClear, confirmDangerousClear } from '../../../utils/finance-clear';
 
 const scenes = ['平地', '水上', '山地', '高原', '屋顶'];
 export default function PricesPage() {
@@ -50,6 +51,7 @@ export default function PricesPage() {
     [mappingOpen, setMappingOpen] = useState(false),
     [form] = Form.useForm();
   const admin = user?.role === 'super_admin';
+  const canClear = admin && canUseDangerousClear();
   const typeLabel = type === 'perf' ? '内部绩效价' : '甲方结算价';
   const load = useCallback(async () => {
     setLoading(true);
@@ -83,25 +85,21 @@ export default function PricesPage() {
     setModalOpen(false);
     void load();
   };
-  const onClear = () => {
-    Modal.confirm({
+  const onClear = async () => {
+    const ok = await confirmDangerousClear({
       title: `清空全部${typeLabel}？`,
-      content: `将删除当前「${typeLabel}」库中的全部记录，且不可恢复。已核算到案例里的历史单价不会自动回滚，需重新导入后再做条目映射重算。`,
-      okText: '确认清空',
-      okType: 'danger',
-      cancelText: '取消',
-      onOk: async () => {
-        setClearing(true);
-        try {
-          const result = await clearPrices(type);
-          message.success(`已清空 ${result.deleted} 条${typeLabel}`);
-          setPage(1);
-          await load();
-        } finally {
-          setClearing(false);
-        }
-      },
+      description: `将删除当前「${typeLabel}」库中的全部记录。已核算到案例里的历史单价不会自动回滚，需重新导入后再做条目映射重算。`,
     });
+    if (!ok) return;
+    setClearing(true);
+    try {
+      const result = await clearPrices(type);
+      message.success(`已清空 ${result.deleted} 条${typeLabel}`);
+      setPage(1);
+      await load();
+    } finally {
+      setClearing(false);
+    }
   };
   const onDelete = async (row: PriceItem) => {
     await deletePrice(row.id);
@@ -133,9 +131,11 @@ export default function PricesPage() {
             <Button icon={<ApartmentOutlined />} onClick={() => setMappingOpen(true)}>
               条目映射维护
             </Button>
-            <Button danger icon={<DeleteOutlined />} loading={clearing} onClick={onClear}>
-              清空当前价格库
-            </Button>
+            {canClear && (
+              <Button danger icon={<DeleteOutlined />} loading={clearing} onClick={() => void onClear()}>
+                清空当前价格库
+              </Button>
+            )}
           </>
         )}
       </div>

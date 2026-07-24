@@ -44,6 +44,13 @@ export class PriceQueryDto extends PaginationDto {
 
 export class ClearPriceQueryDto {
   @IsIn(['settle', 'perf']) type: 'settle' | 'perf';
+  /** 必须传「清空」 */
+  @IsString() confirm: string;
+}
+
+export class ClearConfirmQueryDto {
+  /** 必须传「清空」 */
+  @IsString() confirm: string;
 }
 
 export class MatchPoDto {

@@ -63,7 +63,7 @@ export class FinancePriceController {
     @Query() query: ClearPriceQueryDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
-    return this.service.clear(query.type, user);
+    return this.service.clear(query.type, query.confirm, user);
   }
   @Delete(':id') @Roles(UserRole.SUPER_ADMIN) remove(
     @Param('id') id: string,

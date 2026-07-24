@@ -11,6 +11,7 @@ import {
 import type { FinanceCase, FinanceInspectorOption } from '../../../types/finance';
 import { useAuthStore } from '../../../stores/auth';
 import ImportDialog from '../components/ImportDialog';
+import { canUseDangerousClear, confirmDangerousClear } from '../../../utils/finance-clear';
 
 const statusLabel: Record<string, string> = {
   pending_assign: '待派单',
@@ -24,6 +25,7 @@ const statusLabel: Record<string, string> = {
 export default function FinanceCasesPage() {
   const user = useAuthStore((s) => s.user);
   const admin = user?.role === 'super_admin';
+  const canClear = admin && canUseDangerousClear();
   const [data, setData] = useState<FinanceCase[]>([]),
     [total, setTotal] = useState(0),
     [page, setPage] = useState(1),
@@ -50,26 +52,22 @@ export default function FinanceCasesPage() {
   useEffect(() => {
     void load();
   }, [load]);
-  const onClear = () => {
-    Modal.confirm({
+  const onClear = async () => {
+    const ok = await confirmDangerousClear({
       title: '清空全部案例？',
-      content:
-        '将删除全部费用案例及关联作业记录、绩效台账，且不可恢复。已挂接的 PO 会解除匹配变为待匹配，PO 明细本身不会删除。',
-      okText: '确认清空',
-      okType: 'danger',
-      cancelText: '取消',
-      onOk: async () => {
-        setClearing(true);
-        try {
-          const result = await clearFinanceCases();
-          message.success(`已清空 ${result.deleted} 条案例`);
-          setPage(1);
-          await load();
-        } finally {
-          setClearing(false);
-        }
-      },
+      description:
+        '将删除全部费用案例及关联作业记录、绩效台账。已挂接的 PO 会解除匹配变为待匹配，PO 明细本身不会删除。',
     });
+    if (!ok) return;
+    setClearing(true);
+    try {
+      const result = await clearFinanceCases();
+      message.success(`已清空 ${result.deleted} 条案例`);
+      setPage(1);
+      await load();
+    } finally {
+      setClearing(false);
+    }
   };
   return (
     <Card className="finance-card">
@@ -95,8 +93,8 @@ export default function FinanceCasesPage() {
         <Button type="primary" icon={<DownloadOutlined />} onClick={() => setOpen(true)}>
           导入案例
         </Button>
-        {admin && (
-          <Button danger icon={<DeleteOutlined />} loading={clearing} onClick={onClear}>
+        {canClear && (
+          <Button danger icon={<DeleteOutlined />} loading={clearing} onClick={() => void onClear()}>
             清空全部案例
           </Button>
         )}

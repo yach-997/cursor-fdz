@@ -21,7 +21,11 @@ export async function fetchFinanceCases(params: Record<string, unknown>) {
   return unwrap(await request.get<ApiResponse<FinancePage<FinanceCase>>>('/cases', { params }));
 }
 export async function clearFinanceCases() {
-  return unwrap(await request.delete<ApiResponse<{ deleted: number }>>('/cases/clear'));
+  return unwrap(
+    await request.delete<ApiResponse<{ deleted: number }>>('/cases/clear', {
+      params: { confirm: '清空' },
+    }),
+  );
 }
 
 export async function fetchFinanceAssessments(month: string) {
@@ -112,7 +116,11 @@ export async function fetchPoOrders(params: Record<string, unknown>) {
   return unwrap(await request.get<ApiResponse<FinancePage<PoOrder>>>('/po-orders', { params }));
 }
 export async function clearPoOrders() {
-  return unwrap(await request.delete<ApiResponse<{ deleted: number }>>('/po-orders/clear'));
+  return unwrap(
+    await request.delete<ApiResponse<{ deleted: number }>>('/po-orders/clear', {
+      params: { confirm: '清空' },
+    }),
+  );
 }
 export async function matchPoOrder(id: string, gspCaseNo: string) {
   return unwrap(await request.post<ApiResponse<PoOrder>>(`/po-orders/${id}/match`, { gspCaseNo }));
@@ -132,7 +140,7 @@ export async function deletePrice(id: string) {
 export async function clearPrices(type: 'settle' | 'perf') {
   return unwrap(
     await request.delete<ApiResponse<{ priceType: string; deleted: number }>>('/prices/clear', {
-      params: { type },
+      params: { type, confirm: '清空' },
     }),
   );
 }
