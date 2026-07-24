@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Card, Form, Input, Modal, Table, Tag, Tabs, message } from 'antd';
-import { DownloadOutlined, LinkOutlined, SyncOutlined } from '@ant-design/icons';
-import { fetchPoOrders, generateCasesFromPo, matchPoOrder } from '../../../api/finance';
+import { DeleteOutlined, DownloadOutlined, LinkOutlined, SyncOutlined } from '@ant-design/icons';
+import { clearPoOrders, fetchPoOrders, generateCasesFromPo, matchPoOrder } from '../../../api/finance';
 import type { PoOrder } from '../../../types/finance';
+import { useAuthStore } from '../../../stores/auth';
 import ImportDialog from '../components/ImportDialog';
 
 export default function PoOrdersPage() {
+  const user = useAuthStore((s) => s.user);
+  const admin = user?.role === 'super_admin';
   const [status, setStatus] = useState<'matched' | 'pending'>('matched'),
     [data, setData] = useState<PoOrder[]>([]),
     [total, setTotal] = useState(0),
     [page, setPage] = useState(1),
     [loading, setLoading] = useState(false),
+    [clearing, setClearing] = useState(false),
     [importOpen, setImportOpen] = useState(false),
     [generating, setGenerating] = useState(false),
     [match, setMatch] = useState<PoOrder>(),
@@ -59,6 +63,26 @@ export default function PoOrdersPage() {
       },
     });
   };
+  const onClear = () => {
+    Modal.confirm({
+      title: '清空全部 PO？',
+      content: '将删除全部 PO 订单及其明细，且不可恢复。案例本身不会删除。',
+      okText: '确认清空',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        setClearing(true);
+        try {
+          const result = await clearPoOrders();
+          message.success(`已清空 ${result.deleted} 条 PO`);
+          setPage(1);
+          await load();
+        } finally {
+          setClearing(false);
+        }
+      },
+    });
+  };
   return (
     <Card className="finance-card">
       <div className="finance-toolbar">
@@ -68,6 +92,11 @@ export default function PoOrdersPage() {
         <Button icon={<SyncOutlined />} loading={generating} onClick={generateCases}>
           从 PO 生成案例并匹配
         </Button>
+        {admin && (
+          <Button danger icon={<DeleteOutlined />} loading={clearing} onClick={onClear}>
+            清空全部 PO
+          </Button>
+        )}
       </div>
       <Tabs
         activeKey={status}

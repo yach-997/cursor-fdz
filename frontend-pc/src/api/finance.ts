@@ -20,6 +20,9 @@ const unwrap = <T>(response: { data: ApiResponse<T> }) => response.data.data;
 export async function fetchFinanceCases(params: Record<string, unknown>) {
   return unwrap(await request.get<ApiResponse<FinancePage<FinanceCase>>>('/cases', { params }));
 }
+export async function clearFinanceCases() {
+  return unwrap(await request.delete<ApiResponse<{ deleted: number }>>('/cases/clear'));
+}
 
 export async function fetchFinanceAssessments(month: string) {
   return unwrap(await request.get<ApiResponse<FinanceAssessment[]>>('/assessments', { params: { month } }));
@@ -107,6 +110,9 @@ export async function fetchFinanceCase(id: string) {
 }
 export async function fetchPoOrders(params: Record<string, unknown>) {
   return unwrap(await request.get<ApiResponse<FinancePage<PoOrder>>>('/po-orders', { params }));
+}
+export async function clearPoOrders() {
+  return unwrap(await request.delete<ApiResponse<{ deleted: number }>>('/po-orders/clear'));
 }
 export async function matchPoOrder(id: string, gspCaseNo: string) {
   return unwrap(await request.post<ApiResponse<PoOrder>>(`/po-orders/${id}/match`, { gspCaseNo }));

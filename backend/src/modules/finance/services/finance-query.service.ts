@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { CasePerformance, PoItem, PoOrder, ServiceCase } from '../../../entities';
@@ -18,6 +18,50 @@ export class FinanceQueryService {
     private readonly scope: FinanceScopeService,
     private readonly logs: ChangeLogService,
   ) {}
+
+  async clearCases(user: CurrentUserContext) {
+    if (user.role !== UserRole.SUPER_ADMIN) {
+      throw new ForbiddenException('仅管理员可清空案例');
+    }
+    const total = await this.cases.count();
+    await this.cases.manager.transaction(async (em) => {
+      // 兼容部分环境未配齐 cascade 的情况，先删依赖再删案例
+      await em.query('DELETE FROM case_work_record');
+      await em.query('DELETE FROM case_performance');
+      await em.query('DELETE FROM service_case');
+    });
+    await this.logs.write(
+      'service_case',
+      'all',
+      'case_clear',
+      { total },
+      { deleted: total },
+      user.id,
+      `清空全部费用案例，共 ${total} 条`,
+    );
+    return { deleted: total };
+  }
+
+  async clearPoOrders(user: CurrentUserContext) {
+    if (user.role !== UserRole.SUPER_ADMIN) {
+      throw new ForbiddenException('仅管理员可清空 PO');
+    }
+    const total = await this.orders.count();
+    await this.orders.manager.transaction(async (em) => {
+      await em.query('DELETE FROM po_item');
+      await em.query('DELETE FROM po_order');
+    });
+    await this.logs.write(
+      'po_order',
+      'all',
+      'po_clear',
+      { total },
+      { deleted: total },
+      user.id,
+      `清空全部 PO 订单，共 ${total} 条`,
+    );
+    return { deleted: total };
+  }
 
   async listCases(query: FinanceCaseQueryDto, user: CurrentUserContext) {
     const page = query.page || 1;

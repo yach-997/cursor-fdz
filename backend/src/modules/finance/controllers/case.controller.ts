@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -22,6 +22,9 @@ export class FinanceCaseController {
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.service.listCases(query, user);
+  }
+  @Delete('clear') @Roles(UserRole.SUPER_ADMIN) clear(@CurrentUser() user: CurrentUserContext) {
+    return this.service.clearCases(user);
   }
   @Get('my/list') @Roles(UserRole.INSPECTOR) myList(@CurrentUser() user: CurrentUserContext) {
     return this.workflow.myCases(user);

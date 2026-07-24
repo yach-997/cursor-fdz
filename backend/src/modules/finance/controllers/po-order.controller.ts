@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { UserRole } from '../../../common/enums';
@@ -14,6 +14,9 @@ export class FinancePoController {
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.service.listPo(query, user);
+  }
+  @Delete('clear') @Roles(UserRole.SUPER_ADMIN) clear(@CurrentUser() user: CurrentUserContext) {
+    return this.service.clearPoOrders(user);
   }
   @Post('generate-cases') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) generateCases(
     @CurrentUser() user: CurrentUserContext,
