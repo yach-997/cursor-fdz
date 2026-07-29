@@ -99,10 +99,26 @@ export class GeocodeService {
     return this.acceptHit(fallback, parsed) ? fallback : null;
   }
 
-  /** 坐标 → 地址（现场定位后自动填地址） */
+  /** 坐标 → 地址（现场定位后自动填地址；高德优先，失败回退 Nominatim） */
   async regeo(longitude: number, latitude: number): Promise<RegeoResult | null> {
+    const amap = await this.regeoAmap(longitude, latitude);
+    if (amap) return amap;
+
+    const osm = await this.regeoNominatim(longitude, latitude);
+    if (osm) return osm;
+
+    this.logger.warn(
+      `逆地理编码失败 lng=${longitude} lat=${latitude} amap=${Boolean(this.amapKey)}`,
+    );
+    return null;
+  }
+
+  private async regeoAmap(
+    longitude: number,
+    latitude: number,
+  ): Promise<RegeoResult | null> {
     if (!this.amapKey) {
-      this.logger.warn('未配置 AMAP_WEB_SERVICE_KEY，无法逆地理编码');
+      this.logger.warn('未配置 AMAP_WEB_SERVICE_KEY，跳过高德逆地理编码');
       return null;
     }
 
@@ -133,7 +149,10 @@ export class GeocodeService {
         };
       };
 
-      if (data.status !== '1' || !data.regeocode) return null;
+      if (data.status !== '1' || !data.regeocode) {
+        this.logger.warn(`高德 regeo 未命中: ${data.info || data.status}`);
+        return null;
+      }
 
       const comp = data.regeocode.addressComponent;
       if (!comp) return null;
@@ -157,6 +176,85 @@ export class GeocodeService {
       };
     } catch (err) {
       this.logger.warn(`高德 regeo 失败: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
+  /** OSM 逆地理：Preview 未配高德 Key，或境外坐标时兜底 */
+  private async regeoNominatim(
+    longitude: number,
+    latitude: number,
+  ): Promise<RegeoResult | null> {
+    try {
+      const url = new URL('https://nominatim.openstreetmap.org/reverse');
+      url.searchParams.set('lat', String(latitude));
+      url.searchParams.set('lon', String(longitude));
+      url.searchParams.set('format', 'jsonv2');
+      url.searchParams.set('addressdetails', '1');
+      url.searchParams.set('accept-language', 'zh-CN,zh');
+
+      const res = await fetch(url.toString(), {
+        headers: {
+          'User-Agent': 'PVInspectionSystem/1.0 (contact@local.dev)',
+          'Accept-Language': 'zh-CN,zh',
+        },
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!res.ok) return null;
+
+      const data = (await res.json()) as {
+        display_name?: string;
+        address?: {
+          country?: string;
+          state?: string;
+          province?: string;
+          city?: string;
+          town?: string;
+          county?: string;
+          district?: string;
+          suburb?: string;
+          city_district?: string;
+          road?: string;
+          neighbourhood?: string;
+          house_number?: string;
+        };
+      };
+
+      const addr = data.address;
+      if (!addr && !data.display_name) return null;
+
+      const province = addr?.state || addr?.province || '';
+      const city =
+        addr?.city || addr?.town || addr?.county || province || '';
+      const district =
+        addr?.district ||
+        addr?.city_district ||
+        addr?.suburb ||
+        addr?.county ||
+        '';
+      const detail = [addr?.road, addr?.house_number, addr?.neighbourhood]
+        .filter(Boolean)
+        .join('');
+
+      // 站点表单要求省市区：境外/简地址时用可展示字段兜底，避免只定位却无法保存
+      const safeProvince = province || city || '未知地区';
+      const safeCity = city || safeProvince;
+      const safeDistrict = district || safeCity;
+      const displayName = data.display_name || [safeProvince, safeCity, safeDistrict, detail]
+        .filter(Boolean)
+        .join('');
+
+      return {
+        longitude: Number(longitude.toFixed(7)),
+        latitude: Number(latitude.toFixed(7)),
+        province: safeProvince,
+        city: safeCity,
+        district: safeDistrict,
+        address: detail || displayName,
+        displayName,
+      };
+    } catch (err) {
+      this.logger.warn(`Nominatim regeo 失败: ${(err as Error).message}`);
       return null;
     }
   }
