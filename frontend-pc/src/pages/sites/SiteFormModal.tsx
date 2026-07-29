@@ -200,7 +200,9 @@ export default function SiteFormModal({
     }
     const ok = syncRegionFields(form, full);
     if (!ok) {
-      message.warning('请按「省+市+区/县+详细地点」填写，例如：四川省自贡市荣县xxx镇1号');
+      message.warning(
+        '请按「省+市+区/县+详细地点」填写；港澳可为「香港/澳门特别行政区+区+详细地点」',
+      );
       return;
     }
     onSubmit();

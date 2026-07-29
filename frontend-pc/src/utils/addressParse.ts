@@ -42,6 +42,9 @@ export function parseChineseAddress(full: string) {
     rest = rest.slice(cityMatch[0].length);
   } else if (/^(北京市|上海市|天津市|重庆市)$/.test(province)) {
     city = '市辖区';
+  } else if (/特别行政区$/.test(province)) {
+    // 港澳无「地级市」，城市级与省级同名，便于满足省市区入库
+    city = province;
   }
 
   let district = '';

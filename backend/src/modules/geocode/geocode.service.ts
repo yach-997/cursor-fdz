@@ -158,9 +158,13 @@ export class GeocodeService {
       if (!comp) return null;
 
       const cityRaw = comp.city;
-      const city = Array.isArray(cityRaw)
+      let city = Array.isArray(cityRaw)
         ? cityRaw[0] || ''
-        : cityRaw || comp.province || '';
+        : cityRaw || '';
+      const province = comp.province || '';
+      // 港澳无地级市，city 常为空数组
+      if (!city && /特别行政区$/.test(province)) city = province;
+      else if (!city) city = province;
       const street = comp.streetNumber?.street || '';
       const number = comp.streetNumber?.number || '';
       const detail = [street, number].filter(Boolean).join('') || comp.township || '';
@@ -168,7 +172,7 @@ export class GeocodeService {
       return {
         longitude: Number(longitude.toFixed(7)),
         latitude: Number(latitude.toFixed(7)),
-        province: comp.province || '',
+        province,
         city,
         district: comp.district || '',
         address: detail || data.regeocode.formatted_address || '',
