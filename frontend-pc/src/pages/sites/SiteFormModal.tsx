@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Button, Form, Input, InputNumber, Modal, Select, Space, Tag, message } from 'antd';
 import { AimOutlined, EnvironmentOutlined, SearchOutlined } from '@ant-design/icons';
 import type { FormInstance } from 'antd';
@@ -48,10 +48,65 @@ export default function SiteFormModal({
   const watchLng = Form.useWatch('longitude', form);
   const [locating, setLocating] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
+  const [resolvingAddress, setResolvingAddress] = useState(false);
+  const regeoTimer = useRef<ReturnType<typeof setTimeout>>();
 
   const hasCoords = watchLat != null && watchLng != null;
 
-  /** 浏览器 GPS 现场定位 */
+  /** 坐标 → 完整地址：现场定位 / 地图微调后自动回填 */
+  const fillAddressFromCoords = useCallback(
+    async (lng: number, lat: number, opts?: { silent?: boolean; force?: boolean }) => {
+      setResolvingAddress(true);
+      try {
+        const addr = await reverseGeocode(lng, lat);
+        const existing = (form.getFieldValue('fullAddress') as string)?.trim() || '';
+        // 仅当用户已手填更完整地址时保留，避免盖掉精细门牌
+        const keep =
+          !opts?.force &&
+          existing.length > 10 &&
+          (existing.includes('大学') ||
+            existing.includes('学院') ||
+            existing.length > (addr.displayName || '').length);
+
+        if (!keep) {
+          const full = composeFullAddress({
+            province: addr.province,
+            city: addr.city,
+            district: addr.district,
+            address: addr.address,
+          });
+          form.setFieldsValue({
+            fullAddress: full || addr.displayName,
+            province: addr.province || undefined,
+            city: addr.city || undefined,
+            district: addr.district || undefined,
+            address: addr.address || addr.displayName,
+          });
+          form.setFields([{ name: 'fullAddress', errors: [] }]);
+        } else {
+          form.setFieldsValue({
+            province: addr.province || undefined,
+            city: addr.city || undefined,
+            district: addr.district || undefined,
+          });
+        }
+        if (!opts?.silent) {
+          message.success(`已自动匹配地址：${addr.displayName}`);
+        }
+        return true;
+      } catch {
+        if (!opts?.silent) {
+          message.warning('坐标已更新，但地址解析失败，请手动填写完整地址或稍后重试');
+        }
+        return false;
+      } finally {
+        setResolvingAddress(false);
+      }
+    },
+    [form],
+  );
+
+  /** 浏览器 GPS 现场定位后自动反查地址 */
   const locateHere = useCallback(() => {
     if (!navigator.geolocation) {
       message.warning('当前浏览器不支持定位，请填写完整地址后点「解析」');
@@ -64,38 +119,9 @@ export default function SiteFormModal({
         const lng = Number(pos.coords.longitude.toFixed(7));
         form.setFieldsValue({ latitude: lat, longitude: lng });
         try {
-          const addr = await reverseGeocode(lng, lat);
-          const existing = (form.getFieldValue('fullAddress') as string)?.trim() || '';
-          const keep =
-            existing.length > 10 &&
-            (existing.includes('大学') ||
-              existing.includes('学院') ||
-              existing.length > (addr.displayName || '').length);
-
-          if (!keep) {
-            const full = composeFullAddress({
-              province: addr.province,
-              city: addr.city,
-              district: addr.district,
-              address: addr.address,
-            });
-            form.setFieldsValue({
-              fullAddress: full || addr.displayName,
-              province: addr.province || undefined,
-              city: addr.city || undefined,
-              district: addr.district || undefined,
-              address: addr.address || addr.displayName,
-            });
-          } else {
-            form.setFieldsValue({
-              province: addr.province || undefined,
-              city: addr.city || undefined,
-              district: addr.district || undefined,
-            });
-          }
-          message.success(`已现场定位：${addr.displayName}`);
-        } catch {
-          message.success('已获取当前坐标，可拖动地图微调');
+          const ok = await fillAddressFromCoords(lng, lat, { force: true, silent: true });
+          if (ok) message.success('已现场定位并匹配完整地址');
+          else message.warning('已获取坐标，但地址解析失败，请手动填写完整地址或稍后重试');
         } finally {
           setLocating(false);
         }
@@ -106,7 +132,19 @@ export default function SiteFormModal({
       },
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
     );
-  }, [form]);
+  }, [fillAddressFromCoords, form]);
+
+  /** 地图点选/拖动后，短暂防抖再反查地址 */
+  const onMapChange = useCallback(
+    (lat: number, lng: number) => {
+      form.setFieldsValue({ latitude: lat, longitude: lng });
+      if (regeoTimer.current) clearTimeout(regeoTimer.current);
+      regeoTimer.current = setTimeout(() => {
+        void fillAddressFromCoords(lng, lat, { silent: false });
+      }, 450);
+    },
+    [fillAddressFromCoords, form],
+  );
 
   /** 按完整地址解析坐标；省市区直接使用已拆分的表单地址 */
   const locateByAddress = useCallback(async () => {
@@ -157,7 +195,7 @@ export default function SiteFormModal({
   const handleOk = () => {
     const full = (form.getFieldValue('fullAddress') as string)?.trim();
     if (!full) {
-      message.warning('请填写完整地址');
+      message.warning('请填写完整地址，或先点「现场定位」自动匹配');
       return;
     }
     const ok = syncRegionFields(form, full);
@@ -199,12 +237,12 @@ export default function SiteFormModal({
           name="fullAddress"
           label="完整地址"
           rules={[{ required: true, message: '请输入完整地址' }]}
-          extra="格式：省 + 市 + 区/县 + 详细地点。例：四川省自贡市自流井区某某路1号；四川省宜宾市翠屏区四川轻化工大学；四川省自贡市荣县某某镇某某村"
+          extra="可手填后点「解析」，或先点「现场定位」自动匹配地址。格式：省+市+区/县+详细地点"
         >
           <Input.Search
-            placeholder="例：四川省自贡市荣县某某镇 / 四川省宜宾市翠屏区四川轻化工大学"
+            placeholder="例：广东省深圳市南山区某某路1号"
             enterButton="解析"
-            loading={geocoding}
+            loading={geocoding || resolvingAddress}
             onSearch={() => void locateByAddress()}
             onBlur={() => syncRegionFields(form)}
           />
@@ -251,7 +289,11 @@ export default function SiteFormModal({
           </div>
 
           <Space wrap style={{ marginBottom: 12 }}>
-            <Button icon={<AimOutlined />} loading={locating} onClick={locateHere}>
+            <Button
+              icon={<AimOutlined />}
+              loading={locating || resolvingAddress}
+              onClick={locateHere}
+            >
               现场定位
             </Button>
             <Button
@@ -270,12 +312,12 @@ export default function SiteFormModal({
               latitude={watchLat ?? 30.5728}
               longitude={watchLng ?? 104.0668}
               height={260}
-              onChange={(lat, lng) => form.setFieldsValue({ latitude: lat, longitude: lng })}
+              onChange={onMapChange}
             />
           )}
 
           <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>
-            <EnvironmentOutlined /> 点击地图或拖动标记可微调位置
+            <EnvironmentOutlined /> 现场定位 / 点击地图 / 拖动标记后，会自动匹配完整地址
           </div>
         </div>
 

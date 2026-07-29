@@ -114,7 +114,7 @@ export class GeocodeService {
       url.searchParams.set('output', 'JSON');
 
       const res = await fetch(url.toString(), {
-        signal: AbortSignal.timeout(1_500),
+        signal: AbortSignal.timeout(5_000),
       });
       if (!res.ok) return null;
 

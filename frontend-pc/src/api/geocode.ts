@@ -37,6 +37,8 @@ export async function geocodeAddress(payload: {
 export async function reverseGeocode(longitude: number, latitude: number) {
   const { data } = await request.get<ApiResponse<RegeoResult>>('/geocode/regeo', {
     params: { longitude, latitude },
-  });
+    // 由调用方统一提示「坐标已更新但地址解析失败」
+    skipErrorToast: true,
+  } as import('../utils/request').AppAxiosRequestConfig);
   return data.data;
 }

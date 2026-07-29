@@ -3,6 +3,9 @@ import { message } from 'antd';
 import type { ApiResponse } from '../types';
 import { chineseErrorMessage } from './displayLabels';
 
+/** 业务侧自行提示时跳过全局错误 toast */
+export type AppAxiosRequestConfig = AxiosRequestConfig & { skipErrorToast?: boolean };
+
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/$/, '') || '';
 const supabaseAnon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || '';
 const configuredApi =
@@ -108,6 +111,10 @@ function isAuthLoginRequest(url?: string) {
   return !!url && (url.includes('/auth/login') || url.endsWith('/login'));
 }
 
+function shouldSkipErrorToast(config?: AxiosRequestConfig) {
+  return !!(config as AppAxiosRequestConfig | undefined)?.skipErrorToast;
+}
+
 request.interceptors.response.use(
   (response) => {
     if (response.config.responseType === 'blob') return response;
@@ -115,7 +122,9 @@ request.interceptors.response.use(
     if (res.code && res.code !== 200) {
       if (res.code === 401) {
         if (isAuthLoginRequest(response.config.url)) {
-          message.error(chineseErrorMessage(res.message, '用户名或密码错误'));
+          if (!shouldSkipErrorToast(response.config)) {
+            message.error(chineseErrorMessage(res.message, '用户名或密码错误'));
+          }
           return Promise.reject(new Error(res.message || '登录失败'));
         }
         localStorage.removeItem('accessToken');
@@ -125,11 +134,15 @@ request.interceptors.response.use(
         return Promise.reject(new Error(res.message || '未登录'));
       }
       if (res.code === 403) {
-        message.error(chineseErrorMessage(res.message, '暂无操作权限'));
+        if (!shouldSkipErrorToast(response.config)) {
+          message.error(chineseErrorMessage(res.message, '暂无操作权限'));
+        }
         if (!isAuthLoginRequest(response.config.url)) window.location.href = '/403';
         return Promise.reject(new Error(res.message || '无权限'));
       }
-      message.error(chineseErrorMessage(res.message, '请求失败，请稍后重试'));
+      if (!shouldSkipErrorToast(response.config)) {
+        message.error(chineseErrorMessage(res.message, '请求失败，请稍后重试'));
+      }
       return Promise.reject(new Error(res.message || '请求失败'));
     }
     return response;
@@ -141,9 +154,10 @@ request.interceptors.response.use(
       '请求失败，请稍后重试',
     );
     const reqUrl = error.config?.url;
+    const skipToast = shouldSkipErrorToast(error.config);
     if (status === 401) {
       if (isAuthLoginRequest(reqUrl)) {
-        message.error(msg || '用户名或密码错误');
+        if (!skipToast) message.error(msg || '用户名或密码错误');
         return Promise.reject(error);
       }
       localStorage.removeItem('accessToken');
@@ -151,8 +165,8 @@ request.interceptors.response.use(
       localStorage.removeItem('userInfo');
       window.location.href = '/login';
     } else if (status === 403) {
-      message.error(msg || '无权限');
-    } else {
+      if (!skipToast) message.error(msg || '无权限');
+    } else if (!skipToast) {
       message.error(msg || '网络错误');
     }
     return Promise.reject(error);
