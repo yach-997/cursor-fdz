@@ -73,6 +73,7 @@ export class FinanceQueryService {
     const qb = this.cases
       .createQueryBuilder('c')
       .leftJoin(CasePerformance, 'p', 'p.service_case_id = c.id')
+      .leftJoin('sites', 's', 's.id = c.site_id')
       .select([
         'c.id AS id',
         'c.gsp_case_no AS "gspCaseNo"',
@@ -82,14 +83,42 @@ export class FinanceQueryService {
         'c.city AS city',
         'c.region AS region',
         'c.status AS status',
+        'c.site_id AS "siteId"',
+        's.name AS "siteName"',
+        'c.task_type AS "taskType"',
         'c.inspector_id AS "inspectorId"',
         'c.finish_time AS "finishTime"',
         'c.updated_at AS "updatedAt"',
         'COALESCE(p.case_revenue,0) AS "caseRevenue"',
       ]);
     if (region) qb.andWhere('c.region = :region', { region });
+    // 站长：优先看已分配到自己站点的案例；也可看本区域未挂站点的（待管理员分配）
+    if (user.role === UserRole.SITE_MANAGER) {
+      if (!user.managedSiteIds?.length) {
+        return { list: [], total: 0, page, limit };
+      }
+      if (query.siteId) {
+        if (!user.managedSiteIds.includes(query.siteId)) {
+          throw new ForbiddenException('无权查看该站点案例');
+        }
+        qb.andWhere('c.site_id = :siteId', { siteId: query.siteId });
+      } else if (query.siteBind === 'unassigned') {
+        qb.andWhere('c.site_id IS NULL');
+      } else if (query.siteBind === 'assigned_site') {
+        qb.andWhere('c.site_id IN (:...siteIds)', { siteIds: user.managedSiteIds });
+      } else {
+        qb.andWhere('(c.site_id IN (:...siteIds) OR c.site_id IS NULL)', {
+          siteIds: user.managedSiteIds,
+        });
+      }
+    } else {
+      if (query.siteId) qb.andWhere('c.site_id = :siteId', { siteId: query.siteId });
+      if (query.siteBind === 'unassigned') qb.andWhere('c.site_id IS NULL');
+      if (query.siteBind === 'assigned_site') qb.andWhere('c.site_id IS NOT NULL');
+    }
     if (query.region) qb.andWhere('c.region = :filterRegion', { filterRegion: query.region });
     if (query.status) qb.andWhere('c.status = :status', { status: query.status });
+    if (query.taskType) qb.andWhere('c.task_type = :taskType', { taskType: query.taskType });
     if (query.month)
       qb.andWhere("to_char(COALESCE(c.finish_time,c.created_at),'YYYY-MM') = :month", {
         month: query.month,
@@ -131,8 +160,16 @@ export class FinanceQueryService {
       delete safe.perfPrice;
       return safe;
     });
+    const siteName = item.siteId
+      ? (
+          await this.cases.manager.query(`SELECT name FROM sites WHERE id = $1 LIMIT 1`, [
+            item.siteId,
+          ])
+        )[0]?.name
+      : null;
     return {
       ...item,
+      siteName: siteName || null,
       orders: orders.map((order) => ({
         ...order,
         items: visibleItems.filter((entry) => entry.poId === order.id),

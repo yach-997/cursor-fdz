@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Empty, PullRefresh, Dialog, Toast } from 'react-vant';
 import { fetchTasks, deleteTask, type TaskItem } from '../../api/task';
+import { fetchMyFinanceCases, type MobileFinanceCase } from '../../api/finance';
 import { useAuthStore } from '../../stores/auth';
 import { mobileCacheKeys } from '../../utils/mobileCacheKeys';
 import { useCachedResource } from '../../utils/useCachedResource';
@@ -14,29 +15,62 @@ const FILTERS = [
   { key: 'completed', label: '已完成' },
 ] as const;
 
+type UnifiedKind = 'inspection' | 'service';
+
+interface UnifiedItem {
+  key: string;
+  kind: UnifiedKind;
+  title: string;
+  statusLabel: string;
+  statusClass: string;
+  meta: string;
+  canDelete?: boolean;
+  task?: TaskItem;
+  financeCase?: MobileFinanceCase;
+}
+
 function statusClass(status: string, label?: string) {
   const t = label || status;
-  if (t.includes('完成') || status === 'submitted' || status === 'approved') return 'is-done';
+  if (t.includes('完成') || status === 'submitted' || status === 'approved' || status === 'finished') {
+    return 'is-done';
+  }
   if (
     t.includes('驳回') ||
     t.includes('整改') ||
     status === 'rejected' ||
-    status === 'in_progress'
+    status === 'in_progress' ||
+    status === 'working'
   ) {
     return 'is-doing';
   }
   return 'is-todo';
 }
 
-function statusText(t: TaskItem) {
-  // 列表只展示三类：未开始 / 进行中 / 已完成
+function inspectionStatusText(t: TaskItem) {
   if (t.status === 'pending') return '未开始';
   if (t.status === 'submitted' || t.status === 'approved') return '已完成';
   if (t.status === 'archived') return '已归档';
   return '进行中';
 }
 
-/** 任务列表：未开始 / 进行中 / 已完成 */
+function financeStatusText(status: string) {
+  if (status === 'assigned') return '未开始';
+  if (status === 'working') return '进行中';
+  if (['finished', 'settle_review', 'settled', 'month_locked'].includes(status)) return '已完成';
+  return status;
+}
+
+function financeMatchesTab(status: string, tab: (typeof FILTERS)[number]['key']) {
+  if (tab === 'all') return true;
+  if (tab === 'not_started') return status === 'assigned';
+  if (tab === 'in_progress') return status === 'working';
+  if (tab === 'completed') {
+    return ['finished', 'settle_review', 'settled', 'month_locked'].includes(status);
+  }
+  return true;
+}
+
+/** 任务列表：巡检 + 服务作业统一入口，按类型分流 */
 export default function TasksPage() {
   const navigate = useNavigate();
   const currentSite = useAuthStore((s) => s.currentSite);
@@ -60,16 +94,24 @@ export default function TasksPage() {
       dateTo,
     });
   }, [keyword, region, dateFrom, dateTo]);
-  const loader = useCallback(() => fetchTasks({
-      page: 1,
-      limit: 50,
-      statusGroup: tab === 'all' ? undefined : tab,
-      keyword: appliedFilters.keyword || undefined,
-      region: appliedFilters.region || undefined,
-      startDate: appliedFilters.dateFrom || undefined,
-      endDate: appliedFilters.dateTo || undefined,
-      siteId: currentSite?.id,
-    }), [tab, appliedFilters, currentSite?.id]);
+
+  const loader = useCallback(async () => {
+    const [taskPage, financeCases] = await Promise.all([
+      fetchTasks({
+        page: 1,
+        limit: 50,
+        statusGroup: tab === 'all' ? undefined : tab,
+        keyword: appliedFilters.keyword || undefined,
+        region: appliedFilters.region || undefined,
+        startDate: appliedFilters.dateFrom || undefined,
+        endDate: appliedFilters.dateTo || undefined,
+        siteId: currentSite?.id,
+      }),
+      fetchMyFinanceCases().catch(() => [] as MobileFinanceCase[]),
+    ]);
+    return { tasks: taskPage.list, financeCases };
+  }, [tab, appliedFilters, currentSite?.id]);
+
   const filterKey = [
     tab,
     appliedFilters.keyword,
@@ -78,10 +120,49 @@ export default function TasksPage() {
     appliedFilters.dateTo,
   ].join('|');
   const { data, loading, error, reload } = useCachedResource(
-    mobileCacheKeys.taskList(user?.id, currentSite?.id, filterKey),
+    mobileCacheKeys.taskList(user?.id, currentSite?.id, `unified|${filterKey}`),
     loader,
   );
-  const list: TaskItem[] = (data?.list || []).filter((t) => t.status !== 'archived');
+
+  const list: UnifiedItem[] = useMemo(() => {
+    const tasks = (data?.tasks || []).filter((t) => t.status !== 'archived');
+    const items: UnifiedItem[] = tasks.map((t) => {
+      const label = inspectionStatusText(t);
+      return {
+        key: `task-${t.id}`,
+        kind: 'inspection' as const,
+        title: t.taskName,
+        statusLabel: label,
+        statusClass: statusClass(t.status, label),
+        meta: `${t.device?.serialNumber || '无序列号'}${
+          t.site?.region || t.site?.name ? ` · ${t.site?.region || t.site?.name}` : ''
+        }${t.serviceCaseId ? ' · 关联案例' : ''}`,
+        canDelete: ['pending', 'in_progress', 'rejected'].includes(t.status),
+        task: t,
+      };
+    });
+
+    const kw = appliedFilters.keyword.toLowerCase();
+    for (const c of data?.financeCases || []) {
+      // 巡检类型走 inspection_tasks，避免与案例作业重复
+      if (c.taskType === 'inspection') continue;
+      if (currentSite?.id && c.siteId && c.siteId !== currentSite.id) continue;
+      if (!financeMatchesTab(c.status, tab)) continue;
+      if (kw && !`${c.projectName} ${c.gspCaseNo}`.toLowerCase().includes(kw)) continue;
+      const label = financeStatusText(c.status);
+      items.push({
+        key: `case-${c.id}`,
+        kind: 'service',
+        title: c.projectName || c.gspCaseNo,
+        statusLabel: label,
+        statusClass: statusClass(c.status, label),
+        meta: `${c.gspCaseNo} · 服务作业${c.province ? ` · ${c.province}` : ''}`,
+        financeCase: c,
+      });
+    }
+    return items;
+  }, [data, tab, appliedFilters.keyword, currentSite?.id]);
+
   const load = useCallback(async () => {
     await reload();
   }, [reload]);
@@ -106,12 +187,22 @@ export default function TasksPage() {
     }
   };
 
+  const openItem = (item: UnifiedItem) => {
+    if (item.kind === 'service' && item.financeCase) {
+      navigate(`/m/finance-cases/${item.financeCase.id}`);
+      return;
+    }
+    if (item.task) navigate(`/m/tasks/${item.task.id}`);
+  };
+
   return (
     <div className="tasks-page">
       <header className="tasks-page__header">
         <h1 className="tasks-page__title">任务</h1>
         <p className="tasks-page__sub">
-          {currentSite?.name ? `当前现场 · ${currentSite.name}` : '未选择现场时可查看全部任务'}
+          {currentSite?.name
+            ? `当前现场 · ${currentSite.name}（含巡检与服务作业）`
+            : '未选择现场时可查看全部任务'}
         </p>
       </header>
 
@@ -121,7 +212,7 @@ export default function TasksPage() {
         </span>
         <input
           value={keyword}
-          placeholder="搜索任务名称"
+          placeholder="搜索任务/案例"
           onChange={(e) => setKeyword(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') applyFilters();
@@ -221,7 +312,9 @@ export default function TasksPage() {
         <div className="tasks-page__list">
           {loading ? (
             <div className="mobile-list-skeleton" aria-label="正在加载任务">
-              <i /><i /><i />
+              <i />
+              <i />
+              <i />
             </div>
           ) : error && data === undefined ? (
             <button type="button" className="mobile-load-error" onClick={() => void load()}>
@@ -232,63 +325,53 @@ export default function TasksPage() {
               <Empty description="暂无任务，点上方新建" />
             </div>
           ) : (
-            list.map((t) => {
-              const label = statusText(t);
-              const canDelete = ['pending', 'in_progress', 'rejected'].includes(t.status);
-              const region = t.site?.region || t.site?.name || '';
-              return (
-                <div
-                  key={t.id}
-                  className="tasks-item"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => navigate(`/m/tasks/${t.id}`)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') navigate(`/m/tasks/${t.id}`);
-                  }}
-                >
-                  <div className="tasks-item__top">
-                    <div className="tasks-item__name">{t.taskName}</div>
-                    <div className={`tasks-item__status ${statusClass(t.status, label)}`}>
-                      {label}
-                    </div>
+            list.map((item) => (
+              <div
+                key={item.key}
+                className="tasks-item"
+                role="button"
+                tabIndex={0}
+                onClick={() => openItem(item)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') openItem(item);
+                }}
+              >
+                <div className="tasks-item__top">
+                  <div className="tasks-item__name">{item.title}</div>
+                  <div className={`tasks-item__status ${item.statusClass}`}>{item.statusLabel}</div>
+                </div>
+                <div className="tasks-item__meta">{item.meta}</div>
+                {item.task?.record?.rejectReason?.reason && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 12,
+                      color: '#a8071a',
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    驳回：{item.task.record.rejectReason.reason}
+                    {item.task.record.rejectReason.entryIds?.length
+                      ? `（${item.task.record.rejectReason.entryIds.length} 项需返工）`
+                      : ''}
                   </div>
-                  <div className="tasks-item__meta">
-                    {t.device?.serialNumber || '无序列号'}
-                    {region ? ` · ${region}` : ''}
-                  </div>
-                  {t.record?.rejectReason?.reason && (
-                    <div
-                      style={{
-                        marginTop: 8,
-                        fontSize: 12,
-                        color: '#a8071a',
-                        lineHeight: 1.4,
+                )}
+                {item.canDelete && item.task && (
+                  <div className="tasks-item__actions">
+                    <button
+                      type="button"
+                      className="tasks-item__del"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void onDelete(item.task!);
                       }}
                     >
-                      驳回：{t.record.rejectReason.reason}
-                      {t.record.rejectReason.entryIds?.length
-                        ? `（${t.record.rejectReason.entryIds.length} 项需返工）`
-                        : ''}
-                    </div>
-                  )}
-                  {canDelete && (
-                    <div className="tasks-item__actions">
-                      <button
-                        type="button"
-                        className="tasks-item__del"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void onDelete(t);
-                        }}
-                      >
-                        删除
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })
+                      删除
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))
           )}
         </div>
       </PullRefresh>

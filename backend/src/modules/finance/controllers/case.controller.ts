@@ -5,9 +5,19 @@ import { Roles } from '../../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { UserRole } from '../../../common/enums';
 import { CurrentUserContext } from '../../../common/interfaces';
-import { AssignCaseDto, ClearConfirmQueryDto, FinanceCaseQueryDto, SaveCaseWorkDto } from '../dto/finance.dto';
+import {
+  AssignCaseDto,
+  BatchAssignCasesToSitesDto,
+  BatchCreateTasksFromCasesDto,
+  ClearConfirmQueryDto,
+  FinanceCaseQueryDto,
+  SaveCaseWorkDto,
+  SetCaseSiteDto,
+  SetCaseTaskTypeDto,
+} from '../dto/finance.dto';
 import { FinanceQueryService } from '../services/finance-query.service';
 import { FinanceWorkflowService } from '../services/finance-workflow.service';
+import { CaseBridgeService } from '../services/case-bridge.service';
 import { UploadService } from '../../upload/upload.service';
 
 @Controller('cases')
@@ -15,6 +25,7 @@ export class FinanceCaseController {
   constructor(
     private readonly service: FinanceQueryService,
     private readonly workflow: FinanceWorkflowService,
+    private readonly bridge: CaseBridgeService,
     private readonly upload: UploadService,
   ) {}
   @Get() @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) list(
@@ -29,6 +40,18 @@ export class FinanceCaseController {
   ) {
     return this.service.clearCases(user, query.confirm);
   }
+  @Post('assign-sites') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) assignSites(
+    @Body() dto: BatchAssignCasesToSitesDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.bridge.batchAssignSites(dto, user);
+  }
+  @Post('batch-create-tasks') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) batchTasks(
+    @Body() dto: BatchCreateTasksFromCasesDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.bridge.batchCreateTasks(dto, user);
+  }
   @Get('my/list') @Roles(UserRole.INSPECTOR) myList(@CurrentUser() user: CurrentUserContext) {
     return this.workflow.myCases(user);
   }
@@ -37,6 +60,20 @@ export class FinanceCaseController {
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.workflow.myCase(id, user);
+  }
+  @Put(':id/site') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) setSite(
+    @Param('id') id: string,
+    @Body() dto: SetCaseSiteDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.bridge.setSite(id, dto, user);
+  }
+  @Put(':id/task-type') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) setTaskType(
+    @Param('id') id: string,
+    @Body() dto: SetCaseTaskTypeDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.bridge.setTaskType(id, dto, user);
   }
   @Get(':id/inspectors') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) inspectors(
     @Param('id') id: string,

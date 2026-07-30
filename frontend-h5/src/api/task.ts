@@ -17,6 +17,8 @@ export interface TaskItem {
   statusLabel?: string;
   startedAt?: string;
   createdAt?: string;
+  serviceCaseId?: string | null;
+  taskType?: 'inspection' | 'service' | string;
   site?: {
     id: string;
     name: string;

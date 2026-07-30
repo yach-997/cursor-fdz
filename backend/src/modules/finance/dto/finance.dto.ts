@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsIn,
   IsNumber,
   IsObject,
@@ -28,6 +29,36 @@ export class FinanceCaseQueryDto extends PaginationDto {
   @IsOptional() @IsString() region?: string;
   @IsOptional() @IsString() month?: string;
   @IsOptional() @IsString() keyword?: string;
+  @IsOptional() @IsPostgresUuid() siteId?: string;
+  /** unassigned=未挂站点；assigned_site=已挂站点 */
+  @IsOptional() @IsIn(['unassigned', 'assigned_site']) siteBind?: 'unassigned' | 'assigned_site';
+  @IsOptional() @IsIn(['inspection', 'service']) taskType?: string;
+}
+
+export class SetCaseSiteDto {
+  @IsPostgresUuid() siteId: string;
+}
+
+export class BatchAssignCasesToSitesDto {
+  @IsArray()
+  @IsString({ each: true })
+  caseIds: string[];
+  @IsPostgresUuid() siteId: string;
+}
+
+export class SetCaseTaskTypeDto {
+  @IsIn(['inspection', 'service']) taskType: 'inspection' | 'service';
+}
+
+export class BatchCreateTasksFromCasesDto {
+  @IsArray()
+  @IsString({ each: true })
+  caseIds: string[];
+  /** 巡检类型必填：同一批使用同一设备 */
+  @IsOptional() @IsPostgresUuid() deviceId?: string;
+  /** 可选：创建时一并派给本站工程师 */
+  @IsOptional() @IsPostgresUuid() inspectorId?: string;
+  @IsOptional() @IsBoolean() aiEnabled?: boolean;
 }
 
 export class PoOrderQueryDto extends PaginationDto {

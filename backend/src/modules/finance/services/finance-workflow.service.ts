@@ -15,8 +15,9 @@ import {
   User,
   Assessment,
   MonthlySettlement,
+  SiteMember,
 } from '../../../entities';
-import { CommonStatus, UserRole } from '../../../common/enums';
+import { CommonStatus, SiteMemberRole, UserRole } from '../../../common/enums';
 import { CurrentUserContext } from '../../../common/interfaces';
 import { userHasRole } from '../../../common/utils/user-roles';
 import {
@@ -39,6 +40,7 @@ export class FinanceWorkflowService {
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(Assessment) private readonly assessments: Repository<Assessment>,
     @InjectRepository(MonthlySettlement) private readonly monthly: Repository<MonthlySettlement>,
+    @InjectRepository(SiteMember) private readonly members: Repository<SiteMember>,
     private readonly scope: FinanceScopeService,
     private readonly logs: ChangeLogService,
   ) {}
@@ -59,12 +61,24 @@ export class FinanceWorkflowService {
         .map((item) => item.inspectorId)
         .filter(Boolean) as string[],
     );
+    let siteMemberIds: Set<string> | null = null;
+    if (serviceCase.siteId) {
+      const members = await this.members.find({
+        where: {
+          siteId: serviceCase.siteId,
+          status: CommonStatus.ACTIVE,
+          memberRole: SiteMemberRole.INSPECTOR,
+        },
+      });
+      siteMemberIds = new Set(members.map((m) => m.userId));
+    }
     return inspectors
       .filter((item) => userHasRole(item, UserRole.INSPECTOR))
       .filter(
         (item) =>
           user.role === UserRole.SUPER_ADMIN || item.region === serviceCase.region,
       )
+      .filter((item) => !siteMemberIds || siteMemberIds.has(item.id))
       .map((item) => ({
         id: item.id,
         realName: item.realName,
@@ -79,9 +93,26 @@ export class FinanceWorkflowService {
     if (serviceCase.status !== 'pending_assign') {
       throw new BadRequestException('只有待派单案例可以派单');
     }
+    if (!serviceCase.siteId) {
+      throw new BadRequestException('请先将案例分配到站点，再派给本站工程师');
+    }
+    if (!serviceCase.taskType) {
+      throw new BadRequestException('请先设置案例任务类型');
+    }
     const inspector = await this.users.findOne({ where: { id: inspectorId } });
     if (!inspector || inspector.status !== CommonStatus.ACTIVE || !userHasRole(inspector, UserRole.INSPECTOR)) {
       throw new BadRequestException('所选账号不是可用工程师');
+    }
+    const member = await this.members.findOne({
+      where: {
+        siteId: serviceCase.siteId,
+        userId: inspectorId,
+        status: CommonStatus.ACTIVE,
+        memberRole: SiteMemberRole.INSPECTOR,
+      },
+    });
+    if (!member) {
+      throw new BadRequestException('只能派给该站点已入职的工程师');
     }
     const crossRegion = inspector.region !== serviceCase.region;
     if (crossRegion && user.role !== UserRole.SUPER_ADMIN) {
@@ -125,7 +156,7 @@ export class FinanceWorkflowService {
       before,
       { status: serviceCase.status, inspectorId },
       user.id,
-      crossRegion ? `跨区域特批：${reason}` : '站长派单',
+      crossRegion ? `跨区域特批：${reason}` : '站点派单',
     );
     return serviceCase;
   }

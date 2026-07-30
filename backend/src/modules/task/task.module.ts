@@ -7,6 +7,7 @@ import {
   Site,
   SiteMember,
   User,
+  ServiceCase,
 } from '../../entities';
 import { TemplateModule } from '../template/template.module';
 import { TaskService } from './task.service';
@@ -21,6 +22,7 @@ import { TaskController } from './task.controller';
       Site,
       SiteMember,
       User,
+      ServiceCase,
     ]),
     TemplateModule,
   ],

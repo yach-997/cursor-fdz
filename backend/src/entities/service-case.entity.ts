@@ -5,6 +5,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { WorkTaskType } from '../common/enums';
 
 export type FinanceRegion = 'south_china' | 'yunnan';
 export type ServiceCaseStatus =
@@ -27,6 +28,11 @@ export class ServiceCase {
   @Column({ type: 'varchar', length: 16, nullable: true }) province: string | null;
   @Column({ type: 'varchar', length: 32, nullable: true }) city: string | null;
   @Column({ name: 'site_desc', type: 'text', nullable: true }) siteDesc: string | null;
+  /** 归属站点（管理员分配） */
+  @Column({ name: 'site_id', type: 'uuid', nullable: true }) siteId: string | null;
+  /** 站点设置的任务类型 */
+  @Column({ name: 'task_type', type: 'varchar', length: 32, nullable: true }) taskType:
+    WorkTaskType | string | null;
   @Column({ type: 'varchar', length: 16, default: 'south_china' }) region: FinanceRegion;
   @Column({ type: 'varchar', length: 20, default: 'pending_assign' }) status: ServiceCaseStatus;
   @Column({ name: 'inspector_id', type: 'uuid', nullable: true }) inspectorId: string | null;

@@ -14,8 +14,13 @@ import {
   Assessment,
   MonthlySettlement,
   AssessmentEvent,
+  Site,
+  Device,
+  InspectionTask,
+  SiteMember,
 } from '../../entities';
 import { UploadModule } from '../upload/upload.module';
+import { TemplateModule } from '../template/template.module';
 import { FinanceImportController } from './controllers/import.controller';
 import { FinanceCaseController } from './controllers/case.controller';
 import { FinancePoController } from './controllers/po-order.controller';
@@ -29,6 +34,7 @@ import { PriceService } from './services/price.service';
 import { ChangeLogService } from './services/change-log.service';
 import { PriceMappingService } from './services/price-mapping.service';
 import { FinanceWorkflowService } from './services/finance-workflow.service';
+import { CaseBridgeService } from './services/case-bridge.service';
 import { FinanceReviewController } from './controllers/review.controller';
 import { FinanceIncomeController } from './controllers/income.controller';
 import { FinanceAssessmentController } from './controllers/assessment.controller';
@@ -38,6 +44,7 @@ import { FinanceSettlementService } from './services/finance-settlement.service'
 @Module({
   imports: [
     UploadModule,
+    TemplateModule,
     TypeOrmModule.forFeature([
       User,
       ServiceCase,
@@ -52,6 +59,10 @@ import { FinanceSettlementService } from './services/finance-settlement.service'
       Assessment,
       MonthlySettlement,
       AssessmentEvent,
+      Site,
+      Device,
+      InspectionTask,
+      SiteMember,
     ]),
   ],
   controllers: [
@@ -75,6 +86,7 @@ import { FinanceSettlementService } from './services/finance-settlement.service'
     PriceMappingService,
     FinanceWorkflowService,
     FinanceSettlementService,
+    CaseBridgeService,
   ],
 })
 export class FinanceModule {}

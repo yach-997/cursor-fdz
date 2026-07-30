@@ -13,6 +13,9 @@ export interface FinanceCase {
   city?: string;
   region: string;
   status: string;
+  siteId?: string | null;
+  siteName?: string | null;
+  taskType?: 'inspection' | 'service' | null;
   inspectorId?: string;
   finishTime?: string;
   updatedAt: string;

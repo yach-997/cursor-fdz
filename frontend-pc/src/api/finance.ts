@@ -84,6 +84,43 @@ export async function assignFinanceCase(caseId: string, inspectorId: string, rea
     }),
   );
 }
+export async function setFinanceCaseSite(caseId: string, siteId: string) {
+  return unwrap(
+    await request.put<ApiResponse<FinanceCase>>(`/cases/${caseId}/site`, { siteId }),
+  );
+}
+export async function batchAssignFinanceCasesToSites(caseIds: string[], siteId: string) {
+  return unwrap(
+    await request.post<
+      ApiResponse<{ updated: number; siteId: string; siteName: string }>
+    >('/cases/assign-sites', { caseIds, siteId }),
+  );
+}
+export async function setFinanceCaseTaskType(
+  caseId: string,
+  taskType: 'inspection' | 'service',
+) {
+  return unwrap(
+    await request.put<ApiResponse<FinanceCase>>(`/cases/${caseId}/task-type`, { taskType }),
+  );
+}
+export async function batchCreateTasksFromCases(payload: {
+  caseIds: string[];
+  deviceId?: string;
+  inspectorId?: string;
+  aiEnabled?: boolean;
+}) {
+  return unwrap(
+    await request.post<
+      ApiResponse<{
+        createdTasks: number;
+        serviceAssigned: number;
+        skipped: Array<{ caseId: string; reason: string }>;
+        taskIds: string[];
+      }>
+    >('/cases/batch-create-tasks', payload),
+  );
+}
 export async function fetchPendingFinanceReviews() {
   return unwrap(await request.get<ApiResponse<FinanceReviewItem[]>>('/review/pending'));
 }

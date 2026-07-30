@@ -71,3 +71,11 @@ export enum CheckResult {
   PENDING = 'pending',
   ERROR = 'error',
 }
+
+/** 任务/案例业务类型 */
+export enum WorkTaskType {
+  /** 现场巡检（沿用模板+拍照 AI 流程） */
+  INSPECTION = 'inspection',
+  /** 服务作业（费用案例作业记录流程） */
+  SERVICE = 'service',
+}

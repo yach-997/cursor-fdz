@@ -279,7 +279,7 @@ export class StatsService {
       const device = task
         ? await this.deviceRepo.findOne({ where: { id: task.deviceId } })
         : null;
-      const inspector = task
+      const inspector = task?.inspectorId
         ? await this.userRepo.findOne({ where: { id: task.inspectorId } })
         : null;
 

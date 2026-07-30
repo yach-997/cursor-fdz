@@ -11,6 +11,8 @@ export interface MobileFinanceCase {
   province?: string;
   city?: string;
   status: string;
+  siteId?: string | null;
+  taskType?: 'inspection' | 'service' | string | null;
   assignTime?: string;
   finishTime?: string;
   workRecord?: CaseWorkRecord | null;

@@ -6,13 +6,13 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
-import { TaskStatus } from '../common/enums';
+import { TaskStatus, WorkTaskType } from '../common/enums';
 import { Site } from './site.entity';
 import { Device } from './device.entity';
 import { User } from './user.entity';
 import { TemplateEntry } from './inspection-template.entity';
 
-/** 巡检任务实体 */
+/** 巡检/作业任务实体 */
 @Entity('inspection_tasks')
 export class InspectionTask {
   @PrimaryGeneratedColumn('uuid')
@@ -27,11 +27,24 @@ export class InspectionTask {
   @Column({ name: 'task_name' })
   taskName: string;
 
-  @Column({ name: 'inspector_id', type: 'uuid' })
-  inspectorId: string;
+  /** 未派单时可为空 */
+  @Column({ name: 'inspector_id', type: 'uuid', nullable: true })
+  inspectorId: string | null;
 
   @Column({ name: 'created_by', type: 'uuid' })
   createdBy: string;
+
+  /** 关联费用案例（一对一） */
+  @Column({ name: 'service_case_id', type: 'bigint', nullable: true })
+  serviceCaseId: string | null;
+
+  @Column({
+    name: 'task_type',
+    type: 'varchar',
+    length: 32,
+    default: WorkTaskType.INSPECTION,
+  })
+  taskType: WorkTaskType | string;
 
   @Column({
     type: 'enum',

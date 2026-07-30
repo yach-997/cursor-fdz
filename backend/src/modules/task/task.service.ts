@@ -14,6 +14,7 @@ import {
   SiteMember,
   User,
   RecordEntry,
+  ServiceCase,
 } from '../../entities';
 import {
   UserRole,
@@ -22,6 +23,7 @@ import {
   RecordStatus,
   CheckResult,
   SiteMemberRole,
+  WorkTaskType,
 } from '../../common/enums';
 import { CurrentUserContext } from '../../common/interfaces';
 import { userHasRole } from '../../common/utils/user-roles';
@@ -176,12 +178,14 @@ export class TaskService {
     if (!tasks.length) return;
     const siteIds = [...new Set(tasks.map((t) => t.siteId))];
     const deviceIds = [...new Set(tasks.map((t) => t.deviceId))];
-    const inspectorIds = [...new Set(tasks.map((t) => t.inspectorId))];
+    const inspectorIds = [...new Set(tasks.map((t) => t.inspectorId).filter(Boolean))] as string[];
 
     const [sites, devices, inspectors] = await Promise.all([
       this.siteRepo.findBy({ id: In(siteIds) }),
       this.deviceRepo.findBy({ id: In(deviceIds) }),
-      this.userRepo.findBy({ id: In(inspectorIds) }),
+      inspectorIds.length
+        ? this.userRepo.findBy({ id: In(inspectorIds) })
+        : Promise.resolve([] as User[]),
     ]);
     const siteMap = new Map(sites.map((s) => [s.id, s]));
     const deviceMap = new Map(devices.map((d) => [d.id, d]));
@@ -190,7 +194,7 @@ export class TaskService {
     for (const t of tasks) {
       t.site = siteMap.get(t.siteId)!;
       t.device = deviceMap.get(t.deviceId)!;
-      t.inspector = inspectorMap.get(t.inspectorId)!;
+      t.inspector = t.inspectorId ? inspectorMap.get(t.inspectorId)! : (null as unknown as User);
     }
   }
 
@@ -275,10 +279,9 @@ export class TaskService {
       // 工程师自建任务：默认本人
       inspectorId = currentUser.id;
     }
-    if (!inspectorId) {
-      throw new BadRequestException('请指定工程师');
+    if (inspectorId) {
+      await this.assertHiredInspector(dto.siteId, inspectorId);
     }
-    await this.assertHiredInspector(dto.siteId, inspectorId);
 
     const template = await this.templateService.resolveForDevice(
       device.deviceType,
@@ -294,12 +297,14 @@ export class TaskService {
       siteId: dto.siteId,
       deviceId: device.id,
       taskName: dto.taskName,
-      inspectorId,
+      inspectorId: inspectorId || null,
       createdBy: currentUser.id,
       status: TaskStatus.PENDING,
       plannedDate: null,
       aiEnabled: dto.aiEnabled !== false,
       templateSnapshot: template.entries,
+      taskType: WorkTaskType.INSPECTION,
+      serviceCaseId: null,
     } as Partial<InspectionTask>);
 
     const saved = await this.taskRepo.save(task);
@@ -488,6 +493,21 @@ export class TaskService {
     await this.assertHiredInspector(task.siteId, dto.inspectorId);
     task.inspectorId = dto.inspectorId;
     await this.taskRepo.save(task);
+
+    // 同步关联案例的工程师
+    if (task.serviceCaseId) {
+      await this.taskRepo.manager
+        .getRepository(ServiceCase)
+        .update(
+          { id: task.serviceCaseId },
+          {
+            inspectorId: dto.inspectorId,
+            assignBy: currentUser.id,
+            assignTime: new Date(),
+            status: 'assigned',
+          },
+        );
+    }
     return this.findOne(id, currentUser);
   }
 
@@ -662,6 +682,8 @@ export class TaskService {
       taskName: task.taskName,
       inspectorId: task.inspectorId,
       createdBy: task.createdBy,
+      serviceCaseId: task.serviceCaseId,
+      taskType: task.taskType || WorkTaskType.INSPECTION,
       status: task.status,
       statusLabel: this.displayStatus(task.status, recordStatus, hasReject),
       startedAt: task.startedAt,
