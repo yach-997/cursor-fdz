@@ -40,9 +40,11 @@ import SiteFormModal from './SiteFormModal';
 import { composeFullAddress } from '../../utils/addressParse';
 import { useAuthStore } from '../../stores/auth';
 
-/** 站点管理：正网格长 / 多副网格长 / 多工程师（工程师可跨站） */
+/** 站点管理：管理员任命正网格长；正网格长管理副网格长与工程师 */
 export default function SitesPage() {
-  const isAdmin = useAuthStore((state) => state.user?.role === 'super_admin');
+  const currentUser = useAuthStore((state) => state.user);
+  const isAdmin = currentUser?.role === 'super_admin';
+  const currentUserId = currentUser?.id;
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<SiteItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -145,13 +147,10 @@ export default function SitesPage() {
 
   const openAppoint = async (record: SiteItem) => {
     setAppointSite(record);
-    const res = await fetchUsers({ status: 'active', limit: 100 });
+    const res = await fetchUsers({ status: 'active', limit: 100, role: 'site_manager' });
     const candidates = res.list.filter((user) => {
       const roles = user.roles?.length ? user.roles : [user.role];
-      return (
-        !roles.includes('super_admin') &&
-        (roles.includes('site_manager') || roles.includes('inspector'))
-      );
+      return roles.includes('site_manager') && !roles.includes('super_admin');
     });
     setManagers(candidates);
     setManagerId(
@@ -226,16 +225,19 @@ export default function SitesPage() {
     .filter(Boolean)
     .join('、');
 
+  const canManageStaff =
+    !!staffSite && !!currentUserId && staffSite.managerId === currentUserId;
+
   const hasRole = (u: UserInfo, role: string) =>
     (u.roles?.length ? u.roles : [u.role]).includes(role as UserInfo['role']);
 
+  // 副网格长候选：非超管、非本站正网格长（任命时后端会自动赋予网格长角色）
   const deputyOptions = staffCandidates
-    .filter((u) => hasRole(u, 'site_manager'))
     .filter((u) => u.id !== staffSite?.managerId)
     .filter((u) => !deputies.some((d) => d.userId === u.id))
     .map((u) => ({
       value: u.id,
-      label: `${u.realName}（${u.username}）`,
+      label: `${u.realName}（${u.username} / ${hasRole(u, 'site_manager') ? '网格长' : '工程师'}）`,
     }));
 
   const inspectorOptions = staffCandidates
@@ -364,7 +366,7 @@ export default function SitesPage() {
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
         {regionHint
           ? `当前筛选：${regionHint} → 共 ${total} 个电站`
-          : `一站一名正网格长、多名副网格长；正/副网格长可聘多名工程师；工程师可跨多个站点`}
+          : `管理员任命正网格长；正网格长在本站设立副网格长与工程师。一站一名正网格长，工程师可跨站。`}
       </Typography.Paragraph>
 
       <Table
@@ -397,7 +399,7 @@ export default function SitesPage() {
         onOk={() => void submitAppoint()}
       >
         <Typography.Paragraph type="secondary">
-          每站仅一名正网格长。可从网格长账号或工程师中选择（选工程师将提升为网格长角色）。
+          每站仅一名正网格长。请先在「用户管理」创建网格长账号，再在此任命。
         </Typography.Paragraph>
         <Select
           showSearch
@@ -450,7 +452,9 @@ export default function SitesPage() {
           </Space>
         </div>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          同一账号可兼任正网格长和工程师：从电脑端网格长入口登录进入管理端，从手机端工程师入口登录进入巡检端。
+          {canManageStaff
+            ? '正网格长可在此设立副网格长与聘用工程师。同一账号可兼任网格长与工程师。'
+            : '仅本站正网格长可调整编制；当前为只读查看。'}
         </Typography.Paragraph>
         <Tabs
           items={[
@@ -459,20 +463,22 @@ export default function SitesPage() {
               label: `副网格长（${deputies.length}）`,
               children: (
                 <div>
-                  <Space style={{ marginBottom: 12 }} wrap>
-                    <Select
-                      showSearch
-                      style={{ width: 280 }}
-                      placeholder="选择网格长账号"
-                      value={pickDeputyId}
-                      onChange={setPickDeputyId}
-                      optionFilterProp="label"
-                      options={deputyOptions}
-                    />
-                    <Button type="primary" onClick={() => void onAddDeputy()}>
-                      添加副网格长
-                    </Button>
-                  </Space>
+                  {canManageStaff && (
+                    <Space style={{ marginBottom: 12 }} wrap>
+                      <Select
+                        showSearch
+                        style={{ width: 280 }}
+                        placeholder="选择账号"
+                        value={pickDeputyId}
+                        onChange={setPickDeputyId}
+                        optionFilterProp="label"
+                        options={deputyOptions}
+                      />
+                      <Button type="primary" onClick={() => void onAddDeputy()}>
+                        添加副网格长
+                      </Button>
+                    </Space>
+                  )}
                   <Table
                     rowKey="id"
                     size="small"
@@ -482,25 +488,29 @@ export default function SitesPage() {
                     columns={[
                       { title: '姓名', dataIndex: ['user', 'realName'] },
                       { title: '用户名', dataIndex: ['user', 'username'] },
-                      {
-                        title: '操作',
-                        width: 100,
-                        render: (_, r) => (
-                          <Popconfirm
-                            title="确认移除该副网格长？"
-                            onConfirm={async () => {
-                              if (!staffSite) return;
-                              await removeDeputy(staffSite.id, r.userId);
-                              message.success('已移除');
-                              await loadStaff(staffSite);
-                            }}
-                          >
-                            <Button type="link" danger>
-                              移除
-                            </Button>
-                          </Popconfirm>
-                        ),
-                      },
+                      ...(canManageStaff
+                        ? [
+                            {
+                              title: '操作',
+                              width: 100,
+                              render: (_: unknown, r: SiteMemberItem) => (
+                                <Popconfirm
+                                  title="确认移除该副网格长？"
+                                  onConfirm={async () => {
+                                    if (!staffSite) return;
+                                    await removeDeputy(staffSite.id, r.userId);
+                                    message.success('已移除');
+                                    await loadStaff(staffSite);
+                                  }}
+                                >
+                                  <Button type="link" danger>
+                                    移除
+                                  </Button>
+                                </Popconfirm>
+                              ),
+                            },
+                          ]
+                        : []),
                     ]}
                   />
                 </div>
@@ -511,20 +521,22 @@ export default function SitesPage() {
               label: `工程师（${inspectors.length}）`,
               children: (
                 <div>
-                  <Space style={{ marginBottom: 12 }} wrap>
-                    <Select
-                      showSearch
-                      style={{ width: 280 }}
-                      placeholder="选择工程师账号"
-                      value={pickInspectorId}
-                      onChange={setPickInspectorId}
-                      optionFilterProp="label"
-                      options={inspectorOptions}
-                    />
-                    <Button type="primary" onClick={() => void onAddInspector()}>
-                      聘用工程师
-                    </Button>
-                  </Space>
+                  {canManageStaff && (
+                    <Space style={{ marginBottom: 12 }} wrap>
+                      <Select
+                        showSearch
+                        style={{ width: 280 }}
+                        placeholder="选择工程师账号"
+                        value={pickInspectorId}
+                        onChange={setPickInspectorId}
+                        optionFilterProp="label"
+                        options={inspectorOptions}
+                      />
+                      <Button type="primary" onClick={() => void onAddInspector()}>
+                        聘用工程师
+                      </Button>
+                    </Space>
+                  )}
                   <Table
                     rowKey="id"
                     size="small"
@@ -534,25 +546,29 @@ export default function SitesPage() {
                     columns={[
                       { title: '姓名', dataIndex: ['user', 'realName'] },
                       { title: '用户名', dataIndex: ['user', 'username'] },
-                      {
-                        title: '操作',
-                        width: 100,
-                        render: (_, r) => (
-                          <Popconfirm
-                            title="确认解聘？不影响其在其他站点的任职"
-                            onConfirm={async () => {
-                              if (!staffSite) return;
-                              await removeSiteMember(staffSite.id, r.userId);
-                              message.success('已解聘');
-                              await loadStaff(staffSite);
-                            }}
-                          >
-                            <Button type="link" danger>
-                              解聘
-                            </Button>
-                          </Popconfirm>
-                        ),
-                      },
+                      ...(canManageStaff
+                        ? [
+                            {
+                              title: '操作',
+                              width: 100,
+                              render: (_: unknown, r: SiteMemberItem) => (
+                                <Popconfirm
+                                  title="确认解聘？不影响其在其他站点的任职"
+                                  onConfirm={async () => {
+                                    if (!staffSite) return;
+                                    await removeSiteMember(staffSite.id, r.userId);
+                                    message.success('已解聘');
+                                    await loadStaff(staffSite);
+                                  }}
+                                >
+                                  <Button type="link" danger>
+                                    解聘
+                                  </Button>
+                                </Popconfirm>
+                              ),
+                            },
+                          ]
+                        : []),
                     ]}
                   />
                 </div>

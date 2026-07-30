@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Button,
   Checkbox,
   Form,
@@ -11,6 +12,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Typography,
   message,
 } from 'antd';
 import { PlusOutlined, EditOutlined } from '@ant-design/icons';
@@ -28,10 +30,11 @@ import { useAuthStore } from '../../stores/auth';
 import type { UserInfo, SiteItem, UserRole, CommonStatus } from '../../types';
 import { ROLE_LABEL } from '../../types';
 
-/** 用户管理：网格长/工程师列表 + 人才池 Tab（聘用/解聘） */
+/** 用户管理：管理员只管网格长；正网格长管副网格长与工程师 */
 export default function UsersPage() {
   const currentUser = useAuthStore((s) => s.user);
   const isAdmin = currentUser?.role === 'super_admin';
+  const isSiteManager = currentUser?.role === 'site_manager';
 
   const [tab, setTab] = useState('list');
   const [loading, setLoading] = useState(false);
@@ -39,7 +42,7 @@ export default function UsersPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [keyword, setKeyword] = useState('');
-  const [role, setRole] = useState<UserRole | undefined>(isAdmin ? undefined : 'inspector');
+  const [role, setRole] = useState<UserRole | undefined>(undefined);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<UserInfo | null>(null);
@@ -49,19 +52,34 @@ export default function UsersPage() {
   const [pwdUser, setPwdUser] = useState<UserInfo | null>(null);
   const [pwdForm] = Form.useForm();
 
-  // 人才池
   const [poolLoading, setPoolLoading] = useState(false);
   const [pool, setPool] = useState<UserInfo[]>([]);
   const [poolTotal, setPoolTotal] = useState(0);
   const [poolPage, setPoolPage] = useState(1);
   const [poolKeyword, setPoolKeyword] = useState('');
 
-  // 聘用
   const [hireOpen, setHireOpen] = useState(false);
   const [hireUser, setHireUser] = useState<UserInfo | null>(null);
   const [sites, setSites] = useState<SiteItem[]>([]);
+  const [primarySites, setPrimarySites] = useState<SiteItem[]>([]);
   const [hireSiteId, setHireSiteId] = useState<string>();
   const [memberMap, setMemberMap] = useState<Record<string, string[]>>({});
+
+  const isPrimaryManager = primarySites.length > 0;
+  const canStaffAccounts = isAdmin || isPrimaryManager;
+
+  const loadPrimarySites = useCallback(async () => {
+    if (!isSiteManager || !currentUser?.id) {
+      setPrimarySites([]);
+      return;
+    }
+    const siteRes = await fetchSites({ limit: 100, status: 'active' });
+    setPrimarySites(siteRes.list.filter((s) => s.managerId === currentUser.id));
+  }, [isSiteManager, currentUser?.id]);
+
+  useEffect(() => {
+    void loadPrimarySites();
+  }, [loadPrimarySites]);
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -80,6 +98,7 @@ export default function UsersPage() {
   }, [page, keyword, role]);
 
   const loadPool = useCallback(async () => {
+    if (!isPrimaryManager) return;
     setPoolLoading(true);
     try {
       const res = await fetchInspectorPool({
@@ -90,11 +109,9 @@ export default function UsersPage() {
       setPool(res.list);
       setPoolTotal(res.total);
 
-      // 加载当前可管理站点及成员，用于解聘
-      const siteRes = await fetchSites({ limit: 100, status: 'active' });
-      setSites(siteRes.list);
+      setSites(primarySites);
       const map: Record<string, string[]> = {};
-      for (const site of siteRes.list) {
+      for (const site of primarySites) {
         const members = await fetchSiteMembers(site.id, 'inspector');
         map[site.id] = members.filter((m) => m.status === 'active').map((m) => m.userId);
       }
@@ -102,12 +119,22 @@ export default function UsersPage() {
     } finally {
       setPoolLoading(false);
     }
-  }, [poolPage, poolKeyword]);
+  }, [poolPage, poolKeyword, isPrimaryManager, primarySites]);
 
   useEffect(() => {
-    if (tab === 'list') loadList();
-    else loadPool();
-  }, [tab, loadList, loadPool]);
+    if (tab === 'list') void loadList();
+    else if (tab === 'pool' && isPrimaryManager) void loadPool();
+  }, [tab, loadList, loadPool, isPrimaryManager]);
+
+  const roleOptions = useMemo(() => {
+    if (isAdmin) {
+      return [{ value: 'site_manager', label: '网格长' }];
+    }
+    return [
+      { value: 'site_manager', label: '网格长（可任副网格长）' },
+      { value: 'inspector', label: '工程师' },
+    ];
+  }, [isAdmin]);
 
   const openCreate = () => {
     setEditing(null);
@@ -136,7 +163,6 @@ export default function UsersPage() {
       const updatePayload = { ...payload };
       delete updatePayload.username;
       delete updatePayload.password;
-      if (!isAdmin) delete updatePayload.roles;
       await updateUser(editing.id, updatePayload);
       message.success('用户已更新');
     } else {
@@ -144,14 +170,14 @@ export default function UsersPage() {
       message.success('用户已创建');
     }
     setModalOpen(false);
-    loadList();
+    void loadList();
   };
 
   const toggleStatus = async (record: UserInfo) => {
     const next: CommonStatus = record.status === 'active' ? 'inactive' : 'active';
     await updateUserStatus(record.id, next);
     message.success(next === 'active' ? '已启用' : '已停用');
-    loadList();
+    void loadList();
   };
 
   const submitPwd = async () => {
@@ -164,7 +190,7 @@ export default function UsersPage() {
 
   const openHire = (user: UserInfo) => {
     setHireUser(user);
-    setHireSiteId(sites[0]?.id);
+    setHireSiteId(primarySites[0]?.id);
     setHireOpen(true);
   };
 
@@ -173,13 +199,13 @@ export default function UsersPage() {
     await addSiteMember(hireSiteId, hireUser.id);
     message.success('聘用成功');
     setHireOpen(false);
-    loadPool();
+    void loadPool();
   };
 
   const doFire = async (userId: string, siteId: string) => {
     await removeSiteMember(siteId, userId);
     message.success('已解聘');
-    loadPool();
+    void loadPool();
   };
 
   const listColumns: ColumnsType<UserInfo> = [
@@ -220,31 +246,34 @@ export default function UsersPage() {
       title: '操作',
       width: 260,
       fixed: 'right',
-      render: (_, record) => (
-        <Space wrap>
-          <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(record)}>
-            编辑
-          </Button>
-          <Button
-            type="link"
-            onClick={() => {
-              setPwdUser(record);
-              pwdForm.resetFields();
-              setPwdOpen(true);
-            }}
-          >
-            重置密码
-          </Button>
-          <Popconfirm
-            title={`确认${record.status === 'active' ? '停用' : '启用'}该用户？`}
-            onConfirm={() => toggleStatus(record)}
-          >
-            <Button type="link" danger={record.status === 'active'}>
-              {record.status === 'active' ? '停用' : '启用'}
+      render: (_, record) =>
+        canStaffAccounts ? (
+          <Space wrap>
+            <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(record)}>
+              编辑
             </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            <Button
+              type="link"
+              onClick={() => {
+                setPwdUser(record);
+                pwdForm.resetFields();
+                setPwdOpen(true);
+              }}
+            >
+              重置密码
+            </Button>
+            <Popconfirm
+              title={`确认${record.status === 'active' ? '停用' : '启用'}该用户？`}
+              onConfirm={() => void toggleStatus(record)}
+            >
+              <Button type="link" danger={record.status === 'active'}>
+                {record.status === 'active' ? '停用' : '启用'}
+              </Button>
+            </Popconfirm>
+          </Space>
+        ) : (
+          <Typography.Text type="secondary">只读</Typography.Text>
+        ),
     },
   ];
 
@@ -276,7 +305,7 @@ export default function UsersPage() {
               <Popconfirm
                 key={s.id}
                 title={`确认从「${s.name}」解聘？`}
-                onConfirm={() => doFire(record.id, s.id)}
+                onConfirm={() => void doFire(record.id, s.id)}
               >
                 <Button size="small" danger>
                   解聘·{s.name}
@@ -289,16 +318,27 @@ export default function UsersPage() {
     },
   ];
 
+  const tabItems = [
+    { key: 'list', label: '用户列表' },
+    ...(isPrimaryManager ? [{ key: 'pool', label: '人才池' }] : []),
+  ];
+
   return (
     <div>
-      <Tabs
-        activeKey={tab}
-        onChange={setTab}
-        items={[
-          { key: 'list', label: '用户列表' },
-          { key: 'pool', label: '人才池' },
-        ]}
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 12 }}
+        message={
+          isAdmin
+            ? '管理员只创建网格长账号，并在「站点管理」中任命为正网格长。工程师由正网格长创建与聘用。'
+            : isPrimaryManager
+              ? '正网格长可创建副网格长（网格长角色）与工程师，并在本站「人员」或人才池中任命/聘用。'
+              : '副网格长可查看本区域人员，账号编制由正网格长管理。'
+        }
       />
+
+      <Tabs activeKey={tab} onChange={setTab} items={tabItems} />
 
       {tab === 'list' ? (
         <>
@@ -312,26 +352,32 @@ export default function UsersPage() {
               }}
               style={{ width: 240 }}
             />
-            {isAdmin && (
-              <Select
-                allowClear
-                placeholder="角色"
-                style={{ width: 140 }}
-                value={role}
-                onChange={(v) => {
-                  setPage(1);
-                  setRole(v);
-                }}
-                options={[
-                  { value: 'site_manager', label: '网格长' },
-                  { value: 'inspector', label: '工程师' },
-                  { value: 'super_admin', label: '超级管理员' },
-                ]}
-              />
+            <Select
+              allowClear
+              placeholder="角色"
+              style={{ width: 140 }}
+              value={role}
+              onChange={(v) => {
+                setPage(1);
+                setRole(v);
+              }}
+              options={
+                isAdmin
+                  ? [
+                      { value: 'site_manager', label: '网格长' },
+                      { value: 'super_admin', label: '超级管理员' },
+                    ]
+                  : [
+                      { value: 'site_manager', label: '网格长' },
+                      { value: 'inspector', label: '工程师' },
+                    ]
+              }
+            />
+            {canStaffAccounts && (
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                新增用户
+              </Button>
             )}
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-              新增用户
-            </Button>
           </Space>
           <Table
             rowKey="id"
@@ -374,7 +420,7 @@ export default function UsersPage() {
         title={editing ? '编辑用户' : '新增用户'}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
-        onOk={submitUser}
+        onOk={() => void submitUser()}
         destroyOnClose
       >
         <Form form={form} layout="vertical">
@@ -417,19 +463,13 @@ export default function UsersPage() {
             name="roles"
             label="角色（可多选）"
             rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个角色' }]}
-            extra="可同时勾选网格长和工程师：电脑登录管理端，手机登录巡检端"
+            extra={
+              isAdmin
+                ? '管理员仅创建网格长账号'
+                : '可同时勾选网格长和工程师：电脑登录管理端，手机登录巡检端'
+            }
           >
-            <Checkbox.Group
-              disabled={!isAdmin}
-              options={
-                isAdmin
-                  ? [
-                      { value: 'site_manager', label: '网格长（含可任副网格长）' },
-                      { value: 'inspector', label: '工程师' },
-                    ]
-                  : [{ value: 'inspector', label: '工程师' }]
-              }
-            />
+            <Checkbox.Group options={roleOptions} />
           </Form.Item>
           <Form.Item name="region" label="归属区域">
             <Select
@@ -454,7 +494,7 @@ export default function UsersPage() {
         title={`重置密码 - ${pwdUser?.realName || ''}`}
         open={pwdOpen}
         onCancel={() => setPwdOpen(false)}
-        onOk={submitPwd}
+        onOk={() => void submitPwd()}
       >
         <Form form={pwdForm} layout="vertical">
           <Form.Item
@@ -471,14 +511,14 @@ export default function UsersPage() {
         title={`聘用工程师 - ${hireUser?.realName || ''}`}
         open={hireOpen}
         onCancel={() => setHireOpen(false)}
-        onOk={submitHire}
+        onOk={() => void submitHire()}
       >
         <Select
           style={{ width: '100%' }}
-          placeholder="选择站点"
+          placeholder="选择本站（正网格长站点）"
           value={hireSiteId}
           onChange={setHireSiteId}
-          options={sites.map((s) => ({ value: s.id, label: `${s.name}（${s.code}）` }))}
+          options={primarySites.map((s) => ({ value: s.id, label: `${s.name}（${s.code}）` }))}
         />
       </Modal>
     </div>

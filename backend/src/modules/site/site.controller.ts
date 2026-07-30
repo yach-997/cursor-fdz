@@ -83,9 +83,9 @@ export class SiteController {
     return this.siteService.appointManager(id, dto);
   }
 
-  /** 任命副网格长（超管或正网格长） */
+  /** 任命副网格长（仅本站正网格长） */
   @Post(':id/deputies')
-  @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
+  @Roles(UserRole.SITE_MANAGER)
   async appointDeputy(
     @Param('id', ParsePostgresUuidPipe) id: string,
     @Body() dto: AppointDeputyDto,
@@ -94,9 +94,9 @@ export class SiteController {
     return this.siteService.appointDeputy(id, dto, user);
   }
 
-  /** 移除副网格长 */
+  /** 移除副网格长（仅本站正网格长） */
   @Delete(':id/deputies/:userId')
-  @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
+  @Roles(UserRole.SITE_MANAGER)
   @HttpCode(HttpStatus.OK)
   async removeDeputy(
     @Param('id', ParsePostgresUuidPipe) id: string,
@@ -117,9 +117,9 @@ export class SiteController {
     return this.siteService.getMembers(id, user, role);
   }
 
-  /** 聘用工程师（超管/正网格长/副网格长；工程师可同时属于多个站点） */
+  /** 聘用工程师（仅本站正网格长；工程师可同时属于多个站点） */
   @Post(':id/members')
-  @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
+  @Roles(UserRole.SITE_MANAGER)
   async addMember(
     @Param('id', ParsePostgresUuidPipe) id: string,
     @Body() dto: AddMemberDto,
@@ -128,9 +128,9 @@ export class SiteController {
     return this.siteService.addMember(id, dto, user);
   }
 
-  /** 解聘工程师 */
+  /** 解聘工程师（仅本站正网格长） */
   @Delete(':id/members/:userId')
-  @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
+  @Roles(UserRole.SITE_MANAGER)
   @HttpCode(HttpStatus.OK)
   async removeMember(
     @Param('id', ParsePostgresUuidPipe) id: string,
