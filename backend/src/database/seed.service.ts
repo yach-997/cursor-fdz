@@ -116,7 +116,8 @@ export class DatabaseSeedService implements OnModuleInit {
           },
           {
             name: '接地安装检查',
-            description: '必检。检查接地线连接可靠、接地电阻与标识符合要求。',
+            description:
+              '必检硬性项。现场照片须同时清晰看到：①黄绿双色接地线；②接地排或接地端子；③接地标识。三样缺一样即不合格；不可仅凭箱体外观或相线色环判定合格。',
           },
         ],
       },
