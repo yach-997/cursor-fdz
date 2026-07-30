@@ -36,6 +36,16 @@ const RESULT_LABEL: Record<string, string> = {
   error: 'AI失败·待人工',
 };
 
+/** 故障记录项：必须实时+历史两类截图 */
+function isFaultRecordItem(tpl?: { name?: string; description?: string } | null) {
+  const text = `${tpl?.name || ''}\n${tpl?.description || ''}`;
+  return /上传故障|故障记录|实时故障|历史故障/.test(text);
+}
+
+function minPhotosRequired(tpl?: { name?: string; description?: string } | null) {
+  return isFaultRecordItem(tpl) ? 2 : 1;
+}
+
 interface LiveLocationProof {
   gps: string;
   accuracy: string;
@@ -706,8 +716,14 @@ export default function InspectionPage() {
         tpl.isOptionalModule || (tpl.isRequired !== false && !tpl.isOptionalModule);
       if (!must) continue;
       const entry = record.entries.find((e) => e.templateEntryId === tpl.id);
-      if (!entry?.photos?.length) {
-        missing.push(`「${tpl.name}」未拍照`);
+      const need = minPhotosRequired(tpl);
+      const count = entry?.photos?.length || 0;
+      if (count < need) {
+        missing.push(
+          need > 1
+            ? `「${tpl.name}」须上传实时故障与历史故障截图（至少 ${need} 张，当前 ${count} 张）`
+            : `「${tpl.name}」未拍照`,
+        );
       }
     }
     return missing;
@@ -721,8 +737,14 @@ export default function InspectionPage() {
     const mustPhoto =
       !!currentTpl &&
       (currentTpl.isOptionalModule || currentTpl.isRequired !== false);
-    if (mustPhoto && !(currentEntry?.photos || []).length) {
-      Toast.info('请先上传本项照片');
+    const need = minPhotosRequired(currentTpl);
+    const count = currentEntry?.photos?.length || 0;
+    if (mustPhoto && count < need) {
+      Toast.info(
+        need > 1
+          ? `本项须同时上传实时故障与历史故障截图（至少 ${need} 张）`
+          : '请先上传本项照片',
+      );
       return;
     }
     void handleSaveDraft(true);
@@ -738,8 +760,14 @@ export default function InspectionPage() {
     const mustCurrent =
       !!currentTpl &&
       (currentTpl.isOptionalModule || currentTpl.isRequired !== false);
-    if (mustCurrent && !(currentEntry?.photos || []).length) {
-      Toast.info('请先上传本项照片');
+    const needCurrent = minPhotosRequired(currentTpl);
+    const countCurrent = currentEntry?.photos?.length || 0;
+    if (mustCurrent && countCurrent < needCurrent) {
+      Toast.info(
+        needCurrent > 1
+          ? `本项须同时上传实时故障与历史故障截图（至少 ${needCurrent} 张）`
+          : '请先上传本项照片',
+      );
       return;
     }
     const missing = requiredIncomplete();
@@ -1189,7 +1217,10 @@ export default function InspectionPage() {
               <div className="inspection-media-section inspection-photo-section">
                 <div className="inspection-media-heading">
                   <span>现场照片</span>
-                  <small>{(currentEntry?.photos || []).length} 张已保存</small>
+                  <small>
+                    {(currentEntry?.photos || []).length} 张已保存
+                    {isFaultRecordItem(currentTpl) ? '（须含实时+历史，至少 2 张）' : ''}
+                  </small>
                 </div>
                 <div className="inspection-photo-grid">
                   {(currentEntry?.photos || []).map((url, idx) => (
@@ -1335,7 +1366,9 @@ export default function InspectionPage() {
                 </div>
                 <div className="inspection-upload-tip">
                   {locationStatus === 'verified'
-                    ? '定位已通过：相册可一次多选；现场拍照仍单张拍摄'
+                    ? isFaultRecordItem(currentTpl)
+                      ? '定位已通过：请分别上传「实时故障」与「历史故障」截图（可相册多选），缺一类 AI 将判不合格'
+                      : '定位已通过：相册可一次多选；现场拍照仍单张拍摄'
                     : '请先完成现场定位；定位通过后才可选择照片或拍照'}
                 </div>
               </div>

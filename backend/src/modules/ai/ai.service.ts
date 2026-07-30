@@ -98,6 +98,15 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
       .join('\n')
       .slice(0, 800);
 
+    if (
+      /上传故障|故障记录|实时故障|历史故障/.test(checkCriteria) &&
+      photoUrls.length < 2
+    ) {
+      throw new BadRequestException(
+        '「上传故障记录」须同时上传实时故障与历史故障两类截图（至少 2 张）后再分析',
+      );
+    }
+
     // 标记 pending
     entry.aiResult = {
       status: CheckResult.PENDING,

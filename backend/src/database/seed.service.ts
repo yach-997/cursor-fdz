@@ -100,7 +100,8 @@ export class DatabaseSeedService implements OnModuleInit {
           },
           {
             name: '上传故障记录',
-            description: '必检。上传历史故障记录与实时故障/告警信息截图或照片。',
+            description:
+              '必检硬性项。须同时上传两类截图供 AI 分析：①实时故障/告警页；②历史故障/告警页。只传一张或只传同一类，判定不合格。',
           },
           {
             name: '安装固定检查',
@@ -131,7 +132,8 @@ export class DatabaseSeedService implements OnModuleInit {
           },
           {
             name: '上传故障记录',
-            description: '必检。上传历史故障记录与实时故障/告警信息截图或照片。',
+            description:
+              '必检硬性项。须同时上传两类截图供 AI 分析：①实时故障/告警页；②历史故障/告警页。只传一张或只传同一类，判定不合格。',
           },
           {
             name: '设备箱体检查',

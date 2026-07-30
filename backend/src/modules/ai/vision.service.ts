@@ -100,6 +100,19 @@ export class VisionService {
       const criteria = String(checkCriteria || '').trim();
       const remark = String(options?.remark || '').trim();
       const grounding = this.isGroundingCheck(criteria);
+      const faultRecord = this.isFaultRecordCheck(criteria);
+
+      // 故障记录：未凑齐至少 2 张就不调用模型，直接不合格
+      if (faultRecord && photoInputs.length < 2) {
+        return {
+          status: CheckResult.FAIL,
+          confidence: 0.98,
+          reason:
+            '须同时上传「实时故障」与「历史故障」两类截图（至少 2 张），当前张数不足，请补拍后再分析。',
+          provider: 'siliconflow',
+        };
+      }
+
       const content: Array<Record<string, unknown>> = [
         {
           type: 'text',
@@ -109,27 +122,26 @@ export class VisionService {
             '判定原则：',
             '1) 多张现场照是互补证据：某一张拍到关键信息即可，不必每张都与样本长得一模一样；',
             '2) 样本图只作版式/角度参考，禁止把样本图里的文字、告警、缺陷当成现场证据；',
-            grounding
-              ? '3) 【本项例外】接地检查为硬性否决，拿不准或缺证据必须 fail，禁止“看起来大概合格就 pass”。'
+            grounding || faultRecord
+              ? '3) 【本项例外】硬性否决项：拿不准或缺证据必须 fail，禁止“看起来大概合格就 pass”。'
               : '3) 仅当现场照片本身关键缺陷明确、或关键要求明显缺失时才判 fail；拿不准时优先 pass，并在 reason 说明存疑点；',
             '4) 证据越充分（多角度覆盖）越应提高 confidence。',
-            '故障/告警截图专项（本项通常需要「实时故障」+「历史故障」两类截图）：',
-            '- 先识别现场图分别属于：实时故障页 / 历史故障页 / 其他；两类都有时综合判定，缺一类可在 reason 提示补拍，但不因此直接 fail；',
-            '- 合格主依据是「实时故障」：显示「暂无数据」、空列表或无未恢复严重告警 → 应判 pass；',
-            '- 「历史故障」样本/现场图里出现过的历史告警文字，仅说明曾有记录，不单独构成不合格；',
-            '- 仅当实时页仍有未恢复的严重告警，且工程师备注未说明处置时，才可判 fail；',
-            '- 样本图：第1张常为实时合格示例，第2张常为历史页版式示例；严禁把样本中的告警内容当成现场正在告警。',
+            faultRecord ? this.faultRecordHardRules() : this.faultRecordSoftHint(),
             grounding ? this.groundingHardRules() : '',
             criteria ? `检查要求：\n${criteria}` : '未提供文字检查要求时，按通用现场质检规范判断。',
             remark ? `工程师备注：${remark}` : '工程师备注：无',
             '只输出 JSON（不要 Markdown）：',
             grounding
               ? '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"yellowGreenWire":true|false,"groundBarOrTerminal":true|false,"groundLabel":true|false}}'
-              : '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明"}',
+              : faultRecord
+                ? '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"hasRealtimeFaultShot":true|false,"hasHistoricalFaultShot":true|false,"realtimeHasActiveAlarm":true|false}}'
+                : '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明"}',
             sampleInputs.length
               ? grounding
                 ? '已提供合格样本，仅作角度/构图参考；现场照仍必须独立满足三项接地证据，不可因样本存在而放宽。'
-                : '已提供合格样本，请作版式参考，不要过度苛刻。'
+                : faultRecord
+                  ? '已提供合格样本，第1张多为实时页版式、第2张多为历史页版式；现场仍须各自上传对应截图，不可因样本存在而放宽。'
+                  : '已提供合格样本，请作版式参考，不要过度苛刻。'
               : '无样本时根据检查要求与通用安装规范给出建议结论。',
           ]
             .filter(Boolean)
@@ -150,7 +162,7 @@ export class VisionService {
 
       for (let i = 0; i < sampleInputs.length; i += 1) {
         const sampleLabel =
-          /故障|告警/.test(criteria) && sampleInputs.length >= 2
+          (faultRecord || /故障|告警/.test(criteria)) && sampleInputs.length >= 2
             ? i === 0
               ? '【合格样本-实时故障页版式】'
               : i === 1
@@ -205,7 +217,9 @@ export class VisionService {
       }
       const enforced = grounding
         ? this.enforceGroundingResult(parsed, raw)
-        : parsed;
+        : faultRecord
+          ? this.enforceFaultRecordResult(parsed, raw, photoInputs.length)
+          : parsed;
       return { ...enforced, provider: 'siliconflow' };
     } catch (err) {
       this.logger.warn(`Vision 请求异常: ${(err as Error).message}`);
@@ -271,6 +285,126 @@ export class VisionService {
 
   private isGroundingCheck(criteria: string) {
     return /接地/.test(criteria);
+  }
+
+  private isFaultRecordCheck(criteria: string) {
+    return /上传故障|故障记录|故障\/告警|实时故障|历史故障/.test(criteria);
+  }
+
+  /** 非故障专项时的弱提示，避免误伤其他检查项 */
+  private faultRecordSoftHint() {
+    return [
+      '若本项明显不是故障/告警截图检查，可忽略本段。',
+      '若涉及故障页截图：请区分实时故障页与历史故障页；勿把历史告警当成当前告警。',
+    ].join('\n');
+  }
+
+  private faultRecordHardRules() {
+    return [
+      '【上传故障记录·硬性否决 — 覆盖通用“拿不准优先 pass”】',
+      '现场照片必须同时包含两类截图，缺一类 → status 必须为 fail：',
+      'A) 实时故障页截图：界面含「实时故障/实时告警」等字样，或可明确识别为实时故障列表页；',
+      'B) 历史故障页截图：界面含「历史故障/历史告警」等字样，或可明确识别为历史故障列表页。',
+      '仅上传一张、两张都是同一类、或无法识别为上述两类 → fail，reason 写明缺哪一类。',
+      '判定内容（两类都齐之后）：',
+      '- 实时页显示「暂无数据」、空列表或无未恢复严重告警 → 可判 pass；',
+      '- 历史页有过往告警文字，仅说明曾有记录，不单独构成不合格；',
+      '- 仅当实时页仍有未恢复严重告警，且工程师备注未说明处置 → fail；',
+      '- 严禁把样本图或历史页里的告警文字当成现场正在告警。',
+      'evidence 要求：hasRealtimeFaultShot / hasHistoricalFaultShot 为是否拍到对应页；realtimeHasActiveAlarm 为实时页是否仍有未恢复严重告警。',
+      '仅当两类截图都在（两项 has* 均为 true）且 realtimeHasActiveAlarm=false 时才允许 pass。',
+    ].join('\n');
+  }
+
+  /** 服务端强制：实时+历史双截图，缺一不可 */
+  private enforceFaultRecordResult(
+    parsed: Omit<VisionCompareResult, 'provider'>,
+    raw: string,
+    photoCount: number,
+  ): Omit<VisionCompareResult, 'provider'> {
+    if (photoCount < 2) {
+      return {
+        status: CheckResult.FAIL,
+        confidence: 0.98,
+        reason:
+          '须同时上传「实时故障」与「历史故障」两类截图（至少 2 张），当前张数不足，请补拍后再分析。',
+      };
+    }
+
+    const evidence = this.parseFaultRecordEvidence(raw);
+    const missing: string[] = [];
+    if (!evidence.hasRealtimeFaultShot) missing.push('实时故障截图');
+    if (!evidence.hasHistoricalFaultShot) missing.push('历史故障截图');
+
+    if (missing.length > 0) {
+      const detail = evidence.reported
+        ? `现场未见：${missing.join('、')}`
+        : `模型未逐项确认双页截图（视为缺失：${missing.join('、')}）`;
+      return {
+        status: CheckResult.FAIL,
+        confidence: Math.min(parsed.confidence, 0.95),
+        reason: `${detail}。上传故障记录须同时包含实时故障与历史故障两类截图，缺一不合格。`,
+      };
+    }
+
+    if (evidence.realtimeHasActiveAlarm) {
+      return {
+        status: CheckResult.FAIL,
+        confidence: Math.max(parsed.confidence, 0.85),
+        reason:
+          parsed.reason ||
+          '实时故障页仍有未恢复严重告警，判定不合格；请处理告警或在备注说明处置情况后重拍。',
+      };
+    }
+
+    if (parsed.status === CheckResult.PASS) {
+      return {
+        ...parsed,
+        reason:
+          parsed.reason ||
+          '已同时上传实时故障与历史故障截图；实时页无未恢复严重告警，合格。',
+      };
+    }
+    return parsed;
+  }
+
+  private parseFaultRecordEvidence(raw: string): {
+    hasRealtimeFaultShot: boolean;
+    hasHistoricalFaultShot: boolean;
+    realtimeHasActiveAlarm: boolean;
+    reported: boolean;
+  } {
+    const empty = {
+      hasRealtimeFaultShot: false,
+      hasHistoricalFaultShot: false,
+      realtimeHasActiveAlarm: false,
+      reported: false,
+    };
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return empty;
+    try {
+      const obj = JSON.parse(match[0]) as {
+        evidence?: Record<string, unknown>;
+      };
+      const ev = obj.evidence;
+      if (!ev || typeof ev !== 'object') return empty;
+      const asBool = (v: unknown) =>
+        v === true || v === 'true' || v === 1 || v === '1';
+      return {
+        hasRealtimeFaultShot: asBool(
+          ev.hasRealtimeFaultShot ?? ev.实时故障 ?? ev.实时故障截图,
+        ),
+        hasHistoricalFaultShot: asBool(
+          ev.hasHistoricalFaultShot ?? ev.历史故障 ?? ev.历史故障截图,
+        ),
+        realtimeHasActiveAlarm: asBool(
+          ev.realtimeHasActiveAlarm ?? ev.实时仍有告警 ?? ev.有未恢复告警,
+        ),
+        reported: true,
+      };
+    } catch {
+      return empty;
+    }
   }
 
   private groundingHardRules() {
