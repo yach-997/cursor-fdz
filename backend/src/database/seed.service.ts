@@ -97,7 +97,7 @@ export class DatabaseSeedService implements OnModuleInit {
           {
             name: '上传阳光云截图',
             description:
-              '必检硬性项。须上传完整阳光云页面截图（不可半截），画面须清晰包含设备序列号；请对照合格样本的完整版式。',
+              '必检硬性项。须上传与合格样本同级的完整阳光云页面截图（含设备信息与序列号，不可半截/只截功率数字）；半截图不合格。',
           },
           {
             name: '上传故障记录',
@@ -133,7 +133,7 @@ export class DatabaseSeedService implements OnModuleInit {
           {
             name: '上传阳光云截图',
             description:
-              '必检硬性项。须上传完整阳光云页面截图（不可半截），画面须清晰包含设备序列号；请对照合格样本的完整版式。',
+              '必检硬性项。须上传与合格样本同级的完整阳光云页面截图（含设备信息与序列号，不可半截/只截功率数字）；半截图不合格。',
           },
           {
             name: '上传故障记录',

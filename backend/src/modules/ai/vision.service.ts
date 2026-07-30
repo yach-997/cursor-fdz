@@ -259,11 +259,11 @@ export class VisionService {
         : faultRecord
           ? this.enforceFaultRecordResult(parsed, raw, photoInputs.length)
           : sungrowShot
-            ? this.enforceSungrowShotResult(parsed, raw)
+            ? this.enforceSungrowShotResult(parsed, raw, sampleInputs.length)
             : mountFix
               ? this.enforceMountFixResult(parsed, raw, photoInputs.length)
               : dcSide
-                ? this.enforceDcSideResult(parsed, raw)
+                ? this.enforceDcSideResult(parsed, raw, sampleInputs.length)
                 : acSide
                   ? this.enforceAcSideResult(parsed, raw)
                   : parsed;
@@ -401,7 +401,7 @@ export class VisionService {
       return `${n}请仔细寻找黄绿双色线、PE/接地端子与 PE 丝印，即使线很细也要辨认`;
     }
     if (opts.sungrowShot) {
-      return `${n}请判断截图是否完整（非半截）、序列号是否清晰可见`;
+      return `${n}请严格对照样本：是否完整 App 截图（含设备头图/序列号），禁止只拍功率数字半截`;
     }
     if (opts.mountFix) {
       return `${n}请判断能否看到支架/螺栓等固定点；仅侧面远景通常不足`;
@@ -426,11 +426,18 @@ export class VisionService {
   private sungrowShotHardRules() {
     return [
       '【上传阳光云截图·硬性否决】',
-      '必须对照合格样本：现场截图应是完整手机/App 界面，不能只剩上半截或下半截。',
-      'screenshotComplete=false 的典型情况：画面被裁切、关键区域缺失、只能看到部分数据卡片、看不到完整页面结构。',
-      'serialNumberVisible：须能清晰看到设备序列号（SN/序列号等）；看不见 → fail。',
-      'matchesSampleLayout：与样本相比，关键信息区应大致同级完整；半截图即使部分数字可读也 fail。',
-      '仅当 screenshotComplete、serialNumberVisible 均为 true 才允许 pass。',
+      '必须严格对照合格样本的完整度，禁止“有几个功率数字就算完整”。',
+      'screenshotComplete=true 的最低要求（现场照片像素内须同时具备）：',
+      '1) 顶部设备信息区：机型/设备名、运行状态，且能读到序列号（S/N、序列号等）；',
+      '2) 中部关键运行数据区；',
+      '3) 能看出是完整 App 页面结构（如顶栏或底栏导航），不是从屏幕中间抠出来的局部卡片。',
+      'screenshotComplete=false（必须 fail）典型情况：',
+      '- 只有功率/电量四宫格数字，看不到序列号与设备头图；',
+      '- 明显半截、左右或上下被裁切，与样本完整手机截图差很多；',
+      '- 画面像局部放大/二次裁剪，缺少样本中同级的页面元素。',
+      'serialNumberVisible：序列号必须在现场图中清晰可读，禁止根据样本或想象补全；看不见 → false。',
+      'matchesSampleLayout：有合格样本时，现场完整度须与样本同级；样本是整屏而现场是半截/局部 → false。',
+      '仅当 screenshotComplete、serialNumberVisible 均为 true，且（无样本或 matchesSampleLayout=true）才允许 pass。',
     ].join('\n');
   }
 
@@ -516,19 +523,33 @@ export class VisionService {
   private enforceSungrowShotResult(
     parsed: Omit<VisionCompareResult, 'provider'>,
     raw: string,
+    sampleCount: number,
   ): Omit<VisionCompareResult, 'provider'> {
     const { values, reported } = this.parseBoolEvidence(raw, [
       'screenshotComplete',
       'serialNumberVisible',
       'matchesSampleLayout',
     ]);
+    const text = `${parsed.reason || ''} ${raw}`;
+    // 文案自相矛盾：一边说半截/裁切，一边又给 complete=true → 强制否决
+    if (
+      values.screenshotComplete &&
+      /半截|裁切|不完整|只有.*数字|局部|差很多|看不到序列号|未见序列号/.test(text)
+    ) {
+      values.screenshotComplete = false;
+    }
     const missing: string[] = [];
-    if (!values.screenshotComplete) missing.push('完整截图（当前疑似半截/裁切）');
-    if (!values.serialNumberVisible) missing.push('清晰设备序列号');
+    if (!values.screenshotComplete) {
+      missing.push('完整阳光云页面（不可半截/局部裁切）');
+    }
+    if (!values.serialNumberVisible) missing.push('清晰可读的设备序列号');
+    if (sampleCount > 0 && !values.matchesSampleLayout) {
+      missing.push('与合格样本同级的完整版式');
+    }
     return this.enforceEvidencePass(
       parsed,
       missing,
-      '阳光云截图完整且序列号清晰可见，合格。',
+      '阳光云截图完整、序列号清晰，且与样本版式匹配，合格。',
       reported,
     );
   }
@@ -565,6 +586,7 @@ export class VisionService {
   private enforceDcSideResult(
     parsed: Omit<VisionCompareResult, 'provider'>,
     raw: string,
+    sampleCount: number,
   ): Omit<VisionCompareResult, 'provider'> {
     const { values, reported } = this.parseBoolEvidence(raw, [
       'connectorsIntact',
@@ -576,6 +598,9 @@ export class VisionService {
       missing.push('未使用端子防护盖（裸露未盖不合格）');
     }
     if (!values.connectorsIntact) missing.push('直流接头完好插接到位');
+    if (sampleCount > 0 && !values.matchesSampleProtection) {
+      missing.push('与合格样本一致的端子防护状态');
+    }
     return this.enforceEvidencePass(
       parsed,
       missing,
