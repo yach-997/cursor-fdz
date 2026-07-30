@@ -106,6 +106,11 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
         '「上传故障记录」须同时上传实时故障与历史故障两类截图（至少 2 张）后再分析',
       );
     }
+    if (/安装固定|支架|墙挂固定/.test(checkCriteria) && photoUrls.length < 2) {
+      throw new BadRequestException(
+        '「安装固定检查」须至少上传 2 张不同角度照片后再分析',
+      );
+    }
 
     // 标记 pending
     entry.aiResult = {

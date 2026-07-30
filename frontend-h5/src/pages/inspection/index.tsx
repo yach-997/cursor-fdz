@@ -42,8 +42,15 @@ function isFaultRecordItem(tpl?: { name?: string; description?: string } | null)
   return /上传故障|故障记录|实时故障|历史故障/.test(text);
 }
 
+/** 安装固定：至少两张不同角度 */
+function isMountFixItem(tpl?: { name?: string; description?: string } | null) {
+  const text = `${tpl?.name || ''}\n${tpl?.description || ''}`;
+  return /安装固定|支架|墙挂固定/.test(text);
+}
+
 function minPhotosRequired(tpl?: { name?: string; description?: string } | null) {
-  return isFaultRecordItem(tpl) ? 2 : 1;
+  if (isFaultRecordItem(tpl) || isMountFixItem(tpl)) return 2;
+  return 1;
 }
 
 interface LiveLocationProof {
@@ -721,7 +728,9 @@ export default function InspectionPage() {
       if (count < need) {
         missing.push(
           need > 1
-            ? `「${tpl.name}」须上传实时故障与历史故障截图（至少 ${need} 张，当前 ${count} 张）`
+            ? isFaultRecordItem(tpl)
+              ? `「${tpl.name}」须上传实时故障与历史故障截图（至少 ${need} 张，当前 ${count} 张）`
+              : `「${tpl.name}」须拍摄至少 ${need} 个不同角度（当前 ${count} 张）`
             : `「${tpl.name}」未拍照`,
         );
       }
@@ -742,7 +751,9 @@ export default function InspectionPage() {
     if (mustPhoto && count < need) {
       Toast.info(
         need > 1
-          ? `本项须同时上传实时故障与历史故障截图（至少 ${need} 张）`
+          ? isFaultRecordItem(currentTpl)
+            ? `本项须同时上传实时故障与历史故障截图（至少 ${need} 张）`
+            : `本项须拍摄至少 ${need} 个不同角度照片`
           : '请先上传本项照片',
       );
       return;
@@ -765,7 +776,9 @@ export default function InspectionPage() {
     if (mustCurrent && countCurrent < needCurrent) {
       Toast.info(
         needCurrent > 1
-          ? `本项须同时上传实时故障与历史故障截图（至少 ${needCurrent} 张）`
+          ? isFaultRecordItem(currentTpl)
+            ? `本项须同时上传实时故障与历史故障截图（至少 ${needCurrent} 张）`
+            : `本项须拍摄至少 ${needCurrent} 个不同角度照片`
           : '请先上传本项照片',
       );
       return;
@@ -1219,7 +1232,11 @@ export default function InspectionPage() {
                   <span>现场照片</span>
                   <small>
                     {(currentEntry?.photos || []).length} 张已保存
-                    {isFaultRecordItem(currentTpl) ? '（须含实时+历史，至少 2 张）' : ''}
+                    {isFaultRecordItem(currentTpl)
+                      ? '（须含实时+历史，至少 2 张）'
+                      : isMountFixItem(currentTpl)
+                        ? '（须多角度，至少 2 张）'
+                        : ''}
                   </small>
                 </div>
                 <div className="inspection-photo-grid">

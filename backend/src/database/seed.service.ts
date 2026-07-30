@@ -96,7 +96,8 @@ export class DatabaseSeedService implements OnModuleInit {
         entries: [
           {
             name: '上传阳光云截图',
-            description: '必检。请上传阳光云页面截图，截图中须清晰包含设备序列号。',
+            description:
+              '必检硬性项。须上传完整阳光云页面截图（不可半截），画面须清晰包含设备序列号；请对照合格样本的完整版式。',
           },
           {
             name: '上传故障记录',
@@ -105,15 +106,18 @@ export class DatabaseSeedService implements OnModuleInit {
           },
           {
             name: '安装固定检查',
-            description: '必检。检查逆变器安装是否牢固、支架/墙挂固定可靠，无松动倾斜。',
+            description:
+              '必检硬性项。至少拍摄 2 个不同角度，须能看清支架/螺栓等固定点，证明安装牢固、无松动倾斜；单张侧面不合格。',
           },
           {
             name: '直流侧安装检查',
-            description: '必检。检查直流侧接线、端子、线缆标识与防护对齐规范要求。',
+            description:
+              '必检硬性项。检查直流接线、端子与标识；未使用的端子必须有防护盖，裸露未盖不合格；请对照合格样本防护状态。',
           },
           {
             name: '交流侧安装检查',
-            description: '必检。检查交流侧接线、断路器、线缆走向与防护是否符合规范。',
+            description:
+              '必检硬性项。检查交流侧接线与防护；相线之外必须看到 PE 接地线已接入，未接 PE 直接不合格。',
           },
           {
             name: '接地安装检查',
@@ -128,7 +132,8 @@ export class DatabaseSeedService implements OnModuleInit {
         entries: [
           {
             name: '上传阳光云截图',
-            description: '必检。请上传阳光云页面截图，截图中须清晰包含设备序列号。',
+            description:
+              '必检硬性项。须上传完整阳光云页面截图（不可半截），画面须清晰包含设备序列号；请对照合格样本的完整版式。',
           },
           {
             name: '上传故障记录',

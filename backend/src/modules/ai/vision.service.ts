@@ -101,6 +101,12 @@ export class VisionService {
       const remark = String(options?.remark || '').trim();
       const grounding = this.isGroundingCheck(criteria);
       const faultRecord = this.isFaultRecordCheck(criteria);
+      const sungrowShot = this.isSungrowShotCheck(criteria);
+      const mountFix = this.isMountFixCheck(criteria);
+      const dcSide = this.isDcSideCheck(criteria);
+      const acSide = this.isAcSideCheck(criteria);
+      const hardItem =
+        grounding || faultRecord || sungrowShot || mountFix || dcSide || acSide;
 
       // 故障记录：未凑齐至少 2 张就不调用模型，直接不合格
       if (faultRecord && photoInputs.length < 2) {
@@ -113,35 +119,51 @@ export class VisionService {
         };
       }
 
+      // 安装固定：单张侧面无法证明整体牢固
+      if (mountFix && photoInputs.length < 2) {
+        return {
+          status: CheckResult.FAIL,
+          confidence: 0.96,
+          reason:
+            '安装固定检查至少需要 2 张不同角度照片（如正面+侧面，或支架螺栓特写+整机固定），仅一张侧面无法判定整体是否牢固。',
+          provider: 'siliconflow',
+        };
+      }
+
       const content: Array<Record<string, unknown>> = [
         {
           type: 'text',
           text: [
             '你是光伏/储能设备现场巡检质检助手。',
-            '请综合查看全部「现场照片」（可含多角度），并参考「合格样本图」与检查要求，给出一项总结论。',
+            '请综合查看全部「现场照片」（可含多角度），并对照「合格样本图」与检查要求，给出一项总结论。',
             '判定原则：',
-            '1) 多张现场照是互补证据：某一张拍到关键信息即可，不必每张都与样本长得一模一样；',
-            '2) 样本图只作版式/角度参考，禁止把样本图里的文字、告警、缺陷当成现场证据；',
-            grounding || faultRecord
-              ? '3) 【本项例外】硬性否决项：拿不准或缺证据必须 fail，禁止“看起来大概合格就 pass”。'
+            '1) 多张现场照是互补证据：关键点可分布在不同照片中；',
+            '2) 样本图是合格标准参照：现场须覆盖样本所展示的关键信息与防护状态；禁止把样本里的文字/告警当成现场证据；',
+            hardItem
+              ? '3) 【本项硬性否决】拿不准、画面不全、关键点不可见必须 fail，禁止“看起来大概合格就 pass”。'
               : '3) 仅当现场照片本身关键缺陷明确、或关键要求明显缺失时才判 fail；拿不准时优先 pass，并在 reason 说明存疑点；',
-            '4) 证据越充分（多角度覆盖）越应提高 confidence。',
+            '4) 证据越充分（多角度、完整画面）越应提高 confidence；证据不足时降低 confidence 并倾向 fail（硬性项）。',
             faultRecord ? this.faultRecordHardRules() : this.faultRecordSoftHint(),
             grounding ? this.groundingHardRules() : '',
+            sungrowShot ? this.sungrowShotHardRules() : '',
+            mountFix ? this.mountFixHardRules() : '',
+            dcSide ? this.dcSideHardRules() : '',
+            acSide ? this.acSideHardRules() : '',
             criteria ? `检查要求：\n${criteria}` : '未提供文字检查要求时，按通用现场质检规范判断。',
             remark ? `工程师备注：${remark}` : '工程师备注：无',
             '只输出 JSON（不要 Markdown）：',
-            grounding
-              ? '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"yellowGreenWire":true|false,"groundBarOrTerminal":true|false,"groundLabel":true|false}}'
-              : faultRecord
-                ? '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"photoTypes":["realtime"|"historical"|"other"],"hasRealtimeFaultShot":true|false,"hasHistoricalFaultShot":true|false,"realtimeHasActiveAlarm":true|false}}'
-                : '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明"}',
+            this.jsonSchemaHint({
+              grounding,
+              faultRecord,
+              sungrowShot,
+              mountFix,
+              dcSide,
+              acSide,
+            }),
             sampleInputs.length
-              ? grounding
-                ? '已提供合格样本，仅作角度/构图参考；现场照仍必须独立满足三项接地证据，不可因样本存在而放宽。'
-                : faultRecord
-                  ? '已提供合格样本，第1张多为实时页版式、第2张多为历史页版式；现场仍须各自上传对应截图，不可因样本存在而放宽。'
-                  : '已提供合格样本，请作版式参考，不要过度苛刻。'
+              ? hardItem
+                ? '已提供合格样本：请逐项对照样本中的关键要素是否在现场图中可见；现场缺失样本中的关键防护/信息 → fail。'
+                : '已提供合格样本，请作版式参考，不要过度苛刻。'
               : '无样本时根据检查要求与通用安装规范给出建议结论。',
           ]
             .filter(Boolean)
@@ -152,13 +174,16 @@ export class VisionService {
       photoInputs.forEach((photoInput, i) => {
         content.push({
           type: 'text',
-          text: faultRecord
-            ? `【现场照片 ${i + 1}/${photoInputs.length}】请先判定本张属于：realtime(实时故障/告警页) / historical(历史故障/告警页) / other(其他)，并写入 evidence.photoTypes[${i}]`
-            : grounding
-              ? `【现场照片 ${i + 1}/${photoInputs.length}】请仔细寻找黄绿双色线、PE/接地端子与 PE 丝印，即使线很细也要辨认`
-              : photoInputs.length > 1
-                ? `【现场照片 ${i + 1}/${photoInputs.length}】`
-                : '【现场照片】',
+          text: this.fieldPhotoLabel({
+            index: i,
+            total: photoInputs.length,
+            faultRecord,
+            grounding,
+            sungrowShot,
+            mountFix,
+            dcSide,
+            acSide,
+          }),
         });
         content.push({
           type: 'image_url',
@@ -174,7 +199,15 @@ export class VisionService {
               : i === 1
                 ? '【合格样本-历史故障页版式】'
                 : `【合格样本 ${i + 1}】`
-            : `【合格样本 ${i + 1}】`;
+            : sungrowShot
+              ? `【合格样本-阳光云完整截图 ${i + 1}】请对照：现场截图是否同样完整`
+              : dcSide
+                ? `【合格样本-直流侧 ${i + 1}】请对照：未用端子防护盖是否齐全`
+                : acSide
+                  ? `【合格样本-交流侧 ${i + 1}】请对照：相线与 PE 是否齐全`
+                  : mountFix
+                    ? `【合格样本-安装固定 ${i + 1}】请对照：固定点/螺栓是否拍全`
+                    : `【合格样本 ${i + 1}】`;
         content.push({ type: 'text', text: sampleLabel });
         content.push({
           type: 'image_url',
@@ -225,7 +258,15 @@ export class VisionService {
         ? this.enforceGroundingResult(parsed, raw)
         : faultRecord
           ? this.enforceFaultRecordResult(parsed, raw, photoInputs.length)
-          : parsed;
+          : sungrowShot
+            ? this.enforceSungrowShotResult(parsed, raw)
+            : mountFix
+              ? this.enforceMountFixResult(parsed, raw, photoInputs.length)
+              : dcSide
+                ? this.enforceDcSideResult(parsed, raw)
+                : acSide
+                  ? this.enforceAcSideResult(parsed, raw)
+                  : parsed;
       return { ...enforced, provider: 'siliconflow' };
     } catch (err) {
       this.logger.warn(`Vision 请求异常: ${(err as Error).message}`);
@@ -297,12 +338,270 @@ export class VisionService {
     return /上传故障|故障记录|故障\/告警|实时故障|历史故障/.test(criteria);
   }
 
+  private isSungrowShotCheck(criteria: string) {
+    return /阳光云|上传阳光云/.test(criteria);
+  }
+
+  private isMountFixCheck(criteria: string) {
+    return /安装固定|支架|墙挂固定|安装是否牢固/.test(criteria);
+  }
+
+  private isDcSideCheck(criteria: string) {
+    return /直流侧/.test(criteria);
+  }
+
+  private isAcSideCheck(criteria: string) {
+    return /交流侧/.test(criteria);
+  }
+
+  private jsonSchemaHint(flags: {
+    grounding: boolean;
+    faultRecord: boolean;
+    sungrowShot: boolean;
+    mountFix: boolean;
+    dcSide: boolean;
+    acSide: boolean;
+  }) {
+    if (flags.grounding) {
+      return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"yellowGreenWire":true|false,"groundBarOrTerminal":true|false,"groundLabel":true|false}}';
+    }
+    if (flags.faultRecord) {
+      return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"photoTypes":["realtime"|"historical"|"other"],"hasRealtimeFaultShot":true|false,"hasHistoricalFaultShot":true|false,"realtimeHasActiveAlarm":true|false}}';
+    }
+    if (flags.sungrowShot) {
+      return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"screenshotComplete":true|false,"serialNumberVisible":true|false,"matchesSampleLayout":true|false}}';
+    }
+    if (flags.mountFix) {
+      return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"multiAngleCoverage":true|false,"mountPointsVisible":true|false,"noObviousLooseness":true|false}}';
+    }
+    if (flags.dcSide) {
+      return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"connectorsIntact":true|false,"unusedPortsCapped":true|false,"matchesSampleProtection":true|false}}';
+    }
+    if (flags.acSide) {
+      return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"phaseWiresOk":true|false,"peWireConnected":true|false,"terminalsCoveredOrProtected":true|false}}';
+    }
+    return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明"}';
+  }
+
+  private fieldPhotoLabel(opts: {
+    index: number;
+    total: number;
+    faultRecord: boolean;
+    grounding: boolean;
+    sungrowShot: boolean;
+    mountFix: boolean;
+    dcSide: boolean;
+    acSide: boolean;
+  }) {
+    const n = `【现场照片 ${opts.index + 1}/${opts.total}】`;
+    if (opts.faultRecord) {
+      return `${n}请先判定本张属于：realtime(实时故障/告警页) / historical(历史故障/告警页) / other(其他)，并写入 evidence.photoTypes[${opts.index}]`;
+    }
+    if (opts.grounding) {
+      return `${n}请仔细寻找黄绿双色线、PE/接地端子与 PE 丝印，即使线很细也要辨认`;
+    }
+    if (opts.sungrowShot) {
+      return `${n}请判断截图是否完整（非半截）、序列号是否清晰可见`;
+    }
+    if (opts.mountFix) {
+      return `${n}请判断能否看到支架/螺栓等固定点；仅侧面远景通常不足`;
+    }
+    if (opts.dcSide) {
+      return `${n}请检查直流接头与未使用端子是否有防护盖（蓝/红/黑盖），裸露未用端子 → 不合格`;
+    }
+    if (opts.acSide) {
+      return `${n}请检查相线与 PE 接地线是否接好；交流仓内 PE 空端子/未接 PE → 不合格`;
+    }
+    return opts.total > 1 ? n : '【现场照片】';
+  }
+
   /** 非故障专项时的弱提示，避免误伤其他检查项 */
   private faultRecordSoftHint() {
     return [
       '若本项明显不是故障/告警截图检查，可忽略本段。',
       '若涉及故障页截图：请区分实时故障页与历史故障页；勿把历史告警当成当前告警。',
     ].join('\n');
+  }
+
+  private sungrowShotHardRules() {
+    return [
+      '【上传阳光云截图·硬性否决】',
+      '必须对照合格样本：现场截图应是完整手机/App 界面，不能只剩上半截或下半截。',
+      'screenshotComplete=false 的典型情况：画面被裁切、关键区域缺失、只能看到部分数据卡片、看不到完整页面结构。',
+      'serialNumberVisible：须能清晰看到设备序列号（SN/序列号等）；看不见 → fail。',
+      'matchesSampleLayout：与样本相比，关键信息区应大致同级完整；半截图即使部分数字可读也 fail。',
+      '仅当 screenshotComplete、serialNumberVisible 均为 true 才允许 pass。',
+    ].join('\n');
+  }
+
+  private mountFixHardRules() {
+    return [
+      '【安装固定检查·硬性否决】',
+      '至少 2 张不同角度/景别照片，才能判断整体是否牢固。',
+      '仅一张侧面/局部远景：multiAngleCoverage=false，必须 fail（无法证明支架、螺栓、整机无松动倾斜）。',
+      'mountPointsVisible：须能看到支架连接点、抱箍/膨胀螺栓或墙挂固定件中的关键固定点。',
+      '不能仅凭“看起来挂着”就写合格文案；证据不足 → fail。',
+    ].join('\n');
+  }
+
+  private dcSideHardRules() {
+    return [
+      '【直流侧安装检查·硬性否决】',
+      '必须对照合格样本的防护状态。',
+      'unusedPortsCapped：未使用的直流端子/接口必须有防护盖（常见蓝/红/黑防尘盖）；金属触点或端口明显裸露未盖 → fail。',
+      'connectorsIntact：已插接头应插接到位，无破损烧蚀进水。',
+      'matchesSampleProtection：若样本中未用端子均有盖，而现场裸露 → fail。',
+      '画面只拍到局部且无法确认未用端子是否盖好 → unusedPortsCapped=false，fail。',
+    ].join('\n');
+  }
+
+  private acSideHardRules() {
+    return [
+      '【交流侧安装检查·硬性否决】',
+      '交流侧除相线外，必须看到 PE 接地线已可靠接入（黄绿双色线接到 PE 端子，或铜编织带接到 PE）。',
+      'peWireConnected=false 的典型情况：只见 L1/L2/L3（黄/绿/红相线色环）而 PE 端子空着、无黄绿线/无接地编织带。',
+      '未接 PE 属于明显安全缺陷，即使相线看起来整齐也必须 fail。',
+      'terminalsCoveredOrProtected：可触及的带电端子应有透明罩/防护；严重裸露且无防护可 fail。',
+      '仅当 phaseWiresOk 与 peWireConnected 均为 true 才允许 pass。',
+    ].join('\n');
+  }
+
+  private enforceEvidencePass(
+    parsed: Omit<VisionCompareResult, 'provider'>,
+    missing: string[],
+    passReason: string,
+    reported: boolean,
+  ): Omit<VisionCompareResult, 'provider'> {
+    if (missing.length > 0) {
+      const detail = reported
+        ? `现场不满足：${missing.join('、')}`
+        : `模型未逐项确认关键证据（视为缺失：${missing.join('、')}）`;
+      return {
+        status: CheckResult.FAIL,
+        confidence: Math.min(parsed.confidence, 0.95),
+        reason: `${detail}。`,
+      };
+    }
+    return {
+      status: CheckResult.PASS,
+      confidence: Math.max(parsed.confidence, 0.88),
+      reason:
+        parsed.status === CheckResult.PASS && parsed.reason
+          ? parsed.reason
+          : passReason,
+    };
+  }
+
+  private parseBoolEvidence(raw: string, keys: string[]): {
+    values: Record<string, boolean>;
+    reported: boolean;
+  } {
+    const values: Record<string, boolean> = {};
+    for (const k of keys) values[k] = false;
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return { values, reported: false };
+    try {
+      const obj = JSON.parse(match[0]) as { evidence?: Record<string, unknown> };
+      const ev = obj.evidence;
+      if (!ev || typeof ev !== 'object') return { values, reported: false };
+      const asBool = (v: unknown) =>
+        v === true || v === 'true' || v === 1 || v === '1';
+      for (const k of keys) values[k] = asBool(ev[k]);
+      return { values, reported: true };
+    } catch {
+      return { values, reported: false };
+    }
+  }
+
+  private enforceSungrowShotResult(
+    parsed: Omit<VisionCompareResult, 'provider'>,
+    raw: string,
+  ): Omit<VisionCompareResult, 'provider'> {
+    const { values, reported } = this.parseBoolEvidence(raw, [
+      'screenshotComplete',
+      'serialNumberVisible',
+      'matchesSampleLayout',
+    ]);
+    const missing: string[] = [];
+    if (!values.screenshotComplete) missing.push('完整截图（当前疑似半截/裁切）');
+    if (!values.serialNumberVisible) missing.push('清晰设备序列号');
+    return this.enforceEvidencePass(
+      parsed,
+      missing,
+      '阳光云截图完整且序列号清晰可见，合格。',
+      reported,
+    );
+  }
+
+  private enforceMountFixResult(
+    parsed: Omit<VisionCompareResult, 'provider'>,
+    raw: string,
+    photoCount: number,
+  ): Omit<VisionCompareResult, 'provider'> {
+    if (photoCount < 2) {
+      return {
+        status: CheckResult.FAIL,
+        confidence: 0.96,
+        reason:
+          '安装固定检查至少需要 2 张不同角度照片，仅一张无法判定整体是否牢固。',
+      };
+    }
+    const { values, reported } = this.parseBoolEvidence(raw, [
+      'multiAngleCoverage',
+      'mountPointsVisible',
+      'noObviousLooseness',
+    ]);
+    const missing: string[] = [];
+    if (!values.multiAngleCoverage) missing.push('多角度覆盖');
+    if (!values.mountPointsVisible) missing.push('可见固定点/螺栓/支架连接');
+    return this.enforceEvidencePass(
+      parsed,
+      missing,
+      '多角度显示安装固定可靠，未见明显松动倾斜，合格。',
+      reported,
+    );
+  }
+
+  private enforceDcSideResult(
+    parsed: Omit<VisionCompareResult, 'provider'>,
+    raw: string,
+  ): Omit<VisionCompareResult, 'provider'> {
+    const { values, reported } = this.parseBoolEvidence(raw, [
+      'connectorsIntact',
+      'unusedPortsCapped',
+      'matchesSampleProtection',
+    ]);
+    const missing: string[] = [];
+    if (!values.unusedPortsCapped) {
+      missing.push('未使用端子防护盖（裸露未盖不合格）');
+    }
+    if (!values.connectorsIntact) missing.push('直流接头完好插接到位');
+    return this.enforceEvidencePass(
+      parsed,
+      missing,
+      '直流侧接头完好，未用端子已加盖防护，合格。',
+      reported,
+    );
+  }
+
+  private enforceAcSideResult(
+    parsed: Omit<VisionCompareResult, 'provider'>,
+    raw: string,
+  ): Omit<VisionCompareResult, 'provider'> {
+    const { values, reported } = this.parseBoolEvidence(raw, [
+      'phaseWiresOk',
+      'peWireConnected',
+      'terminalsCoveredOrProtected',
+    ]);
+    const missing: string[] = [];
+    if (!values.peWireConnected) missing.push('PE 接地线已接入');
+    if (!values.phaseWiresOk) missing.push('相线接线正常');
+    return this.enforceEvidencePass(
+      parsed,
+      missing,
+      '交流侧相线与 PE 接地线接线完整，合格。',
+      reported,
+    );
   }
 
   private faultRecordHardRules() {
