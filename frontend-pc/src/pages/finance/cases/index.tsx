@@ -517,7 +517,7 @@ export default function FinanceCasesPage() {
           await load();
         }}
       >
-        <p>仅显示该站点已入职工程师；可跨地管人，不按归属区域限制。</p>
+        <p>仅显示该站点已入职工程师。</p>
         <Select
           style={{ width: '100%' }}
           value={inspectorId}

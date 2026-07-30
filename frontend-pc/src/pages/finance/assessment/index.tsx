@@ -159,12 +159,6 @@ export default function FinanceAssessmentPage() {
             render: (v) => (v === 'site_manager' ? '网格长' : '工程师'),
           },
           {
-            title: '区域',
-            dataIndex: 'region',
-            width: 90,
-            render: (v) => (v === 'yunnan' ? '云南' : '华南'),
-          },
-          {
             title: '内部考核总分',
             width: 130,
             render: (_, row) => input(row, 'internalScore', 100),

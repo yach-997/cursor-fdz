@@ -228,13 +228,6 @@ export default function UsersPage() {
       },
     },
     {
-      title: '归属区域',
-      dataIndex: 'region',
-      width: 100,
-      render: (v) => (v === 'yunnan' ? '云南' : v === 'south_china' ? '华南' : '-'),
-    },
-    { title: '归属单位', dataIndex: 'orgUnit', width: 140, render: (v) => v || '-' },
-    {
       title: '状态',
       dataIndex: 'status',
       width: 90,
@@ -280,11 +273,6 @@ export default function UsersPage() {
   const poolColumns: ColumnsType<UserInfo> = [
     { title: '姓名', dataIndex: 'realName', width: 100 },
     { title: '手机号', dataIndex: 'phone', width: 130 },
-    {
-      title: '归属区域',
-      dataIndex: 'region',
-      render: (v) => (v === 'yunnan' ? '云南' : v === 'south_china' ? '华南' : '-'),
-    },
     {
       title: '已加入站点数',
       dataIndex: 'membershipCount',
@@ -470,22 +458,6 @@ export default function UsersPage() {
             }
           >
             <Checkbox.Group options={roleOptions} />
-          </Form.Item>
-          <Form.Item name="region" label="归属区域">
-            <Select
-              allowClear
-              placeholder="选填，仅作档案展示，不限制派单与跨站管人"
-              options={[
-                { value: 'south_china', label: '华南' },
-                { value: 'yunnan', label: '云南' },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item name="orgUnit" label="归属单位">
-            <Input placeholder="选填，如：华南运维中心" />
-          </Form.Item>
-          <Form.Item name="email" label="邮箱">
-            <Input />
           </Form.Item>
         </Form>
       </Modal>

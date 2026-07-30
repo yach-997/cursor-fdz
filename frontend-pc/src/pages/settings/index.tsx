@@ -17,8 +17,6 @@ export default function SettingsPage() {
       profileForm.setFieldsValue({
         realName: user.realName,
         phone: user.phone,
-        email: user.email,
-        region: user.region,
       });
     }
   }, [user, profileForm]);
@@ -78,12 +76,6 @@ export default function SettingsPage() {
                   </Form.Item>
                   <Form.Item name="phone" label="手机号" rules={[{ required: true }]}>
                     <Input />
-                  </Form.Item>
-                  <Form.Item name="email" label="邮箱">
-                    <Input type="email" />
-                  </Form.Item>
-                  <Form.Item name="region" label="区域">
-                    <Input placeholder="如：华东 / 华北" />
                   </Form.Item>
                   <Button type="primary" loading={savingProfile} onClick={() => void saveProfile()}>
                     保存资料
