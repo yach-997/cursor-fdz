@@ -399,7 +399,7 @@ export default function SitesPage() {
         onOk={() => void submitAppoint()}
       >
         <Typography.Paragraph type="secondary">
-          每站仅一名正网格长。请先在「用户管理」创建网格长账号，再在此任命。
+          每站仅一名正网格长。请先在「用户管理」创建正网格长账号，再在此任命。
         </Typography.Paragraph>
         <Select
           showSearch

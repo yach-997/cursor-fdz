@@ -40,26 +40,35 @@ export class UserService {
   async findAll(query: QueryUserDto, currentUser: CurrentUserContext) {
     const page = query.page || 1;
     const limit = query.limit || 10;
-
     const qb = this.userRepo.createQueryBuilder('user');
 
-    if (currentUser.role === UserRole.SITE_MANAGER) {
-      // 正/副网格长：可见工程师与网格长账号（排除超管）
-      const insp = qbUserHasRole('user', UserRole.INSPECTOR, 'inspector');
+    if (currentUser.role === UserRole.SUPER_ADMIN) {
+      // 管理员：只看自己设立的正网格长账号
       const mgr = qbUserHasRole('user', UserRole.SITE_MANAGER, 'manager');
       const admin = qbUserHasRole('user', UserRole.SUPER_ADMIN, 'admin');
-      qb.andWhere(`((${insp.sql}) OR (${mgr.sql}))`, {
-        ...insp.params,
-        ...mgr.params,
-      });
+      qb.andWhere(mgr.sql, mgr.params);
       qb.andWhere(`NOT (${admin.sql})`, admin.params);
+      qb.andWhere('user.created_by = :creatorId', { creatorId: currentUser.id });
+      if (query.role && query.role !== UserRole.SITE_MANAGER) {
+        // 管理员视图不允许筛出工程师等
+        return { list: [], total: 0, page, limit };
+      }
+    } else if (currentUser.role === UserRole.SITE_MANAGER) {
+      const isPrimary = await this.isPrimaryManager(currentUser.id);
+      if (!isPrimary) {
+        // 副网格长不编制账号，列表为空
+        return { list: [], total: 0, page, limit };
+      }
+      // 正网格长：只看自己设立的副网格长/工程师
+      qb.andWhere('user.created_by = :creatorId', { creatorId: currentUser.id });
       if (query.role === UserRole.INSPECTOR || query.role === UserRole.SITE_MANAGER) {
         const filter = qbUserHasRole('user', query.role, 'filter');
         qb.andWhere(filter.sql, filter.params);
+      } else if (query.role) {
+        return { list: [], total: 0, page, limit };
       }
-    } else if (query.role) {
-      const cond = qbUserHasRole('user', query.role, 'filter');
-      qb.andWhere(cond.sql, cond.params);
+    } else {
+      throw new ForbiddenException('无权查看用户列表');
     }
 
     if (query.status) {
@@ -77,7 +86,6 @@ export class UserService {
       .take(limit);
 
     const [list, total] = await qb.getManyAndCount();
-
     return {
       list: list.map((u) => this.toSafeUser(u)),
       total,
@@ -105,12 +113,10 @@ export class UserService {
       password: hashed,
       realName: dto.realName,
       phone: dto.phone,
-      email: dto.email || undefined,
-      region: dto.region || undefined,
-      orgUnit: dto.orgUnit || undefined,
       status: CommonStatus.ACTIVE,
       role: roles[0],
       roles: [],
+      createdBy: currentUser.id,
     } as Partial<User>);
     applyUserRoles(user, roles);
 
@@ -120,7 +126,7 @@ export class UserService {
 
   async update(id: string, dto: UpdateUserDto, currentUser: CurrentUserContext) {
     const user = await this.getUserOrThrow(id);
-    this.assertCanManage(user, currentUser);
+    await this.assertCanManage(user, currentUser);
     if (currentUser.role === UserRole.SITE_MANAGER) {
       await this.assertCanStaffAccounts(currentUser);
     }
@@ -133,9 +139,6 @@ export class UserService {
     Object.assign(user, {
       ...(dto.realName !== undefined && { realName: dto.realName }),
       ...(dto.phone !== undefined && { phone: dto.phone }),
-      ...(dto.email !== undefined && { email: dto.email }),
-      ...(dto.region !== undefined && { region: dto.region }),
-      ...(dto.orgUnit !== undefined && { orgUnit: dto.orgUnit }),
       ...(dto.avatar !== undefined && { avatar: dto.avatar }),
     });
 
@@ -151,7 +154,7 @@ export class UserService {
 
   async updateStatus(id: string, dto: UpdateUserStatusDto, currentUser: CurrentUserContext) {
     const user = await this.getUserOrThrow(id);
-    this.assertCanManage(user, currentUser);
+    await this.assertCanManage(user, currentUser);
     if (currentUser.role === UserRole.SITE_MANAGER) {
       await this.assertCanStaffAccounts(currentUser);
     }
@@ -164,7 +167,7 @@ export class UserService {
 
   async resetPassword(id: string, dto: ResetPasswordDto, currentUser: CurrentUserContext) {
     const user = await this.getUserOrThrow(id);
-    this.assertCanManage(user, currentUser);
+    await this.assertCanManage(user, currentUser);
     if (currentUser.role === UserRole.SITE_MANAGER) {
       await this.assertCanStaffAccounts(currentUser);
     }
@@ -174,10 +177,10 @@ export class UserService {
   }
 
   async getInspectorPool(query: QueryPoolDto, currentUser: CurrentUserContext) {
-    // 人才池仅正/副网格长用于聘用；管理员不走此路径
     if (currentUser.role !== UserRole.SITE_MANAGER) {
-      throw new ForbiddenException('仅网格长可查看人才池，请由正网格长聘用工程师');
+      throw new ForbiddenException('仅正网格长可查看人才池');
     }
+    await this.assertCanStaffAccounts(currentUser);
 
     const page = query.page || 1;
     const limit = query.limit || 10;
@@ -186,13 +189,13 @@ export class UserService {
     const qb = this.userRepo
       .createQueryBuilder('user')
       .where(roleCond.sql, roleCond.params)
-      .andWhere('user.status = :status', { status: CommonStatus.ACTIVE });
+      .andWhere('user.status = :status', { status: CommonStatus.ACTIVE })
+      .andWhere('user.created_by = :creatorId', { creatorId: currentUser.id });
 
     if (query.keyword) {
-      qb.andWhere(
-        '(user.username ILIKE :kw OR user.realName ILIKE :kw OR user.phone ILIKE :kw OR user.region ILIKE :kw)',
-        { kw: `%${query.keyword}%` },
-      );
+      qb.andWhere('(user.username ILIKE :kw OR user.realName ILIKE :kw OR user.phone ILIKE :kw)', {
+        kw: `%${query.keyword}%`,
+      });
     }
 
     qb.orderBy('user.createdAt', 'DESC')
@@ -215,14 +218,18 @@ export class UserService {
     return { list: result, total, page, limit };
   }
 
+  private async isPrimaryManager(userId: string): Promise<boolean> {
+    const n = await this.siteRepo.count({
+      where: { managerId: userId, deletedAt: IsNull() },
+    });
+    return n > 0;
+  }
+
   /** 管理员任意；网格长须至少担任一个站的正网格长 */
   private async assertCanStaffAccounts(currentUser: CurrentUserContext) {
     if (currentUser.role === UserRole.SUPER_ADMIN) return;
     if (currentUser.role === UserRole.SITE_MANAGER) {
-      const n = await this.siteRepo.count({
-        where: { managerId: currentUser.id, deletedAt: IsNull() },
-      });
-      if (n > 0) return;
+      if (await this.isPrimaryManager(currentUser.id)) return;
       throw new ForbiddenException('仅正网格长可创建或管理副网格长/工程师账号');
     }
     throw new ForbiddenException('无权创建或管理账号');
@@ -234,7 +241,7 @@ export class UserService {
     throw new BadRequestException('请至少选择一个角色');
   }
 
-  /** 管理员只建网格长；正网格长可建网格长+工程师 */
+  /** 管理员只建正网格长；正网格长可建副网格长账号与工程师 */
   private assertAllowedRolesForCreate(roles: UserRole[], currentUser: CurrentUserContext) {
     if (roles.includes(UserRole.SUPER_ADMIN) && currentUser.role !== UserRole.SUPER_ADMIN) {
       throw new ForbiddenException('无权创建超级管理员');
@@ -243,7 +250,7 @@ export class UserService {
       const onlyManager =
         roles.length > 0 && roles.every((r) => r === UserRole.SITE_MANAGER);
       if (!onlyManager) {
-        throw new ForbiddenException('管理员只能创建网格长账号；工程师由正网格长创建');
+        throw new ForbiddenException('管理员只能创建正网格长账号；副网格长与工程师由正网格长创建');
       }
       return;
     }
@@ -252,7 +259,7 @@ export class UserService {
         (r) => r === UserRole.INSPECTOR || r === UserRole.SITE_MANAGER,
       );
       if (!allowed || !roles.length) {
-        throw new ForbiddenException('网格长只能创建网格长或工程师账号');
+        throw new ForbiddenException('正网格长只能创建副网格长或工程师账号');
       }
       return;
     }
@@ -274,7 +281,7 @@ export class UserService {
       const onlyManager =
         roles.length > 0 && roles.every((r) => r === UserRole.SITE_MANAGER);
       if (!onlyManager) {
-        throw new ForbiddenException('管理员只能将账号设为网格长角色');
+        throw new ForbiddenException('管理员只能将账号设为正网格长角色');
       }
       return;
     }
@@ -283,7 +290,7 @@ export class UserService {
         (r) => r === UserRole.INSPECTOR || r === UserRole.SITE_MANAGER,
       );
       if (!allowed || !roles.length) {
-        throw new ForbiddenException('网格长只能设置网格长或工程师角色');
+        throw new ForbiddenException('正网格长只能设置副网格长或工程师角色');
       }
       return;
     }
@@ -296,22 +303,32 @@ export class UserService {
     return user;
   }
 
-  private assertCanManage(target: User, currentUser: CurrentUserContext) {
+  /** 只能管理自己创建的账号；管理员与正网格长互不越权 */
+  private async assertCanManage(target: User, currentUser: CurrentUserContext) {
+    if (userHasRole(target, UserRole.SUPER_ADMIN)) {
+      throw new ForbiddenException('无权管理超级管理员');
+    }
     if (currentUser.role === UserRole.SUPER_ADMIN) {
-      if (userHasRole(target, UserRole.SUPER_ADMIN) && target.id !== currentUser.id) {
-        // 超管可管其他超管账号的基础信息；角色变更另有校验
+      if (!userHasRole(target, UserRole.SITE_MANAGER)) {
+        throw new ForbiddenException('管理员只能管理正网格长账号');
+      }
+      if (target.createdBy !== currentUser.id) {
+        throw new ForbiddenException('只能管理自己设立的正网格长');
       }
       return;
     }
     if (currentUser.role === UserRole.SITE_MANAGER) {
-      if (userHasRole(target, UserRole.SUPER_ADMIN)) {
-        throw new ForbiddenException('无权管理超级管理员');
+      if (!(await this.isPrimaryManager(currentUser.id))) {
+        throw new ForbiddenException('仅正网格长可管理下属账号');
+      }
+      if (target.createdBy !== currentUser.id) {
+        throw new ForbiddenException('只能管理自己设立的副网格长与工程师');
       }
       if (
         !userHasRole(target, UserRole.INSPECTOR) &&
         !userHasRole(target, UserRole.SITE_MANAGER)
       ) {
-        throw new ForbiddenException('网格长只能管理网格长或工程师账号');
+        throw new ForbiddenException('正网格长只能管理副网格长或工程师账号');
       }
       return;
     }
@@ -332,6 +349,7 @@ export class UserService {
       status: user.status,
       region: user.region,
       orgUnit: user.orgUnit,
+      createdBy: user.createdBy,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };

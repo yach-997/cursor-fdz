@@ -30,6 +30,7 @@ export interface UserInfo {
   status: string;
   region?: string;
   orgUnit?: string;
+  createdBy?: string | null;
   managedSites?: SiteBrief[];
   siteMemberships?: SiteMembership[];
   membershipCount?: number;

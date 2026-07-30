@@ -30,7 +30,7 @@ import { useAuthStore } from '../../stores/auth';
 import type { UserInfo, SiteItem, UserRole, CommonStatus } from '../../types';
 import { ROLE_LABEL } from '../../types';
 
-/** 用户管理：管理员只管网格长；正网格长管副网格长与工程师 */
+/** 用户管理：管理员只看自己设立的正网格长；正网格长只看自己设立的副网格长与工程师 */
 export default function UsersPage() {
   const currentUser = useAuthStore((s) => s.user);
   const isAdmin = currentUser?.role === 'super_admin';
@@ -128,10 +128,10 @@ export default function UsersPage() {
 
   const roleOptions = useMemo(() => {
     if (isAdmin) {
-      return [{ value: 'site_manager', label: '网格长' }];
+      return [{ value: 'site_manager', label: '正网格长' }];
     }
     return [
-      { value: 'site_manager', label: '网格长（可任副网格长）' },
+      { value: 'site_manager', label: '副网格长（可登录管理端）' },
       { value: 'inspector', label: '工程师' },
     ];
   }, [isAdmin]);
@@ -220,9 +220,13 @@ export default function UsersPage() {
         const list = roles?.length ? roles : r.role ? [r.role] : [];
         return (
           <Space size={[4, 4]} wrap>
-            {list.map((v) => (
-              <Tag key={v}>{ROLE_LABEL[v] || '未知角色'}</Tag>
-            ))}
+            {list.map((v) => {
+              let label = ROLE_LABEL[v] || '未知角色';
+              if (v === 'site_manager') {
+                label = isAdmin ? '正网格长' : '副网格长';
+              }
+              return <Tag key={v}>{label}</Tag>;
+            })}
           </Space>
         );
       },
@@ -319,10 +323,10 @@ export default function UsersPage() {
         style={{ marginBottom: 12 }}
         message={
           isAdmin
-            ? '管理员只创建网格长账号，并在「站点管理」中任命为正网格长。工程师由正网格长创建与聘用。'
+            ? '管理员仅设立正网格长，本页只显示你创建的正网格长；副网格长与工程师由正网格长在各自账号下创建，互不可见。'
             : isPrimaryManager
-              ? '正网格长可创建副网格长（网格长角色）与工程师，并在本站「人员」或人才池中任命/聘用。'
-              : '副网格长可查看本区域人员，账号编制由正网格长管理。'
+              ? '正网格长仅管理自己设立的副网格长与工程师；其他正网格长的下属不会出现在本列表。创建后请到「站点管理」任命副网格长或聘用工程师。'
+              : '副网格长不编制账号；本页无下属列表，请联系本站正网格长处理人员。'
         }
       />
 
@@ -351,12 +355,9 @@ export default function UsersPage() {
               }}
               options={
                 isAdmin
-                  ? [
-                      { value: 'site_manager', label: '网格长' },
-                      { value: 'super_admin', label: '超级管理员' },
-                    ]
+                  ? [{ value: 'site_manager', label: '正网格长' }]
                   : [
-                      { value: 'site_manager', label: '网格长' },
+                      { value: 'site_manager', label: '副网格长' },
                       { value: 'inspector', label: '工程师' },
                     ]
               }
@@ -453,8 +454,8 @@ export default function UsersPage() {
             rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个角色' }]}
             extra={
               isAdmin
-                ? '管理员仅创建网格长账号'
-                : '可同时勾选网格长和工程师：电脑登录管理端，手机登录巡检端'
+                ? '管理员仅创建正网格长；创建后请到「站点管理」任命到具体电站'
+                : '可同时勾选副网格长与工程师：电脑登录管理端，手机登录巡检端'
             }
           >
             <Checkbox.Group options={roleOptions} />

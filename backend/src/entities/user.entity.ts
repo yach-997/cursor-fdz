@@ -63,6 +63,10 @@ export class User {
   @Column({ name: 'org_unit', type: 'varchar', length: 64, nullable: true })
   orgUnit: string | null;
 
+  /** 账号创建人：管理员创建正网格长；正网格长创建副网格长与工程师 */
+  @Column({ name: 'created_by', type: 'uuid', nullable: true })
+  createdBy: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
