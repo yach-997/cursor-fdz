@@ -404,7 +404,7 @@ export class VisionService {
       return `${n}请严格对照样本：是否完整 App 截图（含设备头图/序列号），禁止只拍功率数字半截`;
     }
     if (opts.mountFix) {
-      return `${n}请判断能否看到支架/螺栓等固定点；仅侧面远景通常不足`;
+      return `${n}请看抱箍/横担螺栓是否清晰；多张有侧面+特写或不同方位即可，勿因线管遮挡某一张就否决全部`;
     }
     if (opts.dcSide) {
       return `${n}请检查直流接头与未使用端子是否有防护盖（蓝/红/黑盖），裸露未用端子 → 不合格`;
@@ -444,10 +444,14 @@ export class VisionService {
   private mountFixHardRules() {
     return [
       '【安装固定检查·硬性否决】',
-      '至少 2 张不同角度/景别照片，才能判断整体是否牢固。',
-      '仅一张侧面/局部远景：multiAngleCoverage=false，必须 fail（无法证明支架、螺栓、整机无松动倾斜）。',
-      'mountPointsVisible：须能看到支架连接点、抱箍/膨胀螺栓或墙挂固定件中的关键固定点。',
-      '不能仅凭“看起来挂着”就写合格文案；证据不足 → fail。',
+      '至少 2 张照片。',
+      'multiAngleCoverage=true：照片在方位或景别上有差异即可，例如「支架/螺栓特写 + 整机侧面」「左侧 + 背面/另一侧」。',
+      '不必强求正面全身照；杆上逆变器常见以侧面+背面/抱箍特写即可。',
+      '仅当多张照片构图几乎完全相同（同一侧连拍）时，multiAngleCoverage 才为 false。',
+      'mountPointsVisible=true：只要任意一张能清晰看到抱箍、横担、螺栓螺母或墙挂固定件即可。',
+      '个别照片被线管/电杆遮挡没关系，以拍清固定点的那张为准。',
+      'noObviousLooseness：未见明显松动、倾斜、支架开裂则可 true。',
+      '不要因为“不够完美的展览级多角度”而否决已经拍到抱箍螺栓的现场图。',
     ].join('\n');
   }
 
@@ -564,7 +568,7 @@ export class VisionService {
         status: CheckResult.FAIL,
         confidence: 0.96,
         reason:
-          '安装固定检查至少需要 2 张不同角度照片，仅一张无法判定整体是否牢固。',
+          '安装固定检查至少需要 2 张照片（特写+侧面或不同方位），仅一张无法判定整体是否牢固。',
       };
     }
     const { values, reported } = this.parseBoolEvidence(raw, [
@@ -572,13 +576,50 @@ export class VisionService {
       'mountPointsVisible',
       'noObviousLooseness',
     ]);
+    const text = `${parsed.reason || ''} ${raw}`;
+    const sameAngle =
+      /构图相同|同一角度|几乎一样|重复拍摄|角度相同|连拍同侧/.test(text);
+    const affirmsMount =
+      /抱箍|横担|螺栓|螺母|支架|固定点|抱杆/.test(text) &&
+      !/未见.*(?:抱箍|螺栓|支架|固定)|缺少.*(?:抱箍|螺栓|支架|固定)/.test(text);
+
+    // 3 张及以上且未明确“同角度连拍”时，视为已具备多角度/多景别
+    if (photoCount >= 3 && !sameAngle) {
+      values.multiAngleCoverage = true;
+    }
+    // 文案已承认见到抱箍/螺栓时，纠正漏标
+    if (!values.mountPointsVisible && affirmsMount) {
+      values.mountPointsVisible = true;
+    }
+    // 2 张且固定点清晰时，不过度苛求“展览级多角度”
+    if (
+      photoCount >= 2 &&
+      values.mountPointsVisible &&
+      !sameAngle &&
+      !values.multiAngleCoverage
+    ) {
+      values.multiAngleCoverage = true;
+    }
+
     const missing: string[] = [];
-    if (!values.multiAngleCoverage) missing.push('多角度覆盖');
-    if (!values.mountPointsVisible) missing.push('可见固定点/螺栓/支架连接');
+    if (!values.multiAngleCoverage) {
+      missing.push('不同方位或景别（勿同侧连拍相同构图）');
+    }
+    if (!values.mountPointsVisible) {
+      missing.push('可见抱箍/螺栓/支架固定点');
+    }
+    if (reported && values.noObviousLooseness === false) {
+      // 仅当模型明确给出 false 时才作为缺陷；缺省 false 在上面 parse 里不好区分
+    }
+    // noObviousLooseness：若 evidence 显式为 false（且 reported），加入缺失
+    if (reported && /noObviousLooseness"\s*:\s*false/.test(raw)) {
+      missing.push('存在明显松动/倾斜风险');
+    }
+
     return this.enforceEvidencePass(
       parsed,
       missing,
-      '多角度显示安装固定可靠，未见明显松动倾斜，合格。',
+      '已拍摄多张安装固定照片，抱箍/螺栓等固定点可见，未见明显松动，合格。',
       reported,
     );
   }
