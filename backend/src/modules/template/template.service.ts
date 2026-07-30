@@ -80,7 +80,7 @@ export class TemplateService {
     return this.toSafe(tpl);
   }
 
-  /** 创建模板：全局仅超管；站点模板站长可建自己站点的 */
+  /** 创建模板：全局仅超管；站点模板网格长可建自己站点的 */
   async create(dto: CreateTemplateDto, currentUser: CurrentUserContext) {
     if (dto.isGlobal) {
       if (currentUser.role !== UserRole.SUPER_ADMIN) {

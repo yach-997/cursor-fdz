@@ -125,7 +125,7 @@ export default function CreateTaskPage() {
             }}
           />
         ))}
-        {!sites.length && <EmptyLike tip="暂无可用现场，请联系站长聘用" />}
+        {!sites.length && <EmptyLike tip="暂无可用现场，请联系网格长聘用" />}
       </Cell.Group>
 
       <Form style={{ marginTop: 12 }}>

@@ -116,7 +116,7 @@ export class FinanceWorkflowService {
     }
     const crossRegion = inspector.region !== serviceCase.region;
     if (crossRegion && user.role !== UserRole.SUPER_ADMIN) {
-      throw new ForbiddenException('站长不能跨区域派单');
+      throw new ForbiddenException('网格长不能跨区域派单');
     }
     if (crossRegion && !reason?.trim()) {
       throw new BadRequestException('管理员跨区域派单必须填写特批原因');

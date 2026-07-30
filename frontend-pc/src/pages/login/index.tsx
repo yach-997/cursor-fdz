@@ -104,7 +104,7 @@ export default function LoginPage() {
               <div>
                 <div className="pc-login-brand__eyebrow">管理工作台</div>
                 <h2>欢迎回来</h2>
-                <p>请使用站长或管理员账号登录</p>
+                <p>请使用网格长或管理员账号登录</p>
               </div>
             </div>
 

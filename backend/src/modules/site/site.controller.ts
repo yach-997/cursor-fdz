@@ -30,7 +30,7 @@ import { ParsePostgresUuidPipe } from '../../common/pipes/parse-postgres-uuid.pi
 export class SiteController {
   constructor(private readonly siteService: SiteService) {}
 
-  /** 站点列表（超管全量，站长/工程师按数据范围） */
+  /** 站点列表（超管全量，网格长/工程师按数据范围） */
   @Get()
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   async findAll(@Query() query: QuerySiteDto, @CurrentUser() user: CurrentUserContext) {
@@ -73,7 +73,7 @@ export class SiteController {
     return this.siteService.remove(id);
   }
 
-  /** 任命正站长（仅管理员） */
+  /** 任命正网格长（仅管理员） */
   @Post(':id/appoint-manager')
   @Roles(UserRole.SUPER_ADMIN)
   async appointManager(
@@ -83,7 +83,7 @@ export class SiteController {
     return this.siteService.appointManager(id, dto);
   }
 
-  /** 任命副站长（超管或正站长） */
+  /** 任命副网格长（超管或正网格长） */
   @Post(':id/deputies')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async appointDeputy(
@@ -94,7 +94,7 @@ export class SiteController {
     return this.siteService.appointDeputy(id, dto, user);
   }
 
-  /** 移除副站长 */
+  /** 移除副网格长 */
   @Delete(':id/deputies/:userId')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   @HttpCode(HttpStatus.OK)
@@ -106,7 +106,7 @@ export class SiteController {
     return this.siteService.removeDeputy(id, userId, user);
   }
 
-  /** 站点成员列表（含副站长/工程师，可按 role 过滤） */
+  /** 站点成员列表（含副网格长/工程师，可按 role 过滤） */
   @Get(':id/members')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async getMembers(
@@ -117,7 +117,7 @@ export class SiteController {
     return this.siteService.getMembers(id, user, role);
   }
 
-  /** 聘用工程师（超管/正站长/副站长；工程师可同时属于多个站点） */
+  /** 聘用工程师（超管/正网格长/副网格长；工程师可同时属于多个站点） */
   @Post(':id/members')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async addMember(

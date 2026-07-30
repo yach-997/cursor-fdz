@@ -34,7 +34,7 @@ test('迭代二注册派单、结算审核与手机收入入口', () => {
 
 test('后端状态机包含区域、忙碌、完工凭证和本人收入约束', () => {
   const workflow = read('backend/src/modules/finance/services/finance-workflow.service.ts');
-  assert.match(workflow, /站长不能跨区域派单/);
+  assert.match(workflow, /网格长不能跨区域派单/);
   assert.match(workflow, /正在处理案例/);
   assert.match(workflow, /请上传里程截图后再完工/);
   assert.match(workflow, /inspectorId: user\.id, month: selectedMonth/);

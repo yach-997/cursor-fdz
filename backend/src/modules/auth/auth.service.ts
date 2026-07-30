@@ -32,7 +32,7 @@ export class AuthService {
     private readonly siteScope: SiteScopeService,
   ) {}
 
-  /** 登录：按 client 选择生效角色（PC=站长端，H5=巡检端） */
+  /** 登录：按 client 选择生效角色（PC=网格长端，H5=巡检端） */
   async login(dto: LoginDto) {
     const user = await this.userRepo.findOne({
       where: { username: dto.username.trim() },
@@ -154,11 +154,11 @@ export class AuthService {
     if (client === 'pc') {
       if (roles.includes(UserRole.SUPER_ADMIN)) return UserRole.SUPER_ADMIN;
       if (roles.includes(UserRole.SITE_MANAGER)) return UserRole.SITE_MANAGER;
-      // 有正/副站长任职也可进管理端
+      // 有正/副网格长任职也可进管理端
       const managed = await this.siteScope.getManagedSiteIds(user.id);
       if (managed.length) return UserRole.SITE_MANAGER;
       throw new ForbiddenException(
-        '该账号无管理端权限。请使用 H5 巡检端登录，或在用户管理中勾选「站长」角色',
+        '该账号无管理端权限。请使用 H5 巡检端登录，或在用户管理中勾选「网格长」角色',
       );
     }
 
@@ -276,7 +276,7 @@ export class AuthService {
 
     // 按当前会话角色裁剪返回：管理端会话突出 managedSites；巡检端突出 memberships
     if (sessionRole === UserRole.INSPECTOR) {
-      // 多角色：站长/副站长登录 H5 时，所管站点也可进入巡检（无需再聘为自己）
+      // 多角色：网格长/副网格长登录 H5 时，所管站点也可进入巡检（无需再聘为自己）
       if (userHasRole(user, UserRole.SITE_MANAGER)) {
         const managed = await this.siteScope.getManagedSitesBrief(user.id);
         const seen = new Set(

@@ -44,7 +44,7 @@ export class StatsService {
     return this.buildDashboard(undefined, currentUser);
   }
 
-  /** 站长本站仪表盘 */
+  /** 网格长本站仪表盘 */
   async getSiteDashboard(siteId: string | undefined, currentUser: CurrentUserContext) {
     const ids = this.resolveSiteIds(siteId, currentUser);
     if (!ids.length) {

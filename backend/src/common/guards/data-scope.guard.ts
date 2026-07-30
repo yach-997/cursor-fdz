@@ -11,7 +11,7 @@ import { CurrentUserContext } from '../interfaces';
  * 数据范围守卫（数据隔离中间件）
  * 规则：
  * 1. super_admin：跳过所有 site_id 过滤，全平台可见
- * 2. site_manager：查询自动限定在自己管理的站点；传 site_id 须属于该站长
+ * 2. site_manager：查询自动限定在自己管理的站点；传 site_id 须属于该网格长
  * 3. inspector：只能查自己加入的站点；任务/记录进一步在业务层按本人过滤
  */
 @Injectable()
@@ -34,7 +34,7 @@ export class DataScopeGuard implements CanActivate {
       return true;
     }
 
-    // 站长：限定管理站点
+    // 网格长：限定管理站点
     if (user.role === UserRole.SITE_MANAGER) {
       const managedIds = user.managedSiteIds || [];
       user.scopedSiteIds = managedIds;

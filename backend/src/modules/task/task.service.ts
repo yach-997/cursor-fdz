@@ -363,7 +363,7 @@ export class TaskService {
     const task = await this.getTaskOrThrow(id);
     this.assertTaskAccess(task, currentUser);
 
-    // 工程师只能开始自己的任务；站长/超管也可代开始
+    // 工程师只能开始自己的任务；网格长/超管也可代开始
     if (
       currentUser.role === UserRole.INSPECTOR &&
       task.inspectorId !== currentUser.id
@@ -569,7 +569,7 @@ export class TaskService {
     });
     if (member) return;
 
-    // 正站长 / 副站长可兼做本站巡检任务
+    // 正网格长 / 副网格长可兼做本站巡检任务
     const site = await this.siteRepo.findOne({ where: { id: siteId, deletedAt: IsNull() } });
     if (site?.managerId === inspectorId) return;
 

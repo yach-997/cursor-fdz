@@ -92,7 +92,7 @@ export class FinanceQueryService {
         'COALESCE(p.case_revenue,0) AS "caseRevenue"',
       ]);
     if (region) qb.andWhere('c.region = :region', { region });
-    // 站长：优先看已分配到自己站点的案例；也可看本区域未挂站点的（待管理员分配）
+    // 网格长：优先看已分配到自己站点的案例；也可看本区域未挂站点的（待管理员分配）
     if (user.role === UserRole.SITE_MANAGER) {
       if (!user.managedSiteIds?.length) {
         return { list: [], total: 0, page, limit };

@@ -60,7 +60,7 @@ export class FinanceImportService {
     const toSave: ServiceCase[] = [];
     for (const item of parsed.cases) {
       try {
-        if (scopedRegion && item.region !== scopedRegion) throw new Error('站长只能导入本区域案例');
+        if (scopedRegion && item.region !== scopedRegion) throw new Error('网格长只能导入本区域案例');
         const old = caseMap.get(item.gspCaseNo);
         const entity =
           old ||
@@ -546,7 +546,7 @@ export class FinanceImportService {
       for (const parsed of chunk) {
         try {
           const region = parsed.province?.includes('云南') ? 'yunnan' : 'south_china';
-          if (scopedRegion && region !== scopedRegion) throw new Error('站长只能导入本区域PO');
+          if (scopedRegion && region !== scopedRegion) throw new Error('网格长只能导入本区域PO');
 
           const serviceCase = caseMap.get(parsed.gspCaseNo);
           if (!serviceCase) throw new Error('案例创建失败');

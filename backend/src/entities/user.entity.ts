@@ -45,7 +45,7 @@ export class User {
   })
   role: UserRole;
 
-  /** 一账号多角色，如同时具备站长 + 工程师 */
+  /** 一账号多角色，如同时具备网格长 + 工程师 */
   @Column({ type: 'jsonb', default: () => "'[]'" })
   roles: UserRole[];
 
@@ -69,7 +69,7 @@ export class User {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 
-  /** 作为站长管理的站点 */
+  /** 作为网格长管理的站点 */
   @OneToMany(() => Site, (site) => site.manager)
   managedSites: Site[];
 

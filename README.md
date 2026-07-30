@@ -1,6 +1,6 @@
 # 智能设备巡检系统
 
-光伏/储能设备现场巡检系统。PC 端供管理员和站长使用，H5 移动端供巡检工程师户外作业。
+光伏/储能设备现场巡检系统。PC 端供管理员和网格长使用，H5 移动端供巡检工程师户外作业。
 
 ## 技术栈
 
@@ -66,7 +66,7 @@ docker compose up -d --build
 - Docker Compose 编排（PG + Redis + MinIO + NestJS + React PC + React H5）
 - NestJS 骨架：全部 TypeORM Entity、JWT 认证、RolesGuard、DataScopeGuard
 - Auth 模块：登录 / 登出 / me / 刷新令牌
-- Site 模块：CRUD、任命站长、成员聘用/解聘
+- Site 模块：CRUD、任命网格长、成员聘用/解聘
 - PC：Login + Layout + 动态权限菜单 + 路由守卫
 - H5：Login + 站点选择 + 底部 Tab + PWA
 

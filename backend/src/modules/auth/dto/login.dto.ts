@@ -11,7 +11,7 @@ export class LoginDto {
   @MinLength(6, { message: '密码至少6位' })
   password: string;
 
-  /** pc=管理端（站长/副站长/超管）；h5=巡检端 */
+  /** pc=管理端（网格长/副网格长/超管）；h5=巡检端 */
   @IsOptional()
   @IsIn(['pc', 'h5'], { message: 'client 只能是 pc 或 h5' })
   client?: 'pc' | 'h5';

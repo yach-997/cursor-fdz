@@ -40,7 +40,7 @@ import SiteFormModal from './SiteFormModal';
 import { composeFullAddress } from '../../utils/addressParse';
 import { useAuthStore } from '../../stores/auth';
 
-/** 站点管理：正站长 / 多副站长 / 多工程师（工程师可跨站） */
+/** 站点管理：正网格长 / 多副网格长 / 多工程师（工程师可跨站） */
 export default function SitesPage() {
   const isAdmin = useAuthStore((state) => state.user?.role === 'super_admin');
   const [loading, setLoading] = useState(false);
@@ -164,11 +164,11 @@ export default function SitesPage() {
 
   const submitAppoint = async () => {
     if (!appointSite || !managerId) {
-      message.warning('请选择正站长');
+      message.warning('请选择正网格长');
       return;
     }
     await appointManager(appointSite.id, managerId);
-    message.success('已任命正站长');
+    message.success('已任命正网格长');
     setAppointOpen(false);
     load();
   };
@@ -202,11 +202,11 @@ export default function SitesPage() {
 
   const onAddDeputy = async () => {
     if (!staffSite || !pickDeputyId) {
-      message.warning('请选择副站长');
+      message.warning('请选择副网格长');
       return;
     }
     await appointDeputy(staffSite.id, pickDeputyId);
-    message.success('已添加副站长');
+    message.success('已添加副网格长');
     setPickDeputyId(undefined);
     await loadStaff(staffSite);
   };
@@ -262,7 +262,7 @@ export default function SitesPage() {
       render: (value) => `${Number(value || 500)} 米`,
     },
     {
-      title: '正站长',
+      title: '正网格长',
       dataIndex: ['manager', 'realName'],
       width: 100,
       render: (v) => v || '-',
@@ -286,7 +286,7 @@ export default function SitesPage() {
           </Button>
           {isAdmin && (
             <Button type="link" icon={<UserSwitchOutlined />} onClick={() => openAppoint(record)}>
-              正站长
+              正网格长
             </Button>
           )}
           <Button type="link" icon={<TeamOutlined />} onClick={() => void openStaff(record)}>
@@ -364,7 +364,7 @@ export default function SitesPage() {
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
         {regionHint
           ? `当前筛选：${regionHint} → 共 ${total} 个电站`
-          : `一站一名正站长、多名副站长；正/副站长可聘多名工程师；工程师可跨多个站点`}
+          : `一站一名正网格长、多名副网格长；正/副网格长可聘多名工程师；工程师可跨多个站点`}
       </Typography.Paragraph>
 
       <Table
@@ -391,18 +391,18 @@ export default function SitesPage() {
       />
 
       <Modal
-        title={`任命正站长 - ${appointSite?.name || ''}`}
+        title={`任命正网格长 - ${appointSite?.name || ''}`}
         open={appointOpen}
         onCancel={() => setAppointOpen(false)}
         onOk={() => void submitAppoint()}
       >
         <Typography.Paragraph type="secondary">
-          每站仅一名正站长。可从站长账号或工程师中选择（选工程师将提升为站长角色）。
+          每站仅一名正网格长。可从网格长账号或工程师中选择（选工程师将提升为网格长角色）。
         </Typography.Paragraph>
         <Select
           showSearch
           style={{ width: '100%' }}
-          placeholder="选择正站长"
+          placeholder="选择正网格长"
           value={managerId}
           onChange={setManagerId}
           optionFilterProp="label"
@@ -410,7 +410,7 @@ export default function SitesPage() {
             const roles = m.roles?.length ? m.roles : [m.role];
             return {
               value: m.id,
-              label: `${m.realName}（${m.username} / ${roles.includes('site_manager') ? '站长' : '工程师'}）`,
+              label: `${m.realName}（${m.username} / ${roles.includes('site_manager') ? '网格长' : '工程师'}）`,
             };
           })}
         />
@@ -434,7 +434,7 @@ export default function SitesPage() {
           }}
         >
           <Space wrap size={12}>
-            <Tag color="green" style={{ margin: 0 }}>正站长</Tag>
+            <Tag color="green" style={{ margin: 0 }}>正网格长</Tag>
             <Typography.Text strong>
               {staffSite?.manager?.realName || '未任命'}
             </Typography.Text>
@@ -450,27 +450,27 @@ export default function SitesPage() {
           </Space>
         </div>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          同一账号可兼任正站长和工程师：从电脑端站长入口登录进入管理端，从手机端工程师入口登录进入巡检端。
+          同一账号可兼任正网格长和工程师：从电脑端网格长入口登录进入管理端，从手机端工程师入口登录进入巡检端。
         </Typography.Paragraph>
         <Tabs
           items={[
             {
               key: 'deputy',
-              label: `副站长（${deputies.length}）`,
+              label: `副网格长（${deputies.length}）`,
               children: (
                 <div>
                   <Space style={{ marginBottom: 12 }} wrap>
                     <Select
                       showSearch
                       style={{ width: 280 }}
-                      placeholder="选择站长账号"
+                      placeholder="选择网格长账号"
                       value={pickDeputyId}
                       onChange={setPickDeputyId}
                       optionFilterProp="label"
                       options={deputyOptions}
                     />
                     <Button type="primary" onClick={() => void onAddDeputy()}>
-                      添加副站长
+                      添加副网格长
                     </Button>
                   </Space>
                   <Table
@@ -487,7 +487,7 @@ export default function SitesPage() {
                         width: 100,
                         render: (_, r) => (
                           <Popconfirm
-                            title="确认移除该副站长？"
+                            title="确认移除该副网格长？"
                             onConfirm={async () => {
                               if (!staffSite) return;
                               await removeDeputy(staffSite.id, r.userId);

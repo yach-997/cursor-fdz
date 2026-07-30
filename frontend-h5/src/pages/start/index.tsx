@@ -68,7 +68,7 @@ export default function StartWizardPage() {
       setTasks(list);
       setStep('task');
       if (!list.length) {
-        Toast.info('该条件下暂无待办任务，请联系站长分配');
+        Toast.info('该条件下暂无待办任务，请联系网格长分配');
       }
     } catch {
       /* 拦截器 */
@@ -120,7 +120,7 @@ export default function StartWizardPage() {
       />
 
       <div style={{ margin: '12px 16px 0', padding: 12, borderRadius: 12, background: '#eaf6f1', color: '#47685c', fontSize: 12, lineHeight: 1.65 }}>
-        这里用于执行管理员或站长已分配的待办任务；突发检查或现场漏建任务时，可点右上角“临时新建”。
+        这里用于执行管理员或网格长已分配的待办任务；突发检查或现场漏建任务时，可点右上角“临时新建”。
       </div>
 
       <div style={{ padding: '12px 16px', fontSize: 13, color: '#666' }}>
@@ -133,7 +133,7 @@ export default function StartWizardPage() {
       {step === 'region' && (
         <>
           {!regions.length ? (
-            <Empty description="暂无可用地区，请先联系站长聘用到站点" />
+            <Empty description="暂无可用地区，请先联系网格长聘用到站点" />
           ) : (
             <Cell.Group inset>
               {regions.map((r) => (

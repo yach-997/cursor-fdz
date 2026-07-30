@@ -70,7 +70,7 @@ export default function SettingsPage() {
     <div>
       <NavBar title="个人资料" leftText="返回" onClickLeft={() => navigate(-1)} />
       <div style={{ padding: '10px 16px', fontSize: 13, color: '#888' }}>
-        请完善个人信息，便于站长联系与派工。支持手机浏览器与微信内打开。
+        请完善个人信息，便于网格长联系与派工。支持手机浏览器与微信内打开。
       </div>
       <Form style={{ marginTop: 4 }}>
         <Field

@@ -59,7 +59,7 @@ export class CreateSiteDto {
   inspectionRadiusMeters?: number;
 
   @IsOptional()
-  @IsPostgresUuid({ message: '站长ID格式不正确' })
+  @IsPostgresUuid({ message: '网格长ID格式不正确' })
   managerId?: string;
 }
 
@@ -140,14 +140,14 @@ export class QuerySiteDto extends PaginationDto {
   keyword?: string;
 }
 
-/** 任命正站长 DTO */
+/** 任命正网格长 DTO */
 export class AppointManagerDto {
   @IsPostgresUuid({ message: '用户ID格式不正确' })
   @IsNotEmpty()
   userId: string;
 }
 
-/** 任命副站长 DTO */
+/** 任命副网格长 DTO */
 export class AppointDeputyDto {
   @IsPostgresUuid({ message: '用户ID格式不正确' })
   @IsNotEmpty()

@@ -16,7 +16,7 @@ export class PriceService {
   ) {}
   async list(query: PriceQueryDto, user: CurrentUserContext) {
     if (user.role !== UserRole.SUPER_ADMIN && query.type === 'perf') {
-      throw new ForbiddenException('站长无权查看绩效单价库');
+      throw new ForbiddenException('网格长无权查看绩效单价库');
     }
     if (user.role !== UserRole.SUPER_ADMIN) query.type = 'settle';
     const page = query.page || 1,

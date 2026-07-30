@@ -53,7 +53,7 @@ const DEVICE_TYPE_OPTIONS = Object.entries(DEVICE_TYPE_LABEL).map(([value, label
 
 /**
  * 任务管理：
- * - 管理员/站长可创建、列表、筛选、编辑、归档
+ * - 管理员/网格长可创建、列表、筛选、编辑、归档
  * - 字段：任务名称、设备序列号、设备类型、所属区域/现场（及指派工程师）
  */
 export default function TasksPage() {

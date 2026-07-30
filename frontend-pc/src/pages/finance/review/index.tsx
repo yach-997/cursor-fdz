@@ -47,7 +47,7 @@ export default function FinanceReviewPage() {
 
   return (
     <Card className="finance-card" title="待结算审核">
-      <div className="finance-review-tip">案例完工后 7 天内完成审核；超期案例会红色提示。站长录入的特殊扣减须管理员复核。</div>
+      <div className="finance-review-tip">案例完工后 7 天内完成审核；超期案例会红色提示。网格长录入的特殊扣减须管理员复核。</div>
       <Table
         rowKey="id"
         loading={loading}

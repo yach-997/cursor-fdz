@@ -128,7 +128,7 @@ export default function FinanceAssessmentPage() {
   return (
     <Card className="finance-card" title="月度考核与补助">
       <div className="finance-review-tip">
-        月度考核 = 打分排名考核 + 专业指标事件考核。内部考核表按总分排名（站长/网格长优劣各 1
+        月度考核 = 打分排名考核 + 专业指标事件考核。内部考核表按总分排名（网格长优劣各 1
         名±500，工程师优劣各 3 名±300）；事件按细则按件扣罚。已取消原「内部 60% + 阳光 40%」加权。
       </div>
       <Space className="finance-toolbar">
@@ -156,7 +156,7 @@ export default function FinanceAssessmentPage() {
             title: '角色',
             dataIndex: 'userRole',
             width: 110,
-            render: (v) => (v === 'site_manager' ? '站长' : '工程师'),
+            render: (v) => (v === 'site_manager' ? '网格长' : '工程师'),
           },
           {
             title: '区域',

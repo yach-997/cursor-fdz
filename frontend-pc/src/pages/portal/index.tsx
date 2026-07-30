@@ -57,7 +57,7 @@ export default function PortalPage() {
           </span>
           <span className="portal-card__text">
             <span className="portal-card__title">电脑管理后台</span>
-            <span className="portal-card__desc">管理员 / 站长入口</span>
+            <span className="portal-card__desc">管理员 / 网格长入口</span>
           </span>
           <span className="portal-card__arrow">›</span>
         </button>

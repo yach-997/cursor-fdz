@@ -42,7 +42,7 @@ export class UserService {
     const qb = this.userRepo.createQueryBuilder('user');
 
     if (currentUser.role === UserRole.SITE_MANAGER) {
-      // 站长视角：具备工程师角色的账号
+      // 网格长视角：具备工程师角色的账号
       const cond = qbUserHasRole('user', UserRole.INSPECTOR, 'inspector');
       qb.andWhere(cond.sql, cond.params);
     } else if (query.role) {
@@ -79,7 +79,7 @@ export class UserService {
 
     if (currentUser.role === UserRole.SITE_MANAGER) {
       if (roles.length !== 1 || roles[0] !== UserRole.INSPECTOR) {
-        throw new ForbiddenException('站长只能创建工程师账号');
+        throw new ForbiddenException('网格长只能创建工程师账号');
       }
     }
 
@@ -124,7 +124,7 @@ export class UserService {
     }
 
     if ((dto.roles || dto.role) && currentUser.role === UserRole.SITE_MANAGER) {
-      throw new ForbiddenException('站长无权修改用户角色');
+      throw new ForbiddenException('网格长无权修改用户角色');
     }
 
     Object.assign(user, {
@@ -223,7 +223,7 @@ export class UserService {
     if (currentUser.role === UserRole.SUPER_ADMIN) return;
     if (currentUser.role === UserRole.SITE_MANAGER) {
       if (!userHasRole(target, UserRole.INSPECTOR)) {
-        throw new ForbiddenException('站长只能管理工程师');
+        throw new ForbiddenException('网格长只能管理工程师');
       }
       return;
     }

@@ -44,7 +44,7 @@ const iconMap: Record<string, React.ReactNode> = {
 
 const roleLabel: Record<string, string> = {
   super_admin: '超级管理员',
-  site_manager: '站长',
+  site_manager: '网格长',
   inspector: '工程师',
 };
 
