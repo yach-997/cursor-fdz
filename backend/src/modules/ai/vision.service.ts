@@ -411,28 +411,28 @@ export class VisionService {
     return [
       '【接地安装检查·硬性否决 — 覆盖通用“拿不准优先 pass”】',
       '现场照片中必须同时清晰看到以下三项，缺任何一项 → status 必须为 fail：',
-      'A) 黄绿双色接地线：绝缘皮为黄绿相间双色，不是单独黄色/绿色相线，也不是线缆色环；',
-      'B) 接地排或接地端子：接地铜排、接地汇流排、明确接地螺栓/端子等接地点；',
-      'C) 接地标识：接地符号、PE/接地文字标牌或清晰接地标识贴纸。',
-      '严禁误判：相线（黄/绿/红单色环）、普通动力线缆、仅箱体外观、高压三角警示牌 ≠ 接地证据。',
-      '箱门关闭、只拍外壳/警示牌、看不到接地线与端子 → fail。',
-      '某项看不清或存疑时，将该项 evidence 记为 false，整体 fail。',
+      'A) 黄绿双色接地线：绝缘皮为黄绿相间双色（可细可短），不是单独黄色/绿色相线，也不是线缆上的单色色环；',
+      'B) 接地排或接地端子：接地铜排、汇流排、PE 螺栓端子、接到机柜的铜编织带接地点等；',
+      'C) 接地标识（务必仔细辨认，字小也算）：面板丝印/打印/铭牌上的「PE」「GND」「EARTH」「接地」、接地符号，或接地标识贴纸。',
+      '特别提醒：逆变器/配电盒背板上印刷的 PE 字样 = 有效接地标识，禁止判成“标识缺失”。',
+      '高压三角警示牌、仅箱门外壳、相线 L1/L2/L3 标识 ≠ 接地证据。',
+      '箱门关闭、只拍外壳/警示牌、完全看不到内部接地点 → fail。',
+      '某项看不清时该项 evidence=false；但若能辨认出 PE 字样则 groundLabel 必须为 true。',
       '仅当 evidence 三项均为 true 才允许 pass；否则 fail，并在 reason 写明缺哪几项。',
     ].join('\n');
   }
 
-  /** 服务端强制：接地三要素缺一不可，防止模型仍给高置信合格 */
+  /** 服务端强制：接地三要素缺一不可；三项齐时不得因模型犹豫仍判不合格 */
   private enforceGroundingResult(
     parsed: Omit<VisionCompareResult, 'provider'>,
     raw: string,
   ): Omit<VisionCompareResult, 'provider'> {
-    const evidence = this.parseGroundingEvidence(raw);
+    const evidence = this.parseGroundingEvidence(raw, parsed.reason);
     const missing: string[] = [];
     if (!evidence.yellowGreenWire) missing.push('黄绿双色接地线');
     if (!evidence.groundBarOrTerminal) missing.push('接地排/端子');
     if (!evidence.groundLabel) missing.push('接地标识');
 
-    // 模型未给 evidence 却声称合格 → 直接否决，避免再出现无接地线却 95% 合格
     if (missing.length > 0) {
       const detail =
         evidence.reported
@@ -441,22 +441,25 @@ export class VisionService {
       return {
         status: CheckResult.FAIL,
         confidence: Math.min(parsed.confidence, 0.92),
-        reason: `${detail}。接地安装须同时具备黄绿双色接地线、接地排/端子与接地标识，缺一不合格。`,
+        reason: `${detail}。接地安装须同时具备黄绿双色接地线、接地排/端子与接地标识（含 PE 丝印），缺一不合格。`,
       };
     }
 
-    if (parsed.status === CheckResult.PASS) {
-      return {
-        ...parsed,
-        reason:
-          parsed.reason ||
-          '已确认黄绿双色接地线、接地排/端子与接地标识均可见，符合要求。',
-      };
-    }
-    return parsed;
+    // 三项证据齐全时强制合格，避免模型仍写「标识缺失」
+    return {
+      status: CheckResult.PASS,
+      confidence: Math.max(parsed.confidence, 0.88),
+      reason:
+        parsed.status === CheckResult.PASS && parsed.reason
+          ? parsed.reason
+          : '已确认黄绿双色接地线、接地排/端子与接地标识（含 PE 等）均可见，符合要求。',
+    };
   }
 
-  private parseGroundingEvidence(raw: string): {
+  private parseGroundingEvidence(
+    raw: string,
+    reason = '',
+  ): {
     yellowGreenWire: boolean;
     groundBarOrTerminal: boolean;
     groundLabel: boolean;
@@ -472,11 +475,11 @@ export class VisionService {
     if (!match) return empty;
     try {
       const obj = JSON.parse(match[0]) as {
+        reason?: string;
         evidence?: {
           yellowGreenWire?: unknown;
           groundBarOrTerminal?: unknown;
           groundLabel?: unknown;
-          /** 兼容中文键 */
           黄绿双色接地线?: unknown;
           接地排?: unknown;
           接地端子?: unknown;
@@ -486,12 +489,40 @@ export class VisionService {
       const ev = obj.evidence;
       if (!ev || typeof ev !== 'object') return empty;
       const asBool = (v: unknown) => v === true || v === 'true' || v === 1 || v === '1';
+      let yellowGreenWire = asBool(ev.yellowGreenWire ?? ev.黄绿双色接地线);
+      let groundBarOrTerminal = asBool(
+        ev.groundBarOrTerminal ?? ev.接地排 ?? ev.接地端子,
+      );
+      let groundLabel = asBool(ev.groundLabel ?? ev.接地标识);
+
+      // 模型口头承认见到 PE/接地标识，但 evidence 漏标时纠偏
+      const text = `${obj.reason || ''} ${reason} ${raw}`;
+      if (
+        !groundLabel &&
+        /(?:可见|有|存在|标有|丝印|打印)?\s*PE\b|接地标识|接地符号|GND|EARTH/.test(
+          text,
+        ) &&
+        !/PE\s*缺失|无\s*PE|未见\s*PE|没有\s*PE|标识缺失|未见接地标识/.test(text)
+      ) {
+        // 仅当未明确说「缺失」时，才把文案里的 PE 视为已识别
+        if (/\bPE\b|接地标识|接地符号|GND|EARTH/.test(text)) {
+          groundLabel = true;
+        }
+      }
+      // 「标识缺失」类文案且同时提到看见 PE 时，以看见 PE 为准
+      if (
+        /标识缺失|未见接地标识/.test(text) &&
+        /(?:可见|清晰|有)\s*PE|\bPE\b.*(?:标识|丝印|字样)|PE\s*(?:标识|丝印|字样)/.test(
+          text,
+        )
+      ) {
+        groundLabel = true;
+      }
+
       return {
-        yellowGreenWire: asBool(ev.yellowGreenWire ?? ev.黄绿双色接地线),
-        groundBarOrTerminal: asBool(
-          ev.groundBarOrTerminal ?? ev.接地排 ?? ev.接地端子,
-        ),
-        groundLabel: asBool(ev.groundLabel ?? ev.接地标识),
+        yellowGreenWire,
+        groundBarOrTerminal,
+        groundLabel,
         reported: true,
       };
     } catch {
