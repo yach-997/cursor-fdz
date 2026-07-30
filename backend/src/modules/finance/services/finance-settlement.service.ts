@@ -93,12 +93,10 @@ export class FinanceSettlementService {
   }
 
   async rank(month: string, user: CurrentUserContext) {
-    const region = await this.scope.region(user);
     const qb = this.assessments
       .createQueryBuilder('a')
       .innerJoin(User, 'u', 'u.id=a.user_id')
       .where('a.month=:month', { month });
-    if (region) qb.andWhere('u.region=:region', { region });
     const rows = await qb.orderBy('a.total_score', 'DESC').addOrderBy('a.user_id', 'ASC').getMany();
     for (const group of ['station_manager', 'inspector'] as const) {
       const grouped = rows.filter((item) => item.rankGroup === group);
@@ -374,7 +372,7 @@ export class FinanceSettlementService {
   }
 
   private async scopedPeople(user: CurrentUserContext) {
-    const region = await this.scope.region(user);
+    void user;
     const qb = this.users
       .createQueryBuilder('u')
       .where('u.status=:status', { status: CommonStatus.ACTIVE });
@@ -383,7 +381,6 @@ export class FinanceSettlementService {
       inspector: UserRole.INSPECTOR,
       roles: [UserRole.SITE_MANAGER, UserRole.INSPECTOR],
     });
-    if (region) qb.andWhere('u.region=:region', { region });
     return qb.orderBy('u.real_name', 'ASC').getMany();
   }
 }

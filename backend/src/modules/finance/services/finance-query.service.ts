@@ -69,7 +69,6 @@ export class FinanceQueryService {
   async listCases(query: FinanceCaseQueryDto, user: CurrentUserContext) {
     const page = query.page || 1;
     const limit = query.limit || 10;
-    const region = await this.scope.region(user);
     const qb = this.cases
       .createQueryBuilder('c')
       .leftJoin(CasePerformance, 'p', 'p.service_case_id = c.id')
@@ -91,8 +90,7 @@ export class FinanceQueryService {
         'c.updated_at AS "updatedAt"',
         'COALESCE(p.case_revenue,0) AS "caseRevenue"',
       ]);
-    if (region) qb.andWhere('c.region = :region', { region });
-    // 网格长：优先看已分配到自己站点的案例；也可看本区域未挂站点的（待管理员分配）
+    // 网格长：按管理站点隔离；区域仅作可选筛选，不作为权限边界
     if (user.role === UserRole.SITE_MANAGER) {
       if (!user.managedSiteIds?.length) {
         return { list: [], total: 0, page, limit };
@@ -139,7 +137,7 @@ export class FinanceQueryService {
   async caseDetail(id: string, user: CurrentUserContext) {
     const item = await this.cases.findOne({ where: { id } });
     if (!item) throw new NotFoundException('案例不存在');
-    await this.scope.assertRegion(user, item.region);
+    this.scope.assertCaseAccess(user, item);
     const orders = await this.orders.find({
       where: { serviceCaseId: id },
       order: { demandDate: 'DESC' },
@@ -188,16 +186,20 @@ export class FinanceQueryService {
   async listPo(query: PoOrderQueryDto, user: CurrentUserContext) {
     const page = query.page || 1;
     const limit = query.limit || 10;
-    const region = await this.scope.region(user);
     const qb = this.orders
       .createQueryBuilder('po')
       .leftJoin(ServiceCase, 'c', 'c.id = po.service_case_id')
       .select(['po', 'c.region AS "caseRegion"']);
-    if (region)
+    // 网格长：看自己站点案例关联的 PO，以及尚未匹配案例的待挂接 PO
+    if (user.role === UserRole.SITE_MANAGER) {
+      if (!user.managedSiteIds?.length) {
+        return { list: [], total: 0, page, limit };
+      }
       qb.andWhere(
-        "COALESCE(c.region, CASE WHEN po.province LIKE '%云南%' THEN 'yunnan' ELSE 'south_china' END) = :region",
-        { region },
+        '(c.site_id IN (:...siteIds) OR po.service_case_id IS NULL OR c.site_id IS NULL)',
+        { siteIds: user.managedSiteIds },
       );
+    }
     if (query.matchStatus)
       qb.andWhere('po.match_status = :matchStatus', { matchStatus: query.matchStatus });
     if (query.keyword)
@@ -226,7 +228,7 @@ export class FinanceQueryService {
     if (!order) throw new NotFoundException('PO不存在');
     const serviceCase = await this.cases.findOne({ where: { gspCaseNo } });
     if (!serviceCase) throw new NotFoundException('目标案例不存在');
-    await this.scope.assertRegion(user, serviceCase.region);
+    this.scope.assertCaseAccess(user, serviceCase);
     const old = { gspCaseNo: order.gspCaseNo, serviceCaseId: order.serviceCaseId };
     order.gspCaseNo = gspCaseNo;
     order.serviceCaseId = serviceCase.id;
@@ -250,14 +252,8 @@ export class FinanceQueryService {
       where: { matchStatus: 'pending' },
       order: { demandDate: 'ASC' },
     });
-    const scopedRegion = await this.scope.region(user);
     const failures: Array<{ poNo: string; reason: string }> = [];
-    const eligible = pendingOrders.filter((order) => {
-      const region = order.province?.includes('云南') ? 'yunnan' : 'south_china';
-      if (!scopedRegion || scopedRegion === region) return true;
-      failures.push({ poNo: order.poNo, reason: '无权处理其他区域的费用数据' });
-      return false;
-    });
+    const eligible = pendingOrders;
     if (!eligible.length) {
       return {
         pendingOrders: pendingOrders.length,
@@ -357,7 +353,7 @@ export class FinanceQueryService {
     if (!order.serviceCaseId) throw new NotFoundException('PO尚未匹配案例');
     const serviceCase = await this.cases.findOne({ where: { id: order.serviceCaseId } });
     if (!serviceCase) throw new NotFoundException('关联案例不存在');
-    await this.scope.assertRegion(user, serviceCase.region);
+    this.scope.assertCaseAccess(user, serviceCase);
     return this.recalculateCase(serviceCase.id);
   }
 
@@ -391,7 +387,6 @@ export class FinanceQueryService {
   }
 
   async dashboard(query: DashboardQueryDto, user: CurrentUserContext) {
-    const region = await this.scope.region(user);
     const qb = this.orders
       .createQueryBuilder('po')
       .leftJoin(ServiceCase, 'c', 'c.id=po.service_case_id')
@@ -414,11 +409,30 @@ export class FinanceQueryService {
       .addGroupBy('c.id')
       .addGroupBy('p.case_revenue')
       .addGroupBy('p.perf_final');
-    if (region)
+    if (user.role === UserRole.SITE_MANAGER) {
+      if (!user.managedSiteIds?.length) {
+        return {
+          summary: {
+            income: 0,
+            poTotalAmount: 0,
+            varianceAmount: 0,
+            varianceRate: 0,
+            poCount: 0,
+            caseCount: 0,
+            pendingMatch: 0,
+            pendingPrice: 0,
+            ignoredCount: 0,
+            okCount: 0,
+          },
+          ignoredItems: [],
+          monthlyIncome: [],
+        };
+      }
       qb.andWhere(
-        "COALESCE(c.region, CASE WHEN po.province LIKE '%云南%' THEN 'yunnan' ELSE 'south_china' END)=:region",
-        { region },
+        '(c.site_id IN (:...siteIds) OR po.service_case_id IS NULL OR c.site_id IS NULL)',
+        { siteIds: user.managedSiteIds },
       );
+    }
     if (query.from) qb.andWhere('po.demand_date>=:from', { from: query.from });
     if (query.to) qb.andWhere('po.demand_date<=:to', { to: query.to });
     if (query.project) qb.andWhere('po.project_name=:project', { project: query.project });
@@ -459,11 +473,12 @@ export class FinanceQueryService {
       .groupBy('item.item_code')
       .orderBy('COUNT(*)', 'DESC')
       .limit(50);
-    if (region)
+    if (user.role === UserRole.SITE_MANAGER) {
       ignoredQb.andWhere(
-        "COALESCE(c.region, CASE WHEN po.province LIKE '%云南%' THEN 'yunnan' ELSE 'south_china' END)=:region",
-        { region },
+        '(c.site_id IN (:...siteIds) OR po.service_case_id IS NULL OR c.site_id IS NULL)',
+        { siteIds: user.managedSiteIds },
       );
+    }
     if (query.from) ignoredQb.andWhere('po.demand_date>=:from', { from: query.from });
     if (query.to) ignoredQb.andWhere('po.demand_date<=:to', { to: query.to });
     if (query.project) ignoredQb.andWhere('po.project_name=:project', { project: query.project });

@@ -474,7 +474,7 @@ export default function UsersPage() {
           <Form.Item name="region" label="归属区域">
             <Select
               allowClear
-              placeholder="费用数据与派单的区域范围"
+              placeholder="选填，仅作档案展示，不限制派单与跨站管人"
               options={[
                 { value: 'south_china', label: '华南' },
                 { value: 'yunnan', label: '云南' },

@@ -72,12 +72,9 @@ export class FinanceWorkflowService {
       });
       siteMemberIds = new Set(members.map((m) => m.userId));
     }
+    // 派单只看「本站已入职工程师」，不按人员归属区域过滤（可跨地管人）
     return inspectors
       .filter((item) => userHasRole(item, UserRole.INSPECTOR))
-      .filter(
-        (item) =>
-          user.role === UserRole.SUPER_ADMIN || item.region === serviceCase.region,
-      )
       .filter((item) => !siteMemberIds || siteMemberIds.has(item.id))
       .map((item) => ({
         id: item.id,
@@ -114,13 +111,6 @@ export class FinanceWorkflowService {
     if (!member) {
       throw new BadRequestException('只能派给该站点已入职的工程师');
     }
-    const crossRegion = inspector.region !== serviceCase.region;
-    if (crossRegion && user.role !== UserRole.SUPER_ADMIN) {
-      throw new ForbiddenException('网格长不能跨区域派单');
-    }
-    if (crossRegion && !reason?.trim()) {
-      throw new BadRequestException('管理员跨区域派单必须填写特批原因');
-    }
     const busy = await this.cases.findOne({
       where: { inspectorId, status: In([...ACTIVE_CASE_STATUSES]) },
     });
@@ -156,7 +146,7 @@ export class FinanceWorkflowService {
       before,
       { status: serviceCase.status, inspectorId },
       user.id,
-      crossRegion ? `跨区域特批：${reason}` : '站点派单',
+      reason?.trim() ? `站点派单：${reason.trim()}` : '站点派单',
     );
     return serviceCase;
   }
@@ -237,7 +227,6 @@ export class FinanceWorkflowService {
   }
 
   async pendingReview(user: CurrentUserContext) {
-    const region = await this.scope.region(user);
     const qb = this.cases
       .createQueryBuilder('c')
       .innerJoin(CasePerformance, 'p', 'p.service_case_id=c.id')
@@ -264,7 +253,12 @@ export class FinanceWorkflowService {
       ])
       .where("c.status IN ('settle_review','settled')")
       .andWhere("p.review_status IN ('pending','rejected')");
-    if (region) qb.andWhere('c.region=:region', { region });
+    if (user.role === UserRole.SITE_MANAGER) {
+      if (!user.managedSiteIds?.length) return [];
+      qb.andWhere('(c.site_id IN (:...siteIds) OR c.site_id IS NULL)', {
+        siteIds: user.managedSiteIds,
+      });
+    }
     const rows = await qb.orderBy('c.finish_time', 'ASC').getRawMany();
     return rows.map((row) => {
       const dueAt = row.finishTime
@@ -414,7 +408,7 @@ export class FinanceWorkflowService {
   private async caseForManager(caseId: string, user: CurrentUserContext) {
     const serviceCase = await this.cases.findOne({ where: { id: caseId } });
     if (!serviceCase) throw new NotFoundException('案例不存在');
-    await this.scope.assertRegion(user, serviceCase.region);
+    this.scope.assertCaseAccess(user, serviceCase);
     return serviceCase;
   }
 

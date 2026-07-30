@@ -12,7 +12,6 @@ import {
 } from '../../../entities';
 import { CurrentUserContext } from '../../../common/interfaces';
 import { ExcelParserService, ParsedPoOrder } from './excel-parser.service';
-import { FinanceScopeService } from './finance-scope.service';
 import { isIgnoredItem, modelMatches, pickMappedPrice } from './item-matcher';
 
 const money = (value: number) => (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2);
@@ -24,7 +23,6 @@ export class FinanceImportService {
   constructor(
     private readonly parser: ExcelParserService,
     private readonly dataSource: DataSource,
-    private readonly scope: FinanceScopeService,
     @InjectRepository(ImportBatch) private readonly batches: Repository<ImportBatch>,
     @InjectRepository(ServiceCase) private readonly cases: Repository<ServiceCase>,
     @InjectRepository(PoOrder) private readonly orders: Repository<PoOrder>,
@@ -43,7 +41,6 @@ export class FinanceImportService {
         totalRows: parsed.cases.length,
         failures: parsed.failures,
       };
-    const scopedRegion = await this.scope.region(user);
     const batch = await this.createBatch(
       'gsp_case',
       file.originalname,
@@ -60,7 +57,6 @@ export class FinanceImportService {
     const toSave: ServiceCase[] = [];
     for (const item of parsed.cases) {
       try {
-        if (scopedRegion && item.region !== scopedRegion) throw new Error('网格长只能导入本区域案例');
         const old = caseMap.get(item.gspCaseNo);
         const entity =
           old ||
@@ -115,7 +111,6 @@ export class FinanceImportService {
     const nextOffset = Math.min(totalOrders, offset + slice.length);
     const done = nextOffset >= totalOrders;
 
-    const scopedRegion = await this.scope.region(user);
     const batch = await this.resolveBatch(
       options.batchId,
       'po_order',
@@ -136,13 +131,7 @@ export class FinanceImportService {
     for (let i = 0; i < slice.length; i += PO_CHUNK) {
       const chunk = slice.slice(i, i + PO_CHUNK);
       try {
-        const result = await this.savePoChunk(
-          chunk,
-          batch.id,
-          activePrices,
-          activeMappings,
-          scopedRegion,
-        );
+        const result = await this.savePoChunk(chunk, batch.id, activePrices, activeMappings);
         success += result.success;
         generatedCases += result.generatedCases;
         failures.push(...result.failures);
@@ -485,7 +474,6 @@ export class FinanceImportService {
     batchId: string,
     prices: PriceLibrary[],
     mappings: ItemPriceMapping[],
-    scopedRegion: string | null,
   ) {
     return this.dataSource.transaction(async (manager) => {
       const caseRepo = manager.getRepository(ServiceCase);
@@ -517,7 +505,6 @@ export class FinanceImportService {
       for (const parsed of chunk) {
         try {
           const region = parsed.province?.includes('云南') ? 'yunnan' : 'south_china';
-          if (scopedRegion && region !== scopedRegion) throw new Error('网格长只能导入本区域PO');
 
           const serviceCase = caseMap.get(parsed.gspCaseNo) || null;
           let order = orderMap.get(parsed.poNo);

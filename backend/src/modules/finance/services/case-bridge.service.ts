@@ -75,7 +75,6 @@ export class CaseBridgeService {
     const list = await this.cases.find({ where: { id: In(dto.caseIds) } });
     if (!list.length) throw new NotFoundException('未找到案例');
     for (const item of list) {
-      await this.scope.assertRegion(user, item.region);
       item.siteId = site.id;
     }
     await this.cases.save(list);
@@ -128,7 +127,6 @@ export class CaseBridgeService {
     const skipped: Array<{ caseId: string; reason: string }> = [];
 
     for (const item of list) {
-      await this.scope.assertRegion(user, item.region);
       if (!item.siteId) {
         skipped.push({ caseId: item.id, reason: '未分配站点' });
         continue;
@@ -230,7 +228,7 @@ export class CaseBridgeService {
   private async getCase(id: string, user: CurrentUserContext) {
     const item = await this.cases.findOne({ where: { id } });
     if (!item) throw new NotFoundException('案例不存在');
-    await this.scope.assertRegion(user, item.region);
+    this.scope.assertCaseAccess(user, item);
     return item;
   }
 

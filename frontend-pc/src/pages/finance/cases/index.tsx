@@ -511,18 +511,13 @@ export default function FinanceCasesPage() {
         onCancel={() => setAssigning(undefined)}
         onOk={async () => {
           if (!assigning || !inspectorId) return;
-          const selected = inspectors.find((item) => item.id === inspectorId);
-          if (selected?.region !== assigning.region && !assignReason.trim()) {
-            message.warning('跨区域派单请填写特批原因');
-            return;
-          }
           await assignFinanceCase(assigning.id, inspectorId, assignReason || undefined);
           message.success('派单成功，工程师可在手机端接单作业');
           setAssigning(undefined);
           await load();
         }}
       >
-        <p>仅显示该站点已入职工程师；请先分配站点并设置任务类型。</p>
+        <p>仅显示该站点已入职工程师；可跨地管人，不按归属区域限制。</p>
         <Select
           style={{ width: '100%' }}
           value={inspectorId}
@@ -531,19 +526,16 @@ export default function FinanceCasesPage() {
           options={inspectors.map((item) => ({
             value: item.id,
             disabled: !item.available,
-            label: `${item.realName}（${item.phone}）· ${item.region === 'yunnan' ? '云南' : '华南'}${item.available ? '' : ' · 作业中'}`,
+            label: `${item.realName}（${item.phone}）${item.available ? '' : ' · 作业中'}`,
           }))}
         />
-        {inspectors.find((item) => item.id === inspectorId)?.region !== assigning?.region &&
-          inspectorId && (
-            <Input.TextArea
-              style={{ marginTop: 12 }}
-              rows={3}
-              value={assignReason}
-              onChange={(event) => setAssignReason(event.target.value)}
-              placeholder="跨区域派单特批原因（必填）"
-            />
-          )}
+        <Input.TextArea
+          style={{ marginTop: 12 }}
+          rows={2}
+          value={assignReason}
+          onChange={(event) => setAssignReason(event.target.value)}
+          placeholder="派单备注（选填）"
+        />
       </Modal>
       <Drawer
         width={760}
