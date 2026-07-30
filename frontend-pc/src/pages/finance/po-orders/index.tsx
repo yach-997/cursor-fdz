@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Card, Form, Input, Modal, Table, Tag, Tabs, message } from 'antd';
+import { Alert, Button, Card, Form, Input, Modal, Table, Tag, Tabs, message } from 'antd';
 import { DeleteOutlined, DownloadOutlined, LinkOutlined, SyncOutlined } from '@ant-design/icons';
 import { clearPoOrders, fetchPoOrders, generateCasesFromPo, matchPoOrder } from '../../../api/finance';
 import type { PoOrder } from '../../../types/finance';
@@ -44,17 +44,17 @@ export default function PoOrdersPage() {
   };
   const generateCases = () => {
     Modal.confirm({
-      title: '从 PO 反向生成案例',
+      title: '应急：从待匹配 PO 补建案例',
       content:
-        '系统将按 GSP 案例号补建案例，状态设为“待结算审核”，并自动挂接历史待匹配 PO。已有案例不会重复创建。',
-      okText: '开始生成',
+        '正常流程应先导入 GSP 再建案例。本操作仅用于历史漏导 GSP 时兜底：按 PO 的 GSP 案例号补建案例（状态「待结算审核」）并自动挂接。已有案例不会重复创建。',
+      okText: '开始补建',
       cancelText: '取消',
       onOk: async () => {
         setGenerating(true);
         try {
           const result = await generateCasesFromPo();
           message.success(
-            `生成案例 ${result.generatedCases} 个，成功匹配 PO ${result.matchedOrders} 个`,
+            `补建案例 ${result.generatedCases} 个，成功匹配 PO ${result.matchedOrders} 个`,
           );
           setStatus('matched');
           setPage(1);
@@ -83,12 +83,19 @@ export default function PoOrdersPage() {
   };
   return (
     <Card className="finance-card">
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 12 }}
+        message="第二次导入：钉钉 PO（图2 主表 + 图3 专用/通用条目）"
+        description="按 GSP 案例号挂接第一次导入的案例并补全价格数量。未找到案例的 PO 进入「待匹配」；可用人工挂接，或仅在漏导 GSP 时使用下方应急补建。"
+      />
       <div className="finance-toolbar">
         <Button type="primary" icon={<DownloadOutlined />} onClick={() => setImportOpen(true)}>
           导入 PO
         </Button>
         <Button icon={<SyncOutlined />} loading={generating} onClick={generateCases}>
-          从 PO 生成案例并匹配
+          应急：从 PO 补建案例
         </Button>
         {canClear && (
           <Button danger icon={<DeleteOutlined />} loading={clearing} onClick={() => void onClear()}>

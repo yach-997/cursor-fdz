@@ -162,6 +162,24 @@ export default function ImportDialog({
         <p>点击或拖入 Excel 文件</p>
         <p className="ant-upload-hint">先解析前 20 行并校验，确认后才写入数据库</p>
       </Upload.Dragger>
+      {kind === 'gsp' && (
+        <Alert
+          style={{ marginTop: 12 }}
+          type="info"
+          showIcon
+          message="第一次导入（GSP 基本信息）"
+          description="表头需含：服务案例号、项目名称、服务类型、创建人、省份、城市、失效现象描述。导入后即可分配站点/派工程师开工；项目名称允许为空。"
+        />
+      )}
+      {kind === 'po' && (
+        <Alert
+          style={{ marginTop: 12 }}
+          type="info"
+          showIcon
+          message="第二次导入（钉钉 PO + 专用/通用条目）"
+          description="使用钉钉双表头模板：PO单号、GSP案例号、金额与产品信息 + 专用/通用服务条目（条目、说明、单位、数量）。按案例号挂接已有 GSP 案例并补全价格；若案例尚不存在则进入「待匹配」。"
+        />
+      )}
       {(loading || progress) && progress && (
         <div style={{ marginTop: 16 }}>
           <Alert

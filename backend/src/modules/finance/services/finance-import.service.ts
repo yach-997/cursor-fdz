@@ -509,52 +509,17 @@ export class FinanceImportService {
       const ordersToSave: PoOrder[] = [];
       const itemsByPoNo = new Map<string, ReturnType<typeof itemRepo.create>[]>();
       const touchedCaseIds = new Set<string>();
+      const casesToPatch: ServiceCase[] = [];
 
-      const missingCaseInputs = new Map<string, ParsedPoOrder>();
-      for (const parsed of chunk) {
-        if (!caseMap.has(parsed.gspCaseNo) && !missingCaseInputs.has(parsed.gspCaseNo)) {
-          missingCaseInputs.set(parsed.gspCaseNo, parsed);
-        }
-      }
-      if (missingCaseInputs.size) {
-        const created = await caseRepo.save(
-          [...missingCaseInputs.values()].map((parsed) => {
-            const region = parsed.province?.includes('云南') ? 'yunnan' : 'south_china';
-            return caseRepo.create({
-              gspCaseNo: parsed.gspCaseNo,
-              projectName: parsed.projectName || parsed.poNo,
-              serviceType: parsed.demandType,
-              creator: parsed.submitter,
-              province: parsed.province,
-              city: parsed.projectRegion,
-              siteDesc: parsed.demandDesc || parsed.projectArea,
-              region,
-              status: 'settle_review',
-              finishTime:
-                parsed.dingtalkUpdatedAt ||
-                (parsed.demandDate ? new Date(`${parsed.demandDate}T12:00:00+08:00`) : new Date()),
-              importBatchId: batchId,
-              version: 1,
-            });
-          }),
-        );
-        for (const row of created) caseMap.set(row.gspCaseNo, row);
-        generatedCases += created.length;
-      }
+      // 主流程：先 GSP 建案例并派单作业，再 PO 按案例号补价格。
+      // 无对应 GSP 时 PO 存为待匹配，不自动建案例。
 
-      const finishedCases: ServiceCase[] = [];
       for (const parsed of chunk) {
         try {
           const region = parsed.province?.includes('云南') ? 'yunnan' : 'south_china';
           if (scopedRegion && region !== scopedRegion) throw new Error('网格长只能导入本区域PO');
 
-          const serviceCase = caseMap.get(parsed.gspCaseNo);
-          if (!serviceCase) throw new Error('案例创建失败');
-          if (serviceCase.status === 'finished') {
-            serviceCase.status = 'settle_review';
-            finishedCases.push(serviceCase);
-          }
-
+          const serviceCase = caseMap.get(parsed.gspCaseNo) || null;
           let order = orderMap.get(parsed.poNo);
           if (order?.id) overwriteIds.push(order.id);
           else order = orderRepo.create();
@@ -563,13 +528,34 @@ export class FinanceImportService {
             poTotalAmount: money(parsed.poTotalAmount),
             productQty: parsed.productQty === null ? null : money(parsed.productQty),
             items: undefined,
-            serviceCaseId: serviceCase.id,
-            matchStatus: 'matched',
+            serviceCaseId: serviceCase?.id || null,
+            matchStatus: serviceCase ? 'matched' : 'pending',
             importBatchId: batchId,
           });
           ordersToSave.push(order);
           orderMap.set(parsed.poNo, order);
 
+          if (serviceCase) {
+            if (serviceCase.status === 'finished') {
+              serviceCase.status = 'settle_review';
+              casesToPatch.push(serviceCase);
+            }
+            if (
+              parsed.projectName &&
+              (!serviceCase.projectName || serviceCase.projectName.startsWith('待补全-'))
+            ) {
+              serviceCase.projectName = parsed.projectName;
+              if (!casesToPatch.includes(serviceCase)) casesToPatch.push(serviceCase);
+            }
+            touchedCaseIds.add(serviceCase.id);
+          } else {
+            failures.push({
+              row: parsed.items[0]?.sourceRow || 0,
+              reason: `${parsed.poNo}: 未找到 GSP 案例 ${parsed.gspCaseNo}，已存为待匹配（请先导入 GSP 或人工挂接）`,
+            });
+          }
+
+          const caseRegion = serviceCase?.region || region;
           const contextItemNames = parsed.items
             .filter((entry) => entry.itemCategory === 'special' && !isIgnoredItem(entry.itemCode))
             .map((entry) => entry.itemCode);
@@ -597,7 +583,7 @@ export class FinanceImportService {
                       code,
                       parsed.projectScene,
                       parsed.productModel,
-                      serviceCase.region || region,
+                      caseRegion,
                       'self',
                     ),
                   )
@@ -614,7 +600,6 @@ export class FinanceImportService {
               });
             }),
           );
-          touchedCaseIds.add(serviceCase.id);
           success += 1;
         } catch (error) {
           failures.push({
@@ -623,7 +608,7 @@ export class FinanceImportService {
           });
         }
       }
-      if (finishedCases.length) await caseRepo.save(finishedCases);
+      if (casesToPatch.length) await caseRepo.save(casesToPatch);
 
       if (overwriteIds.length) {
         await itemRepo.delete({ poId: In(overwriteIds) });

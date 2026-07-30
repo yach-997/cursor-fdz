@@ -304,6 +304,8 @@ export class ExcelParserService {
     if (!sheet) throw new BadRequestException('Excel 中没有工作表');
     const aliases: Record<string, keyof ParsedGspCase> = {
       服务案例号: 'gspCaseNo',
+      GSP案例号: 'gspCaseNo',
+      案例号: 'gspCaseNo',
       项目名称: 'projectName',
       服务类型: 'serviceType',
       创建人: 'creator',
@@ -312,6 +314,8 @@ export class ExcelParserService {
       城市: 'city',
       现场描述: 'siteDesc',
       失效现场的具体描述: 'siteDesc',
+      失效现象描述: 'siteDesc',
+      失效现象: 'siteDesc',
     };
     let headerRow = 0;
     const columns = new Map<number, keyof ParsedGspCase>();
@@ -320,38 +324,38 @@ export class ExcelParserService {
         const key = aliases[cellText(cell.value)];
         if (key) columns.set(col, key);
       });
-      if (
-        [...columns.values()].includes('gspCaseNo') &&
-        [...columns.values()].includes('projectName')
-      ) {
+      if ([...columns.values()].includes('gspCaseNo')) {
         headerRow = r;
         break;
       }
       columns.clear();
     }
-    if (!headerRow) throw new BadRequestException('未找到GSP案例表头');
+    if (!headerRow) throw new BadRequestException('未找到GSP案例表头（需含「服务案例号」）');
 
     const cases: ParsedGspCase[] = [];
     const failures: Array<{ row: number; reason: string }> = [];
     for (let r = headerRow + 1; r <= sheet.rowCount; r += 1) {
       const raw: Record<string, string> = {};
       for (const [col, key] of columns) raw[key] = cellText(sheet.getCell(r, col).value);
-      if (!raw.gspCaseNo && !raw.projectName) continue;
-      if (!raw.gspCaseNo || !raw.projectName) {
-        failures.push({ row: r, reason: '服务案例号或项目名称为空' });
+      if (!raw.gspCaseNo && !raw.projectName && !raw.siteDesc) continue;
+      if (!raw.gspCaseNo) {
+        failures.push({ row: r, reason: '服务案例号为空' });
         continue;
       }
+      // 项目名称可空（现场表常见缺省），用案例号占位，第二次 PO 导入可补全
+      const projectName = raw.projectName?.trim() || `待补全-${raw.gspCaseNo}`;
       const region = normalizeRegion(raw.province || null);
       cases.push({
         sourceRow: r,
         gspCaseNo: raw.gspCaseNo,
-        projectName: raw.projectName,
+        projectName,
         serviceType: raw.serviceType || null,
         creator: raw.creator || null,
         province: raw.province || null,
         city: raw.city || null,
         siteDesc: raw.siteDesc || null,
         ...region,
+        ...(raw.projectName?.trim() ? {} : { warning: '项目名称为空，已用案例号占位' }),
       });
     }
     return { cases, failures };
