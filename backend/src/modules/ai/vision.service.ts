@@ -134,7 +134,7 @@ export class VisionService {
             grounding
               ? '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"yellowGreenWire":true|false,"groundBarOrTerminal":true|false,"groundLabel":true|false}}'
               : faultRecord
-                ? '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"hasRealtimeFaultShot":true|false,"hasHistoricalFaultShot":true|false,"realtimeHasActiveAlarm":true|false}}'
+                ? '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"photoTypes":["realtime"|"historical"|"other"],"hasRealtimeFaultShot":true|false,"hasHistoricalFaultShot":true|false,"realtimeHasActiveAlarm":true|false}}'
                 : '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明"}',
             sampleInputs.length
               ? grounding
@@ -152,7 +152,13 @@ export class VisionService {
       photoInputs.forEach((photoInput, i) => {
         content.push({
           type: 'text',
-          text: photoInputs.length > 1 ? `【现场照片 ${i + 1}/${photoInputs.length}】` : '【现场照片】',
+          text: faultRecord
+            ? `【现场照片 ${i + 1}/${photoInputs.length}】请先判定本张属于：realtime(实时故障/告警页) / historical(历史故障/告警页) / other(其他)，并写入 evidence.photoTypes[${i}]`
+            : grounding
+              ? `【现场照片 ${i + 1}/${photoInputs.length}】请仔细寻找黄绿双色线、PE/接地端子与 PE 丝印，即使线很细也要辨认`
+              : photoInputs.length > 1
+                ? `【现场照片 ${i + 1}/${photoInputs.length}】`
+                : '【现场照片】',
         });
         content.push({
           type: 'image_url',
@@ -302,17 +308,15 @@ export class VisionService {
   private faultRecordHardRules() {
     return [
       '【上传故障记录·硬性否决 — 覆盖通用“拿不准优先 pass”】',
-      '现场照片必须同时包含两类截图，缺一类 → status 必须为 fail：',
-      'A) 实时故障页截图：界面含「实时故障/实时告警」等字样，或可明确识别为实时故障列表页；',
-      'B) 历史故障页截图：界面含「历史故障/历史告警」等字样，或可明确识别为历史故障列表页。',
-      '仅上传一张、两张都是同一类、或无法识别为上述两类 → fail，reason 写明缺哪一类。',
-      '判定内容（两类都齐之后）：',
-      '- 实时页显示「暂无数据」、空列表或无未恢复严重告警 → 可判 pass；',
-      '- 历史页有过往告警文字，仅说明曾有记录，不单独构成不合格；',
-      '- 仅当实时页仍有未恢复严重告警，且工程师备注未说明处置 → fail；',
-      '- 严禁把样本图或历史页里的告警文字当成现场正在告警。',
-      'evidence 要求：hasRealtimeFaultShot / hasHistoricalFaultShot 为是否拍到对应页；realtimeHasActiveAlarm 为实时页是否仍有未恢复严重告警。',
-      '仅当两类截图都在（两项 has* 均为 true）且 realtimeHasActiveAlarm=false 时才允许 pass。',
+      '必须对每张现场照片单独分类，写入 evidence.photoTypes（与照片顺序一一对应）。',
+      'A) realtime：实时故障/实时告警页。识别要点：标题或页签含「实时故障」「实时告警」「当前告警」；空列表、「暂无数据」「暂无故障」也算实时页（仍然合格证据）。',
+      'B) historical：历史故障/历史告警页。识别要点：标题含「历史故障」「历史告警」「历史记录」；常见为带日期的告警列表。',
+      'C) other：设备首页、发电量、阳光云总览等，不算实时也不算历史。',
+      '硬性：photoTypes 中必须同时出现 realtime 与 historical，缺一类 → fail。',
+      '注意：上传了 2 张不等于自动合格——若两张都是历史，或一张历史一张 other，仍 fail，并写明缺实时。',
+      '若某张页签/标题能辨认「实时」但列表为空，hasRealtimeFaultShot 必须为 true，禁止因“暂无数据”判成未提供实时截图。',
+      '两类都齐之后：实时页无未恢复严重告警 → 可 pass；历史有过往记录不单独不合格；实时仍有严重未恢复告警且备注未说明 → fail。',
+      'hasRealtimeFaultShot / hasHistoricalFaultShot 必须与 photoTypes 一致。',
     ].join('\n');
   }
 
@@ -338,12 +342,16 @@ export class VisionService {
 
     if (missing.length > 0) {
       const detail = evidence.reported
-        ? `现场未见：${missing.join('、')}`
+        ? `现场未见：${missing.join('、')}${
+            evidence.photoTypes.length
+              ? `（各图判定：${evidence.photoTypes.join('、')}）`
+              : ''
+          }`
         : `模型未逐项确认双页截图（视为缺失：${missing.join('、')}）`;
       return {
         status: CheckResult.FAIL,
         confidence: Math.min(parsed.confidence, 0.95),
-        reason: `${detail}。上传故障记录须同时包含实时故障与历史故障两类截图，缺一不合格。`,
+        reason: `${detail}。须各至少一张「实时故障」和「历史故障」页面截图；两张都是历史、或实时页未拍到，都不能合格。`,
       };
     }
 
@@ -357,27 +365,28 @@ export class VisionService {
       };
     }
 
-    if (parsed.status === CheckResult.PASS) {
-      return {
-        ...parsed,
-        reason:
-          parsed.reason ||
-          '已同时上传实时故障与历史故障截图；实时页无未恢复严重告警，合格。',
-      };
-    }
-    return parsed;
+    return {
+      status: CheckResult.PASS,
+      confidence: Math.max(parsed.confidence, 0.88),
+      reason:
+        parsed.status === CheckResult.PASS && parsed.reason
+          ? parsed.reason
+          : '已同时上传实时故障与历史故障截图；实时页无未恢复严重告警，合格。',
+    };
   }
 
   private parseFaultRecordEvidence(raw: string): {
     hasRealtimeFaultShot: boolean;
     hasHistoricalFaultShot: boolean;
     realtimeHasActiveAlarm: boolean;
+    photoTypes: string[];
     reported: boolean;
   } {
     const empty = {
       hasRealtimeFaultShot: false,
       hasHistoricalFaultShot: false,
       realtimeHasActiveAlarm: false,
+      photoTypes: [] as string[],
       reported: false,
     };
     const match = raw.match(/\{[\s\S]*\}/);
@@ -390,16 +399,29 @@ export class VisionService {
       if (!ev || typeof ev !== 'object') return empty;
       const asBool = (v: unknown) =>
         v === true || v === 'true' || v === 1 || v === '1';
+
+      const rawTypes = Array.isArray(ev.photoTypes) ? ev.photoTypes : [];
+      const photoTypes = rawTypes.map((t) => {
+        const s = String(t || '').toLowerCase();
+        if (/real|实时/.test(s)) return 'realtime';
+        if (/hist|历史/.test(s)) return 'historical';
+        return 'other';
+      });
+
+      let hasRealtimeFaultShot =
+        asBool(ev.hasRealtimeFaultShot ?? ev.实时故障 ?? ev.实时故障截图) ||
+        photoTypes.includes('realtime');
+      let hasHistoricalFaultShot =
+        asBool(ev.hasHistoricalFaultShot ?? ev.历史故障 ?? ev.历史故障截图) ||
+        photoTypes.includes('historical');
+
       return {
-        hasRealtimeFaultShot: asBool(
-          ev.hasRealtimeFaultShot ?? ev.实时故障 ?? ev.实时故障截图,
-        ),
-        hasHistoricalFaultShot: asBool(
-          ev.hasHistoricalFaultShot ?? ev.历史故障 ?? ev.历史故障截图,
-        ),
+        hasRealtimeFaultShot,
+        hasHistoricalFaultShot,
         realtimeHasActiveAlarm: asBool(
           ev.realtimeHasActiveAlarm ?? ev.实时仍有告警 ?? ev.有未恢复告警,
         ),
+        photoTypes,
         reported: true,
       };
     } catch {
@@ -411,14 +433,15 @@ export class VisionService {
     return [
       '【接地安装检查·硬性否决 — 覆盖通用“拿不准优先 pass”】',
       '现场照片中必须同时清晰看到以下三项，缺任何一项 → status 必须为 fail：',
-      'A) 黄绿双色接地线：绝缘皮为黄绿相间双色（可细可短），不是单独黄色/绿色相线，也不是线缆上的单色色环；',
-      'B) 接地排或接地端子：接地铜排、汇流排、PE 螺栓端子、接到机柜的铜编织带接地点等；',
-      'C) 接地标识（务必仔细辨认，字小也算）：面板丝印/打印/铭牌上的「PE」「GND」「EARTH」「接地」、接地符号，或接地标识贴纸。',
-      '特别提醒：逆变器/配电盒背板上印刷的 PE 字样 = 有效接地标识，禁止判成“标识缺失”。',
-      '高压三角警示牌、仅箱门外壳、相线 L1/L2/L3 标识 ≠ 接地证据。',
-      '箱门关闭、只拍外壳/警示牌、完全看不到内部接地点 → fail。',
-      '某项看不清时该项 evidence=false；但若能辨认出 PE 字样则 groundLabel 必须为 true。',
-      '仅当 evidence 三项均为 true 才允许 pass；否则 fail，并在 reason 写明缺哪几项。',
+      'A) 黄绿双色接地线：绝缘皮为黄绿相间双色。可细可短；可出现在箱内或箱外支架/机壳螺栓上；深色背景下的细黄绿线也要认出来。不是单独黄色/绿色相线，也不是线缆单色色环。',
+      'B) 接地排或接地端子：接地铜排、汇流排、PE 螺栓端子、铜编织带接地点、机壳接地螺栓等。',
+      'C) 接地标识：面板丝印/打印「PE」「GND」「EARTH」「接地」、接地符号或贴纸；字小也算。',
+      '特别提醒：',
+      '- 背板印刷的 PE = 有效接地标识，禁止判“标识缺失”；',
+      '- 户外支架上的黄绿双色细线 = 有效黄绿接地线，禁止因“线细/在箱外”判缺失；',
+      '- 铜编织带接到 PE 端子 = 有效接地端子。',
+      '高压三角警示牌、仅箱门外壳、相线 L1/L2/L3 色环 ≠ 接地证据。',
+      '仅当 evidence 三项均为 true 才允许 pass；否则 fail，并写明缺哪几项。',
     ].join('\n');
   }
 
@@ -495,8 +518,19 @@ export class VisionService {
       );
       let groundLabel = asBool(ev.groundLabel ?? ev.接地标识);
 
-      // 模型口头承认见到 PE/接地标识，但 evidence 漏标时纠偏
       const text = `${obj.reason || ''} ${reason} ${raw}`;
+      const deniesYellowGreen =
+        /缺少黄绿|未见黄绿|无黄绿双色|没有黄绿|黄绿双色接地线缺失/.test(text);
+      const affirmsYellowGreen =
+        /黄绿双色|黄绿相间|黄绿(?:色)?(?:接地)?线/.test(text) &&
+        /可见|有|存在|清晰|已确认|已看到/.test(text);
+
+      // 文案承认见到黄绿线但 evidence 漏标 → 纠偏；纯“缺少黄绿”不纠偏
+      if (!yellowGreenWire && affirmsYellowGreen && !deniesYellowGreen) {
+        yellowGreenWire = true;
+      }
+
+      // 模型口头承认见到 PE/接地标识，但 evidence 漏标时纠偏
       if (
         !groundLabel &&
         /(?:可见|有|存在|标有|丝印|打印)?\s*PE\b|接地标识|接地符号|GND|EARTH/.test(
@@ -504,12 +538,10 @@ export class VisionService {
         ) &&
         !/PE\s*缺失|无\s*PE|未见\s*PE|没有\s*PE|标识缺失|未见接地标识/.test(text)
       ) {
-        // 仅当未明确说「缺失」时，才把文案里的 PE 视为已识别
         if (/\bPE\b|接地标识|接地符号|GND|EARTH/.test(text)) {
           groundLabel = true;
         }
       }
-      // 「标识缺失」类文案且同时提到看见 PE 时，以看见 PE 为准
       if (
         /标识缺失|未见接地标识/.test(text) &&
         /(?:可见|清晰|有)\s*PE|\bPE\b.*(?:标识|丝印|字样)|PE\s*(?:标识|丝印|字样)/.test(
