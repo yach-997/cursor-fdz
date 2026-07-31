@@ -168,7 +168,7 @@ export default function FinanceCasesPage() {
         showIcon
         style={{ marginBottom: 12 }}
         message="案例主流程"
-        description="① 导入 GSP 案例表建案例 → ② 分配站点/设类型/派工程师现场作业 → ③ 完工后导入钉钉 PO 表（一张宽表，含案例信息与专用/通用条目）按案例号补价格 → ④ 工程师可查看收入；异常由区域审核人调整。"
+        description="① 导入 GSP 案例表建案例 → ② 分配站点/设类型/派工程师现场作业 → ③ 完工后导入钉钉 PO 表（一张宽表，含案例信息与专用/通用条目）按案例号补价格 → ④ 工程师可查看收入；异常由区域审核人调整。服务派单不依赖设备台账；仅「巡检」类型任务才需选择站点设备。"
       />
       <div className="finance-toolbar">
         <Input.Search
@@ -470,13 +470,13 @@ export default function FinanceCasesPage() {
         />
         {selectedCases.some((c) => c.taskType === 'inspection') && (
           <div style={{ marginBottom: 12 }}>
-            <div style={{ marginBottom: 6 }}>巡检设备（本批共用）</div>
+            <div style={{ marginBottom: 6 }}>巡检设备（仅巡检类型需要，本批共用）</div>
             <Select
               style={{ width: '100%' }}
               showSearch
               optionFilterProp="label"
               value={batchDeviceId}
-              placeholder="选择设备"
+              placeholder={devices.length ? '选择本站设备' : '本站暂无设备，请先在库中建档或改用服务作业类型'}
               onChange={setBatchDeviceId}
               options={devices.map((d) => ({
                 value: d.id,

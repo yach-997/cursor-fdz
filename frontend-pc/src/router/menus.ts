@@ -27,13 +27,6 @@ export const menuConfig: MenuConfig[] = [
     roles: ['super_admin', 'site_manager'],
   },
   {
-    key: 'devices',
-    path: '/devices',
-    label: '设备管理',
-    icon: 'ClusterOutlined',
-    roles: ['super_admin', 'site_manager'],
-  },
-  {
     key: 'templates',
     path: '/templates',
     label: '模板配置',

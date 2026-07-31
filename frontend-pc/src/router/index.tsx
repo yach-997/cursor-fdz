@@ -9,7 +9,6 @@ const LoginPage = lazy(() => import('../pages/login'));
 const DashboardPage = lazy(() => import('../pages/dashboard'));
 const SitesPage = lazy(() => import('../pages/sites'));
 const UsersPage = lazy(() => import('../pages/users'));
-const DevicesPage = lazy(() => import('../pages/devices'));
 const TemplatesPage = lazy(() => import('../pages/templates'));
 const TasksPage = lazy(() => import('../pages/tasks'));
 const RecordsPage = lazy(() => import('../pages/records'));
@@ -105,14 +104,9 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        // 设备台账页已下线：主流程为案例导入派单；底层 /devices API 仍供巡检任务选用
         path: 'devices',
-        element: (
-          <AuthGuard roles={['super_admin', 'site_manager']}>
-            <Lazy>
-              <DevicesPage />
-            </Lazy>
-          </AuthGuard>
-        ),
+        element: <Navigate to="/finance/cases" replace />,
       },
       {
         path: 'templates',
