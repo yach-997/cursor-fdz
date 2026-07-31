@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Button,
-  Checkbox,
   Form,
   Input,
   Modal,
   Popconfirm,
+  Radio,
   Select,
   Space,
   Table,
@@ -29,7 +29,7 @@ import { fetchSites, addSiteMember, removeSiteMember, fetchSiteMembers } from '.
 import { useAuthStore } from '../../stores/auth';
 import type { UserInfo, SiteItem, UserRole, CommonStatus } from '../../types';
 
-/** 用户管理：管理员只看自己设立的正网格长；正网格长只看自己设立的副网格长与工程师 */
+/** 用户管理：管理员→正网格长；正/副网格长权限对齐，设立副网格长与工程师（单一角色） */
 export default function UsersPage() {
   const currentUser = useAuthStore((s) => s.user);
   const isAdmin = currentUser?.role === 'super_admin';
@@ -60,25 +60,25 @@ export default function UsersPage() {
   const [hireOpen, setHireOpen] = useState(false);
   const [hireUser, setHireUser] = useState<UserInfo | null>(null);
   const [sites, setSites] = useState<SiteItem[]>([]);
-  const [primarySites, setPrimarySites] = useState<SiteItem[]>([]);
+  const [managedSites, setManagedSites] = useState<SiteItem[]>([]);
   const [hireSiteId, setHireSiteId] = useState<string>();
   const [memberMap, setMemberMap] = useState<Record<string, string[]>>({});
 
-  const isPrimaryManager = primarySites.length > 0;
-  const canStaffAccounts = isAdmin || isPrimaryManager;
+  const canStaffAsManager = isSiteManager && managedSites.length > 0;
+  const canStaffAccounts = isAdmin || canStaffAsManager;
 
-  const loadPrimarySites = useCallback(async () => {
+  const loadManagedSites = useCallback(async () => {
     if (!isSiteManager || !currentUser?.id) {
-      setPrimarySites([]);
+      setManagedSites([]);
       return;
     }
     const siteRes = await fetchSites({ limit: 100, status: 'active' });
-    setPrimarySites(siteRes.list.filter((s) => s.managerId === currentUser.id));
+    setManagedSites(siteRes.list);
   }, [isSiteManager, currentUser?.id]);
 
   useEffect(() => {
-    void loadPrimarySites();
-  }, [loadPrimarySites]);
+    void loadManagedSites();
+  }, [loadManagedSites]);
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -97,7 +97,7 @@ export default function UsersPage() {
   }, [page, keyword, role]);
 
   const loadPool = useCallback(async () => {
-    if (!isPrimaryManager) return;
+    if (!canStaffAsManager) return;
     setPoolLoading(true);
     try {
       const res = await fetchInspectorPool({
@@ -107,10 +107,9 @@ export default function UsersPage() {
       });
       setPool(res.list);
       setPoolTotal(res.total);
-
-      setSites(primarySites);
+      setSites(managedSites);
       const map: Record<string, string[]> = {};
-      for (const site of primarySites) {
+      for (const site of managedSites) {
         const members = await fetchSiteMembers(site.id, 'inspector');
         map[site.id] = members.filter((m) => m.status === 'active').map((m) => m.userId);
       }
@@ -118,57 +117,59 @@ export default function UsersPage() {
     } finally {
       setPoolLoading(false);
     }
-  }, [poolPage, poolKeyword, isPrimaryManager, primarySites]);
+  }, [poolPage, poolKeyword, canStaffAsManager, managedSites]);
 
   useEffect(() => {
     if (tab === 'list') void loadList();
-    else if (tab === 'pool' && isPrimaryManager) void loadPool();
-  }, [tab, loadList, loadPool, isPrimaryManager]);
+    else if (tab === 'pool' && canStaffAsManager) void loadPool();
+  }, [tab, loadList, loadPool, canStaffAsManager]);
 
   const roleOptions = useMemo(() => {
     if (isAdmin) {
       return [{ value: 'site_manager', label: '正网格长' }];
     }
     return [
-      { value: 'site_manager', label: '副网格长（可登录管理端）' },
-      { value: 'inspector', label: '工程师' },
+      { value: 'site_manager', label: '副网格长（PC 管理端）' },
+      { value: 'inspector', label: '工程师（H5 巡检端）' },
     ];
   }, [isAdmin]);
 
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ roles: isAdmin ? ['site_manager'] : ['inspector'] });
+    form.setFieldsValue({ roleSingle: isAdmin ? 'site_manager' : 'inspector' });
     setModalOpen(true);
   };
 
   const openEdit = (record: UserInfo) => {
     setEditing(record);
     const list = record.roles?.length ? record.roles : record.role ? [record.role] : [];
+    const single = isAdmin
+      ? 'site_manager'
+      : list.includes('site_manager')
+        ? 'site_manager'
+        : list.includes('inspector')
+          ? 'inspector'
+          : list[0];
     form.setFieldsValue({
       ...record,
-      // 管理员只编正网格长；正网格长编辑时保留其勾选的副网格长/工程师组合
-      roles: isAdmin ? ['site_manager'] : list,
+      roleSingle: single,
     });
     setModalOpen(true);
   };
 
   const submitUser = async () => {
     const values = await form.validateFields();
+    const single: UserRole = isAdmin ? 'site_manager' : values.roleSingle;
     const payload = {
-      ...values,
-      roles: isAdmin
-        ? (['site_manager'] as UserRole[])
-        : values.roles?.length
-          ? values.roles
-          : [values.role].filter(Boolean),
+      realName: values.realName,
+      phone: values.phone,
+      username: values.username,
+      password: values.password,
+      roles: [single],
     };
-    delete payload.role;
     if (editing) {
-      const updatePayload = { ...payload };
-      delete updatePayload.username;
-      delete updatePayload.password;
-      await updateUser(editing.id, updatePayload);
+      await updateUser(editing.id, { realName: payload.realName, phone: payload.phone, roles: payload.roles });
       message.success('用户已更新');
     } else {
       await createUser(payload);
@@ -195,7 +196,7 @@ export default function UsersPage() {
 
   const openHire = (user: UserInfo) => {
     setHireUser(user);
-    setHireSiteId(primarySites[0]?.id);
+    setHireSiteId(managedSites[0]?.id);
     setHireOpen(true);
   };
 
@@ -223,15 +224,10 @@ export default function UsersPage() {
       width: 120,
       render: (_roles: UserRole[] | undefined, r) => {
         const list = r.roles?.length ? r.roles : r.role ? [r.role] : [];
-        // 管理员编制视角只显示正网格长；正网格长编制视角显示单一身份
         let label = '未知角色';
-        if (isAdmin) {
-          label = '正网格长';
-        } else if (list.includes('site_manager')) {
-          label = '副网格长';
-        } else if (list.includes('inspector')) {
-          label = '工程师';
-        }
+        if (isAdmin) label = '正网格长';
+        else if (list.includes('site_manager')) label = '副网格长';
+        else if (list.includes('inspector')) label = '工程师';
         return <Tag>{label}</Tag>;
       },
     },
@@ -316,7 +312,7 @@ export default function UsersPage() {
 
   const tabItems = [
     { key: 'list', label: '用户列表' },
-    ...(isPrimaryManager ? [{ key: 'pool', label: '人才池' }] : []),
+    ...(canStaffAsManager ? [{ key: 'pool', label: '人才池' }] : []),
   ];
 
   return (
@@ -327,10 +323,10 @@ export default function UsersPage() {
         style={{ marginBottom: 12 }}
         message={
           isAdmin
-            ? '管理员仅设立正网格长，本页只显示你创建的正网格长；副网格长与工程师由正网格长在各自账号下创建，互不可见。'
-            : isPrimaryManager
-              ? '正网格长仅管理自己设立的副网格长与工程师；其他正网格长的下属不会出现在本列表。创建后请到「站点管理」任命副网格长或聘用工程师。'
-              : '副网格长不编制账号；本页无下属列表，请联系本站正网格长处理人员。'
+            ? '管理员只设立正网格长（仅 PC）。工程师须由正/副网格长设立后才能登录 H5。'
+            : canStaffAsManager
+              ? '正/副网格长权限相同：可设立副网格长（PC）或工程师（H5）。本站编制共享，其他站人员不可见。'
+              : '请先被任命为正网格长或副网格长后，再编制下属账号。'
         }
       />
 
@@ -453,16 +449,16 @@ export default function UsersPage() {
             <Input />
           </Form.Item>
           <Form.Item
-            name="roles"
-            label="角色（可多选）"
-            rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个角色' }]}
+            name="roleSingle"
+            label="角色"
+            rules={[{ required: true, message: '请选择角色' }]}
             extra={
               isAdmin
-                ? '管理员仅创建正网格长（单一角色）；创建后请到「站点管理」任命到具体电站'
-                : '可同时勾选副网格长与工程师：电脑登录管理端，手机登录巡检端'
+                ? '正网格长仅登录 PC；创建后到「站点管理」任命到电站'
+                : '单一角色：副网格长登录 PC，工程师登录 H5'
             }
           >
-            <Checkbox.Group options={roleOptions} />
+            <Radio.Group options={roleOptions} />
           </Form.Item>
         </Form>
       </Modal>
@@ -492,10 +488,10 @@ export default function UsersPage() {
       >
         <Select
           style={{ width: '100%' }}
-          placeholder="选择本站（正网格长站点）"
+          placeholder="选择所管站点"
           value={hireSiteId}
           onChange={setHireSiteId}
-          options={primarySites.map((s) => ({ value: s.id, label: `${s.name}（${s.code}）` }))}
+          options={managedSites.map((s) => ({ value: s.id, label: `${s.name}（${s.code}）` }))}
         />
       </Modal>
     </div>

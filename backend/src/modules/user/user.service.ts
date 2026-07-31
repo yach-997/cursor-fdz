@@ -6,7 +6,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull, In, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User, SiteMember, Site } from '../../entities';
 import { UserRole, CommonStatus, SiteMemberRole } from '../../common/enums';
@@ -54,13 +54,13 @@ export class UserService {
         return { list: [], total: 0, page, limit };
       }
     } else if (currentUser.role === UserRole.SITE_MANAGER) {
-      const isPrimary = await this.isPrimaryManager(currentUser.id);
-      if (!isPrimary) {
-        // 副网格长不编制账号，列表为空
+      const creatorIds = await this.getStaffingCreatorIds(currentUser.id);
+      if (!creatorIds.length) {
+        // 未任职任何站点的网格长账号：无编制权
         return { list: [], total: 0, page, limit };
       }
-      // 正网格长：只看自己设立的副网格长/工程师
-      qb.andWhere('user.created_by = :creatorId', { creatorId: currentUser.id });
+      // 正/副网格长权限相同：共享所管站点编制池，A/B 站互不可见
+      qb.andWhere('user.created_by IN (:...creatorIds)', { creatorIds });
       if (query.role === UserRole.INSPECTOR || query.role === UserRole.SITE_MANAGER) {
         const filter = qbUserHasRole('user', query.role, 'filter');
         qb.andWhere(filter.sql, filter.params);
@@ -181,9 +181,13 @@ export class UserService {
 
   async getInspectorPool(query: QueryPoolDto, currentUser: CurrentUserContext) {
     if (currentUser.role !== UserRole.SITE_MANAGER) {
-      throw new ForbiddenException('仅正网格长可查看人才池');
+      throw new ForbiddenException('仅正/副网格长可查看人才池');
     }
     await this.assertCanStaffAccounts(currentUser);
+    const creatorIds = await this.getStaffingCreatorIds(currentUser.id);
+    if (!creatorIds.length) {
+      return { list: [], total: 0, page: query.page || 1, limit: query.limit || 10 };
+    }
 
     const page = query.page || 1;
     const limit = query.limit || 10;
@@ -193,7 +197,7 @@ export class UserService {
       .createQueryBuilder('user')
       .where(roleCond.sql, roleCond.params)
       .andWhere('user.status = :status', { status: CommonStatus.ACTIVE })
-      .andWhere('user.created_by = :creatorId', { creatorId: currentUser.id });
+      .andWhere('user.created_by IN (:...creatorIds)', { creatorIds });
 
     if (query.keyword) {
       qb.andWhere('(user.username ILIKE :kw OR user.realName ILIKE :kw OR user.phone ILIKE :kw)', {
@@ -221,19 +225,54 @@ export class UserService {
     return { list: result, total, page, limit };
   }
 
-  private async isPrimaryManager(userId: string): Promise<boolean> {
-    const n = await this.siteRepo.count({
+  /** 所管站点（正+副）上的编制创建人：自己、各站正网格长、各站副网格长 */
+  private async getStaffingCreatorIds(userId: string): Promise<string[]> {
+    const primarySites = await this.siteRepo.find({
       where: { managerId: userId, deletedAt: IsNull() },
+      select: ['id', 'managerId'],
     });
-    return n > 0;
+    const deputyRows = await this.siteMemberRepo.find({
+      where: {
+        userId,
+        status: CommonStatus.ACTIVE,
+        memberRole: SiteMemberRole.DEPUTY_MANAGER,
+      },
+      select: ['siteId'],
+    });
+    const siteIds = [...new Set([...primarySites.map((s) => s.id), ...deputyRows.map((d) => d.siteId)])];
+    if (!siteIds.length) return [];
+
+    const sites = await this.siteRepo.find({
+      where: { id: In(siteIds), deletedAt: IsNull() },
+      select: ['id', 'managerId'],
+    });
+    const ids = new Set<string>([userId]);
+    for (const s of sites) {
+      if (s.managerId) ids.add(s.managerId);
+    }
+    const deputies = await this.siteMemberRepo.find({
+      where: {
+        siteId: In(siteIds),
+        status: CommonStatus.ACTIVE,
+        memberRole: SiteMemberRole.DEPUTY_MANAGER,
+      },
+      select: ['userId'],
+    });
+    for (const d of deputies) ids.add(d.userId);
+    return [...ids];
   }
 
-  /** 管理员任意；网格长须至少担任一个站的正网格长 */
+  private async canStaffAsGridManager(userId: string): Promise<boolean> {
+    const ids = await this.getStaffingCreatorIds(userId);
+    return ids.length > 0;
+  }
+
+  /** 管理员任意；正/副网格长（已任职站点）可编制 */
   private async assertCanStaffAccounts(currentUser: CurrentUserContext) {
     if (currentUser.role === UserRole.SUPER_ADMIN) return;
     if (currentUser.role === UserRole.SITE_MANAGER) {
-      if (await this.isPrimaryManager(currentUser.id)) return;
-      throw new ForbiddenException('仅正网格长可创建或管理副网格长/工程师账号');
+      if (await this.canStaffAsGridManager(currentUser.id)) return;
+      throw new ForbiddenException('请先由管理员任命为正网格长，或由正网格长任命为副网格长后再编制账号');
     }
     throw new ForbiddenException('无权创建或管理账号');
   }
@@ -244,25 +283,23 @@ export class UserService {
     throw new BadRequestException('请至少选择一个角色');
   }
 
-  /** 管理员只建正网格长；正网格长可建副网格长账号与工程师 */
+  /** 单一角色：管理员→正网格长；正/副网格长→副网格长或工程师（二选一） */
   private assertAllowedRolesForCreate(roles: UserRole[], currentUser: CurrentUserContext) {
     if (roles.includes(UserRole.SUPER_ADMIN) && currentUser.role !== UserRole.SUPER_ADMIN) {
       throw new ForbiddenException('无权创建超级管理员');
     }
     if (currentUser.role === UserRole.SUPER_ADMIN) {
-      const onlyManager =
-        roles.length > 0 && roles.every((r) => r === UserRole.SITE_MANAGER);
-      if (!onlyManager) {
-        throw new ForbiddenException('管理员只能创建正网格长账号；副网格长与工程师由正网格长创建');
+      if (roles.length !== 1 || roles[0] !== UserRole.SITE_MANAGER) {
+        throw new ForbiddenException('管理员只能创建正网格长账号（单一角色）；工程师由正/副网格长设立');
       }
       return;
     }
     if (currentUser.role === UserRole.SITE_MANAGER) {
-      const allowed = roles.every(
-        (r) => r === UserRole.INSPECTOR || r === UserRole.SITE_MANAGER,
-      );
-      if (!allowed || !roles.length) {
-        throw new ForbiddenException('正网格长只能创建副网格长或工程师账号');
+      if (roles.length !== 1) {
+        throw new BadRequestException('请选择单一角色：副网格长 或 工程师');
+      }
+      if (roles[0] !== UserRole.INSPECTOR && roles[0] !== UserRole.SITE_MANAGER) {
+        throw new ForbiddenException('正/副网格长只能创建副网格长或工程师账号');
       }
       return;
     }
@@ -281,19 +318,17 @@ export class UserService {
       throw new ForbiddenException('无权修改超级管理员');
     }
     if (currentUser.role === UserRole.SUPER_ADMIN) {
-      const onlyManager =
-        roles.length > 0 && roles.every((r) => r === UserRole.SITE_MANAGER);
-      if (!onlyManager) {
+      if (roles.length !== 1 || roles[0] !== UserRole.SITE_MANAGER) {
         throw new ForbiddenException('管理员只能将账号设为正网格长角色');
       }
       return;
     }
     if (currentUser.role === UserRole.SITE_MANAGER) {
-      const allowed = roles.every(
-        (r) => r === UserRole.INSPECTOR || r === UserRole.SITE_MANAGER,
-      );
-      if (!allowed || !roles.length) {
-        throw new ForbiddenException('正网格长只能设置副网格长或工程师角色');
+      if (roles.length !== 1) {
+        throw new BadRequestException('请选择单一角色：副网格长 或 工程师');
+      }
+      if (roles[0] !== UserRole.INSPECTOR && roles[0] !== UserRole.SITE_MANAGER) {
+        throw new ForbiddenException('正/副网格长只能设置副网格长或工程师角色');
       }
       return;
     }
@@ -306,7 +341,7 @@ export class UserService {
     return user;
   }
 
-  /** 只能管理自己创建的账号；管理员与正网格长互不越权 */
+  /** 管理员管自己设立的正网格长；正/副网格长管本站编制池内账号 */
   private async assertCanManage(target: User, currentUser: CurrentUserContext) {
     if (userHasRole(target, UserRole.SUPER_ADMIN)) {
       throw new ForbiddenException('无权管理超级管理员');
@@ -321,17 +356,18 @@ export class UserService {
       return;
     }
     if (currentUser.role === UserRole.SITE_MANAGER) {
-      if (!(await this.isPrimaryManager(currentUser.id))) {
-        throw new ForbiddenException('仅正网格长可管理下属账号');
+      const creatorIds = await this.getStaffingCreatorIds(currentUser.id);
+      if (!creatorIds.length) {
+        throw new ForbiddenException('未任职站点，无权管理下属账号');
       }
-      if (target.createdBy !== currentUser.id) {
-        throw new ForbiddenException('只能管理自己设立的副网格长与工程师');
+      if (!target.createdBy || !creatorIds.includes(target.createdBy)) {
+        throw new ForbiddenException('只能管理本站正/副网格长设立的副网格长与工程师');
       }
       if (
         !userHasRole(target, UserRole.INSPECTOR) &&
         !userHasRole(target, UserRole.SITE_MANAGER)
       ) {
-        throw new ForbiddenException('正网格长只能管理副网格长或工程师账号');
+        throw new ForbiddenException('只能管理副网格长或工程师账号');
       }
       return;
     }

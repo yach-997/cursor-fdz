@@ -19,3 +19,14 @@ where u.created_by is null
   )
   and u.role <> 'super_admin'
   and not (coalesce(u.roles, '[]'::jsonb) ? 'super_admin');
+
+-- 管理员创建的正网格长：去掉历史工程师兼岗（不能再登 H5）
+update public.users u
+set
+  role = 'site_manager',
+  roles = '["site_manager"]'::jsonb
+where u.created_by in (select id from public.users where role = 'super_admin')
+  and (
+    u.role = 'inspector'
+    or coalesce(u.roles, '[]'::jsonb) ? 'inspector'
+  );

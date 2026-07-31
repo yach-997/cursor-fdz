@@ -257,7 +257,7 @@ export class SiteService implements OnModuleInit {
     currentUser: CurrentUserContext,
   ) {
     const site = await this.getActiveSite(id);
-    this.assertPrimaryManager(site, currentUser);
+    this.assertSiteStaffManager(site, currentUser);
 
     if (site.managerId === dto.userId) {
       throw new BadRequestException('正网格长不能同时任命为副网格长');
@@ -304,7 +304,7 @@ export class SiteService implements OnModuleInit {
   /** 移除副网格长 */
   async removeDeputy(id: string, userId: string, currentUser: CurrentUserContext) {
     const site = await this.getActiveSite(id);
-    this.assertPrimaryManager(site, currentUser);
+    this.assertSiteStaffManager(site, currentUser);
 
     const member = await this.siteMemberRepo.findOne({
       where: {
@@ -358,7 +358,7 @@ export class SiteService implements OnModuleInit {
    */
   async addMember(id: string, dto: AddMemberDto, currentUser: CurrentUserContext) {
     const site = await this.getActiveSite(id);
-    this.assertPrimaryManager(site, currentUser);
+    this.assertSiteStaffManager(site, currentUser);
 
     const user = await this.userRepo.findOne({ where: { id: dto.userId } });
     if (!user) {
@@ -409,7 +409,7 @@ export class SiteService implements OnModuleInit {
   /** 解聘工程师（不影响其在其他站点的聘用） */
   async removeMember(id: string, userId: string, currentUser: CurrentUserContext) {
     const site = await this.getActiveSite(id);
-    this.assertPrimaryManager(site, currentUser);
+    this.assertSiteStaffManager(site, currentUser);
 
     const member = await this.siteMemberRepo.findOne({
       where: {
@@ -499,15 +499,14 @@ export class SiteService implements OnModuleInit {
     }
   }
 
-  /** 仅本站正网格长（副网格长/管理员不可代管编制） */
-  private assertPrimaryManager(site: Site, currentUser: CurrentUserContext) {
-    if (
-      currentUser.role === UserRole.SITE_MANAGER &&
-      site.managerId === currentUser.id
-    ) {
-      return;
+  /** 本站正网格长或副网格长可管理编制（权限对齐） */
+  private assertSiteStaffManager(site: Site, currentUser: CurrentUserContext) {
+    if (currentUser.role !== UserRole.SITE_MANAGER) {
+      throw new ForbiddenException('仅本站正/副网格长可管理副网格长与工程师编制');
     }
-    throw new ForbiddenException('仅本站正网格长可管理副网格长与工程师编制');
+    if (site.managerId === currentUser.id) return;
+    if (currentUser.managedSiteIds?.includes(site.id)) return;
+    throw new ForbiddenException('仅本站正/副网格长可管理副网格长与工程师编制');
   }
 
   private async deactivateDeputyMembership(siteId: string, userId: string) {

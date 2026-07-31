@@ -46,11 +46,6 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
 
     if (activeRole === UserRole.INSPECTOR) {
       memberSiteIds = await this.siteScope.getInspectorSiteIds(user.id);
-      // 多角色网格长在 H5：所管站点一并纳入巡检数据范围
-      if (roles.includes(UserRole.SITE_MANAGER)) {
-        const managed = await this.siteScope.getManagedSiteIds(user.id);
-        memberSiteIds = [...new Set([...memberSiteIds, ...managed])];
-      }
     }
 
     return {

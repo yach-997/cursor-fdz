@@ -162,12 +162,10 @@ export class AuthService {
       );
     }
 
-    // H5 巡检端
+    // H5 巡检端：必须具备工程师角色（由正/副网格长设立），正网格长不可用管理身份进 H5
     if (roles.includes(UserRole.INSPECTOR)) return UserRole.INSPECTOR;
-    const memberSites = await this.siteScope.getInspectorSiteIds(user.id);
-    if (memberSites.length) return UserRole.INSPECTOR;
     throw new ForbiddenException(
-      '该账号无巡检端权限。请使用 PC 管理端登录，或在用户管理中勾选「工程师」角色',
+      '该账号无巡检端权限。工程师须由正网格长或副网格长设立；网格长请使用 PC 管理端登录',
     );
   }
 
@@ -276,31 +274,6 @@ export class AuthService {
 
     // 按当前会话角色裁剪返回：管理端会话突出 managedSites；巡检端突出 memberships
     if (sessionRole === UserRole.INSPECTOR) {
-      // 多角色：网格长/副网格长登录 H5 时，所管站点也可进入巡检（无需再聘为自己）
-      if (userHasRole(user, UserRole.SITE_MANAGER)) {
-        const managed = await this.siteScope.getManagedSitesBrief(user.id);
-        const seen = new Set(
-          (siteMemberships as Array<{ siteId: string }>).map((m) => m.siteId),
-        );
-        for (const s of managed) {
-          if (seen.has(s.id)) continue;
-          seen.add(s.id);
-          (siteMemberships as unknown[]).push({
-            id: `managed-${s.id}`,
-            siteId: s.id,
-            status: CommonStatus.ACTIVE,
-            joinedAt: null,
-            memberRole: SiteMemberRole.INSPECTOR,
-            site: {
-              id: s.id,
-              name: s.name,
-              code: s.code,
-              province: s.province,
-              city: s.city,
-            },
-          });
-        }
-      }
       return { ...base, managedSites: [], siteMemberships };
     }
     if (sessionRole === UserRole.SITE_MANAGER || sessionRole === UserRole.SUPER_ADMIN) {

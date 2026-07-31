@@ -453,8 +453,8 @@ export default function SitesPage() {
         </div>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
           {canManageStaff
-            ? '正网格长可在此设立副网格长与聘用工程师。同一账号可兼任网格长与工程师。'
-            : '仅本站正网格长可调整编制；当前为只读查看。'}
+            ? '正/副网格长可在此设立副网格长与聘用工程师。工程师账号须单独设立，才能登录 H5。'
+            : '当前账号未任职本站编制管理；请联系正网格长或管理员。'}
         </Typography.Paragraph>
         <Tabs
           items={[
