@@ -51,10 +51,18 @@ export function displayLabel(
 
 /** 用户提示只保留中文说明，底层英文异常仍由控制台记录。 */
 export function chineseErrorMessage(value: unknown, fallback = '操作失败，请稍后重试') {
-  const raw = String(value || '').trim();
+  let raw = '';
+  if (Array.isArray(value)) {
+    raw = value.map((v) => String(v || '').trim()).filter(Boolean).join('；');
+  } else {
+    raw = String(value || '').trim();
+  }
   if (!raw) return fallback;
   if (/cancell?ed|request aborted/i.test(raw)) {
     return '';
+  }
+  if (/must not be greater than 100|limit must not be greater/i.test(raw)) {
+    return '单次查询条数不能超过 100，请缩小范围后重试';
   }
   if (/network error|failed to fetch|load failed|socket hang up|econnreset|econnrefused|err_network/i.test(raw)) {
     return '网络连接失败，请检查网络后重试';

@@ -118,7 +118,7 @@ export default function FinanceCasesPage() {
   }, [load]);
 
   useEffect(() => {
-    void fetchSites({ limit: 200 }).then((r) => setSites(r.list));
+    void fetchSites({ limit: 100 }).then((r) => setSites(r.list));
   }, []);
 
   const onClear = async () => {
@@ -151,7 +151,7 @@ export default function FinanceCasesPage() {
     }
     const sid = siteIds[0] as string;
     const [deviceRes, members] = await Promise.all([
-      fetchDevices({ siteId: sid, limit: 200 }),
+      fetchDevices({ siteId: sid, limit: 100 }),
       fetchSiteMembers(sid, 'inspector'),
     ]);
     setDevices(deviceRes.list);

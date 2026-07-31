@@ -107,7 +107,7 @@ export default function TasksPage() {
     const [devRes, members] = await Promise.all([
       fetchDevices({
         siteId: sid,
-        limit: 200,
+        limit: 100,
         deviceType: (deviceType as DeviceType | undefined) || undefined,
       }),
       fetchSiteMembers(sid, 'inspector'),
