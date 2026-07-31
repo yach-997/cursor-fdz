@@ -50,6 +50,14 @@ export class UserController {
     return this.userService.create(dto, user);
   }
 
+  /** 正/副网格长为自己开通工程师身份（同一账号可登 H5） */
+  @Post('me/enable-inspector')
+  @Roles(UserRole.SITE_MANAGER)
+  @HttpCode(HttpStatus.OK)
+  async enableMyInspector(@CurrentUser() user: CurrentUserContext) {
+    return this.userService.enableMyInspector(user);
+  }
+
   /** 更新用户 */
   @Put(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)

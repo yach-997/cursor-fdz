@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Button,
+  Checkbox,
   Form,
   Input,
   Modal,
   Popconfirm,
-  Radio,
   Select,
   Space,
   Table,
@@ -15,7 +15,7 @@ import {
   Typography,
   message,
 } from 'antd';
-import { PlusOutlined, EditOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, MobileOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import {
   fetchUsers,
@@ -24,6 +24,7 @@ import {
   updateUserStatus,
   resetUserPassword,
   fetchInspectorPool,
+  enableMyInspector,
 } from '../../api/user';
 import { fetchSites, addSiteMember, removeSiteMember, fetchSiteMembers } from '../../api/site';
 import { useAuthStore } from '../../stores/auth';
@@ -129,54 +130,75 @@ export default function UsersPage() {
       return [{ value: 'site_manager', label: '正网格长' }];
     }
     return [
-      { value: 'site_manager', label: '副网格长（PC 管理端）' },
-      { value: 'inspector', label: '工程师（H5 巡检端）' },
+      { value: 'site_manager', label: '副网格长（PC）' },
+      { value: 'inspector', label: '工程师（H5）' },
     ];
   }, [isAdmin]);
+
+  const iAmInspector = Boolean(
+    currentUser?.roles?.includes('inspector') || currentUser?.role === 'inspector',
+  );
 
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ roleSingle: isAdmin ? 'site_manager' : 'inspector' });
+    form.setFieldsValue({ roles: isAdmin ? ['site_manager'] : ['inspector'] });
     setModalOpen(true);
   };
 
   const openEdit = (record: UserInfo) => {
     setEditing(record);
     const list = record.roles?.length ? record.roles : record.role ? [record.role] : [];
-    const single = isAdmin
-      ? 'site_manager'
-      : list.includes('site_manager')
-        ? 'site_manager'
-        : list.includes('inspector')
-          ? 'inspector'
-          : list[0];
     form.setFieldsValue({
       ...record,
-      roleSingle: single,
+      roles: isAdmin ? ['site_manager'] : list,
     });
     setModalOpen(true);
   };
 
   const submitUser = async () => {
     const values = await form.validateFields();
-    const single: UserRole = isAdmin ? 'site_manager' : values.roleSingle;
-    const payload = {
-      realName: values.realName,
-      phone: values.phone,
-      username: values.username,
-      password: values.password,
-      roles: [single],
-    };
+    const roles: UserRole[] = isAdmin
+      ? ['site_manager']
+      : values.roles?.length
+        ? values.roles
+        : [values.role].filter(Boolean);
     if (editing) {
-      await updateUser(editing.id, { realName: payload.realName, phone: payload.phone, roles: payload.roles });
+      await updateUser(editing.id, {
+        realName: values.realName,
+        phone: values.phone,
+        roles,
+      });
       message.success('用户已更新');
     } else {
-      await createUser(payload);
-      message.success('用户已创建');
+      await createUser({
+        username: values.username,
+        password: values.password,
+        realName: values.realName,
+        phone: values.phone,
+        roles,
+      });
+      message.success(
+        roles.includes('inspector') &&
+          (values.username === currentUser?.username || values.phone === currentUser?.phone)
+          ? '已为本账号开通工程师身份，可用同一账号登录 H5'
+          : '用户已创建',
+      );
+      if (
+        roles.includes('inspector') &&
+        (values.username === currentUser?.username || values.phone === currentUser?.phone)
+      ) {
+        await useAuthStore.getState().fetchMe();
+      }
     }
     setModalOpen(false);
     void loadList();
+  };
+
+  const onEnableMyInspector = async () => {
+    await enableMyInspector();
+    await useAuthStore.getState().fetchMe();
+    message.success('已开通工程师身份，可用本账号登录 H5 巡检端');
   };
 
   const toggleStatus = async (record: UserInfo) => {
@@ -224,11 +246,18 @@ export default function UsersPage() {
       width: 120,
       render: (_roles: UserRole[] | undefined, r) => {
         const list = r.roles?.length ? r.roles : r.role ? [r.role] : [];
-        let label = '未知角色';
-        if (isAdmin) label = '正网格长';
-        else if (list.includes('site_manager')) label = '副网格长';
-        else if (list.includes('inspector')) label = '工程师';
-        return <Tag>{label}</Tag>;
+        if (isAdmin) return <Tag>正网格长</Tag>;
+        const tags: string[] = [];
+        if (list.includes('site_manager')) tags.push('副网格长');
+        if (list.includes('inspector')) tags.push('工程师');
+        if (!tags.length) tags.push('未知角色');
+        return (
+          <Space size={[4, 4]} wrap>
+            {tags.map((t) => (
+              <Tag key={t}>{t}</Tag>
+            ))}
+          </Space>
+        );
       },
     },
     {
@@ -323,12 +352,27 @@ export default function UsersPage() {
         style={{ marginBottom: 12 }}
         message={
           isAdmin
-            ? '管理员只设立正网格长（仅 PC）。工程师须由正/副网格长设立后才能登录 H5。'
+            ? '管理员只设立正网格长（PC）。工程师须由正/副网格长设立；正/副网格长也可为自己开通工程师身份后登录 H5。'
             : canStaffAsManager
-              ? '正/副网格长权限相同：可设立副网格长（PC）或工程师（H5）。本站编制共享，其他站人员不可见。'
+              ? '正/副网格长权限相同。可设立副网格长/工程师；给自己勾选工程师或点「开通我的工程师身份」后，同一账号可登 H5。'
               : '请先被任命为正网格长或副网格长后，再编制下属账号。'
         }
       />
+
+      {canStaffAsManager && !iAmInspector && (
+        <Alert
+          type="success"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="本账号尚未开通工程师身份"
+          description="开通后可用同一用户名登录 H5 巡检端接单作业。"
+          action={
+            <Button type="primary" icon={<MobileOutlined />} onClick={() => void onEnableMyInspector()}>
+              开通我的工程师身份
+            </Button>
+          }
+        />
+      )}
 
       <Tabs activeKey={tab} onChange={setTab} items={tabItems} />
 
@@ -449,16 +493,16 @@ export default function UsersPage() {
             <Input />
           </Form.Item>
           <Form.Item
-            name="roleSingle"
-            label="角色"
-            rules={[{ required: true, message: '请选择角色' }]}
+            name="roles"
+            label={isAdmin ? '角色' : '角色（可多选）'}
+            rules={[{ required: true, type: 'array', min: 1, message: '请选择角色' }]}
             extra={
               isAdmin
-                ? '正网格长仅登录 PC；创建后到「站点管理」任命到电站'
-                : '单一角色：副网格长登录 PC，工程师登录 H5'
+                ? '正网格长登录 PC；创建后到「站点管理」任命到电站'
+                : '可只建工程师，或副网格长兼工程师。给自己开通工程师时，用户名/手机号填本账号即可。'
             }
           >
-            <Radio.Group options={roleOptions} />
+            <Checkbox.Group options={roleOptions} />
           </Form.Item>
         </Form>
       </Modal>

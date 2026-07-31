@@ -21,6 +21,7 @@ import {
 } from './dto/user.dto';
 import {
   applyUserRoles,
+  ensureUserHasRole,
   getUserRoles,
   qbUserHasRole,
   userHasRole,
@@ -102,9 +103,20 @@ export class UserService {
     const existsUsername = await this.userRepo.findOne({
       where: { username: dto.username },
     });
-    if (existsUsername) throw new ConflictException('用户名已存在');
-
     const existsPhone = await this.userRepo.findOne({ where: { phone: dto.phone } });
+
+    // 正/副网格长给「自己」开通工程师：用户名/手机号与当前账号相同 → 合并角色，可登 H5
+    if (currentUser.role === UserRole.SITE_MANAGER && roles.includes(UserRole.INSPECTOR)) {
+      const selfHit =
+        (existsUsername && existsUsername.id === currentUser.id) ||
+        (existsPhone && existsPhone.id === currentUser.id);
+      if (selfHit) {
+        const self = existsUsername?.id === currentUser.id ? existsUsername! : existsPhone!;
+        return this.grantInspectorRole(self);
+      }
+    }
+
+    if (existsUsername) throw new ConflictException('用户名已存在');
     if (existsPhone) throw new ConflictException('手机号已存在');
 
     const hashed = await bcrypt.hash(dto.password, 10);
@@ -120,6 +132,22 @@ export class UserService {
     } as Partial<User>);
     applyUserRoles(user, roles);
 
+    const saved = await this.userRepo.save(user);
+    return this.toSafeUser(saved);
+  }
+
+  /** 正/副网格长为自己开通工程师身份（同一账号可登 H5） */
+  async enableMyInspector(currentUser: CurrentUserContext) {
+    if (currentUser.role !== UserRole.SITE_MANAGER) {
+      throw new ForbiddenException('仅正/副网格长可为自己开通工程师身份');
+    }
+    await this.assertCanStaffAccounts(currentUser);
+    const self = await this.getUserOrThrow(currentUser.id);
+    return this.grantInspectorRole(self);
+  }
+
+  private async grantInspectorRole(user: User) {
+    ensureUserHasRole(user, UserRole.INSPECTOR);
     const saved = await this.userRepo.save(user);
     return this.toSafeUser(saved);
   }
@@ -143,8 +171,11 @@ export class UserService {
     });
 
     if (currentUser.role === UserRole.SUPER_ADMIN) {
-      // 管理员编制的账号固定为正网格长，去掉历史兼岗工程师角色
-      applyUserRoles(user, [UserRole.SITE_MANAGER]);
+      // 管理员保证正网格长身份，但保留对方自行开通的工程师身份
+      const next = new Set(getUserRoles(user));
+      next.add(UserRole.SITE_MANAGER);
+      next.delete(UserRole.SUPER_ADMIN);
+      applyUserRoles(user, [...next]);
     } else if (dto.roles || dto.role) {
       const roles = this.normalizeRolesInput(dto.roles, dto.role);
       this.assertAllowedRolesForUpdate(roles, currentUser, user);
@@ -283,23 +314,23 @@ export class UserService {
     throw new BadRequestException('请至少选择一个角色');
   }
 
-  /** 单一角色：管理员→正网格长；正/副网格长→副网格长或工程师（二选一） */
+  /** 管理员→仅正网格长；正/副网格长→副网格长和/或工程师（可兼岗以便同一人登 PC+H5） */
   private assertAllowedRolesForCreate(roles: UserRole[], currentUser: CurrentUserContext) {
     if (roles.includes(UserRole.SUPER_ADMIN) && currentUser.role !== UserRole.SUPER_ADMIN) {
       throw new ForbiddenException('无权创建超级管理员');
     }
     if (currentUser.role === UserRole.SUPER_ADMIN) {
       if (roles.length !== 1 || roles[0] !== UserRole.SITE_MANAGER) {
-        throw new ForbiddenException('管理员只能创建正网格长账号（单一角色）；工程师由正/副网格长设立');
+        throw new ForbiddenException('管理员只能创建正网格长账号；工程师由正/副网格长设立');
       }
       return;
     }
     if (currentUser.role === UserRole.SITE_MANAGER) {
-      if (roles.length !== 1) {
-        throw new BadRequestException('请选择单一角色：副网格长 或 工程师');
-      }
-      if (roles[0] !== UserRole.INSPECTOR && roles[0] !== UserRole.SITE_MANAGER) {
-        throw new ForbiddenException('正/副网格长只能创建副网格长或工程师账号');
+      const allowed = roles.every(
+        (r) => r === UserRole.INSPECTOR || r === UserRole.SITE_MANAGER,
+      );
+      if (!allowed || !roles.length) {
+        throw new ForbiddenException('正/副网格长只能设立副网格长或工程师');
       }
       return;
     }
@@ -318,16 +349,16 @@ export class UserService {
       throw new ForbiddenException('无权修改超级管理员');
     }
     if (currentUser.role === UserRole.SUPER_ADMIN) {
-      if (roles.length !== 1 || roles[0] !== UserRole.SITE_MANAGER) {
-        throw new ForbiddenException('管理员只能将账号设为正网格长角色');
+      if (!roles.includes(UserRole.SITE_MANAGER) || roles.includes(UserRole.SUPER_ADMIN)) {
+        throw new ForbiddenException('管理员只能保持正网格长角色');
       }
       return;
     }
     if (currentUser.role === UserRole.SITE_MANAGER) {
-      if (roles.length !== 1) {
-        throw new BadRequestException('请选择单一角色：副网格长 或 工程师');
-      }
-      if (roles[0] !== UserRole.INSPECTOR && roles[0] !== UserRole.SITE_MANAGER) {
+      const allowed = roles.every(
+        (r) => r === UserRole.INSPECTOR || r === UserRole.SITE_MANAGER,
+      );
+      if (!allowed || !roles.length) {
         throw new ForbiddenException('正/副网格长只能设置副网格长或工程师角色');
       }
       return;

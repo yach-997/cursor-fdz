@@ -165,7 +165,7 @@ export class AuthService {
     // H5 巡检端：必须具备工程师角色（由正/副网格长设立），正网格长不可用管理身份进 H5
     if (roles.includes(UserRole.INSPECTOR)) return UserRole.INSPECTOR;
     throw new ForbiddenException(
-      '该账号无巡检端权限。工程师须由正网格长或副网格长设立；网格长请使用 PC 管理端登录',
+      '该账号无巡检端权限。请由正/副网格长设立工程师身份（可为自己开通）后再登录 H5；网格长管理请用 PC',
     );
   }
 

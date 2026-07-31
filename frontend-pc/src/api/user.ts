@@ -40,3 +40,9 @@ export async function fetchInspectorPool(params: { keyword?: string; page?: numb
   });
   return data.data;
 }
+
+/** 正/副网格长为自己开通工程师身份，同一账号可登录 H5 */
+export async function enableMyInspector() {
+  const { data } = await request.post<ApiResponse<UserInfo>>('/users/me/enable-inspector');
+  return data.data;
+}
