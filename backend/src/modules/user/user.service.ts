@@ -142,7 +142,10 @@ export class UserService {
       ...(dto.avatar !== undefined && { avatar: dto.avatar }),
     });
 
-    if (dto.roles || dto.role) {
+    if (currentUser.role === UserRole.SUPER_ADMIN) {
+      // 管理员编制的账号固定为正网格长，去掉历史兼岗工程师角色
+      applyUserRoles(user, [UserRole.SITE_MANAGER]);
+    } else if (dto.roles || dto.role) {
       const roles = this.normalizeRolesInput(dto.roles, dto.role);
       this.assertAllowedRolesForUpdate(roles, currentUser, user);
       applyUserRoles(user, roles);

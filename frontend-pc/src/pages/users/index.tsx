@@ -28,7 +28,6 @@ import {
 import { fetchSites, addSiteMember, removeSiteMember, fetchSiteMembers } from '../../api/site';
 import { useAuthStore } from '../../stores/auth';
 import type { UserInfo, SiteItem, UserRole, CommonStatus } from '../../types';
-import { ROLE_LABEL } from '../../types';
 
 /** 用户管理：管理员只看自己设立的正网格长；正网格长只看自己设立的副网格长与工程师 */
 export default function UsersPage() {
@@ -145,9 +144,11 @@ export default function UsersPage() {
 
   const openEdit = (record: UserInfo) => {
     setEditing(record);
+    const list = record.roles?.length ? record.roles : record.role ? [record.role] : [];
     form.setFieldsValue({
       ...record,
-      roles: record.roles?.length ? record.roles : [record.role],
+      // 管理员只编正网格长；正网格长编辑时保留其勾选的副网格长/工程师组合
+      roles: isAdmin ? ['site_manager'] : list,
     });
     setModalOpen(true);
   };
@@ -156,7 +157,11 @@ export default function UsersPage() {
     const values = await form.validateFields();
     const payload = {
       ...values,
-      roles: values.roles?.length ? values.roles : [values.role].filter(Boolean),
+      roles: isAdmin
+        ? (['site_manager'] as UserRole[])
+        : values.roles?.length
+          ? values.roles
+          : [values.role].filter(Boolean),
     };
     delete payload.role;
     if (editing) {
@@ -215,20 +220,19 @@ export default function UsersPage() {
     {
       title: '角色',
       dataIndex: 'roles',
-      width: 180,
-      render: (roles: UserRole[] | undefined, r) => {
-        const list = roles?.length ? roles : r.role ? [r.role] : [];
-        return (
-          <Space size={[4, 4]} wrap>
-            {list.map((v) => {
-              let label = ROLE_LABEL[v] || '未知角色';
-              if (v === 'site_manager') {
-                label = isAdmin ? '正网格长' : '副网格长';
-              }
-              return <Tag key={v}>{label}</Tag>;
-            })}
-          </Space>
-        );
+      width: 120,
+      render: (_roles: UserRole[] | undefined, r) => {
+        const list = r.roles?.length ? r.roles : r.role ? [r.role] : [];
+        // 管理员编制视角只显示正网格长；正网格长编制视角显示单一身份
+        let label = '未知角色';
+        if (isAdmin) {
+          label = '正网格长';
+        } else if (list.includes('site_manager')) {
+          label = '副网格长';
+        } else if (list.includes('inspector')) {
+          label = '工程师';
+        }
+        return <Tag>{label}</Tag>;
       },
     },
     {
@@ -454,7 +458,7 @@ export default function UsersPage() {
             rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个角色' }]}
             extra={
               isAdmin
-                ? '管理员仅创建正网格长；创建后请到「站点管理」任命到具体电站'
+                ? '管理员仅创建正网格长（单一角色）；创建后请到「站点管理」任命到具体电站'
                 : '可同时勾选副网格长与工程师：电脑登录管理端，手机登录巡检端'
             }
           >
