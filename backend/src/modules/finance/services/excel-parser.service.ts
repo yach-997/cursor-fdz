@@ -195,15 +195,29 @@ export class ExcelParserService {
     const sheet = workbook.worksheets[0];
     if (!sheet) throw new BadRequestException('Excel 中没有工作表');
 
-    const header1 = Array.from({ length: 30 }, (_, index) =>
+    const header1 = Array.from({ length: 36 }, (_, index) =>
       cellText(sheet.getCell(1, index + 1).value),
     );
-    const header2 = Array.from({ length: 30 }, (_, index) =>
+    const header2 = Array.from({ length: 36 }, (_, index) =>
       cellText(sheet.getCell(2, index + 1).value),
     );
-    if (header1[0] !== 'PO单号' || header1[1] !== 'GSP案例号' || header2[19] !== '服务条目') {
+    const hasPoNo = /PO\s*单号|^PO单号$/i.test(header1[0] || '');
+    const hasGsp = /GSP.*案例号|服务案例号|案例号/.test(header1[1] || '');
+    // 钉钉双行表头：第2行在专用/通用下为「服务条目」或「分支服务条目」
+    const itemSubHeaders = header2
+      .map((label, index) => ({ label, col: index + 1 }))
+      .filter((x) => /服务条目|分支服务条目/.test(x.label));
+    const specialStart =
+      itemSubHeaders[0]?.col ||
+      header1.findIndex((label) => /专用服务条目|专用条目/.test(label)) + 1 ||
+      20;
+    const generalStart =
+      itemSubHeaders.find((x) => x.col >= specialStart + 4)?.col ||
+      header1.findIndex((label) => /通用服务条目|通用条目/.test(label)) + 1 ||
+      specialStart + 4;
+    if (!hasPoNo || !hasGsp || itemSubHeaders.length < 1) {
       throw new BadRequestException(
-        'PO 表头不符合要求：请上传钉钉导出的单份 PO Excel（第1行含「PO单号」「GSP案例号」，第2行含专用/通用「服务条目」子列）',
+        'PO 表头不符合要求：请上传钉钉导出的单份 PO Excel（第1行含「PO单号」「GSP案例号/GSP服务案例号」，第2行含专用/通用「服务条目」子列）',
       );
     }
 
@@ -211,13 +225,21 @@ export class ExcelParserService {
     const failures: Array<{ row: number; reason: string }> = [];
     const forward: string[] = [];
     let sourceItemRows = 0;
+    const maxCol = Math.max(30, generalStart + 3);
 
     for (let rowNo = 3; rowNo <= sheet.rowCount; rowNo += 1) {
       try {
         const row = sheet.getRow(rowNo);
-        for (let col = 1; col <= 30; col += 1) {
+        for (let col = 1; col <= maxCol; col += 1) {
+          // 左侧主信息合并单元格：空值沿用上一行；专用/通用条目列不向前填充，避免串行
+          const inItemZone =
+            (col >= specialStart && col <= specialStart + 3) ||
+            (col >= generalStart && col <= generalStart + 3);
           const current = cellText(row.getCell(col).value);
-          if (current) forward[col] = current;
+          if (current && !inItemZone) forward[col] = current;
+          else if (current && inItemZone) {
+            /* 条目以本行实值为准 */
+          }
         }
         const value = (col: number) => cellText(row.getCell(col).value) || forward[col] || '';
         const poNo = value(1);
@@ -280,8 +302,8 @@ export class ExcelParserService {
           });
           return true;
         };
-        const hasSpecial = addItem('special', 20);
-        const hasGeneral = addItem('general', 24);
+        const hasSpecial = addItem('special', specialStart);
+        const hasGeneral = addItem('general', generalStart);
         if (hasSpecial || hasGeneral) sourceItemRows += 1;
       } catch (error) {
         failures.push({

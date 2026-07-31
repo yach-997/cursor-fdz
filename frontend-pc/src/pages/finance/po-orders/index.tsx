@@ -1,11 +1,39 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Button, Card, Form, Input, Modal, Table, Tag, Tabs, message } from 'antd';
 import { DeleteOutlined, DownloadOutlined, LinkOutlined, SyncOutlined } from '@ant-design/icons';
-import { clearPoOrders, downloadFinanceImportTemplate, fetchPoOrders, generateCasesFromPo, matchPoOrder } from '../../../api/finance';
-import type { PoOrder } from '../../../types/finance';
+import {
+  clearPoOrders,
+  downloadFinanceImportTemplate,
+  fetchPoOrders,
+  generateCasesFromPo,
+  matchPoOrder,
+} from '../../../api/finance';
+import type { PoItemRow, PoOrder } from '../../../types/finance';
 import { useAuthStore } from '../../../stores/auth';
 import ImportDialog from '../components/ImportDialog';
 import { canUseDangerousClear, confirmDangerousClear } from '../../../utils/finance-clear';
+
+const itemColumns = [
+  { title: '服务条目', dataIndex: 'itemName', ellipsis: true },
+  {
+    title: '条目说明',
+    dataIndex: 'itemDesc',
+    width: 160,
+    ellipsis: true,
+    render: (v: string | null | undefined) => v || '-',
+  },
+  { title: '单位', dataIndex: 'unit', width: 70, render: (v: string | null | undefined) => v || '-' },
+  {
+    title: '数量',
+    dataIndex: 'qty',
+    width: 80,
+    render: (v: string | number) => Number(v).toFixed(2),
+  },
+];
+
+function itemsOf(order: PoOrder, category: 'special' | 'general'): PoItemRow[] {
+  return (order.items || []).filter((item) => item.itemCategory === category);
+}
 
 export default function PoOrdersPage() {
   const user = useAuthStore((s) => s.user);
@@ -88,7 +116,7 @@ export default function PoOrdersPage() {
         showIcon
         style={{ marginBottom: 12 }}
         message="第二次导入：钉钉 PO 表（单文件）"
-        description="从钉钉导出的一张 PO Excel 即可（表很宽：左侧案例/产品信息，右侧专用与通用服务条目）。按 GSP 案例号挂接第一次导入的案例并补全价格数量。未找到案例的 PO 进入「待匹配」；可用人工挂接，或仅在漏导 GSP 时使用下方应急补建。"
+        description="从钉钉导出的一张 PO Excel 即可（表很宽：左侧案例/产品信息，右侧专用与通用服务条目）。合并单元格格式不统一也可导入。按 GSP 案例号挂接第一次导入的案例并补全价格数量。未找到案例的 PO 进入「待匹配」。点击行左侧展开可查看专用/通用条目明细。"
       />
       <div className="finance-toolbar">
         <Button
@@ -127,18 +155,100 @@ export default function PoOrdersPage() {
         loading={loading}
         dataSource={data}
         pagination={{ current: page, total, pageSize: 10, onChange: setPage }}
-        scroll={{ x: 1000 }}
+        scroll={{ x: 1600 }}
+        expandable={{
+          expandedRowRender: (r) => {
+            const special = itemsOf(r, 'special');
+            const general = itemsOf(r, 'general');
+            return (
+              <div style={{ display: 'grid', gap: 12 }}>
+                <div>
+                  <div style={{ marginBottom: 6, fontWeight: 600 }}>
+                    专用服务条目（{special.length}）
+                  </div>
+                  <Table
+                    size="small"
+                    rowKey="id"
+                    pagination={false}
+                    dataSource={special}
+                    columns={itemColumns}
+                    locale={{ emptyText: '无专用条目' }}
+                  />
+                </div>
+                <div>
+                  <div style={{ marginBottom: 6, fontWeight: 600 }}>
+                    通用服务条目（{general.length}）
+                  </div>
+                  <Table
+                    size="small"
+                    rowKey="id"
+                    pagination={false}
+                    dataSource={general}
+                    columns={itemColumns}
+                    locale={{ emptyText: '无通用条目' }}
+                  />
+                </div>
+              </div>
+            );
+          },
+        }}
         columns={[
-          { title: 'PO单号', dataIndex: 'poNo', width: 150 },
-          { title: 'GSP案例号', dataIndex: 'gspCaseNo', width: 150 },
-          { title: '项目', dataIndex: 'projectName' },
-          { title: '省份', dataIndex: 'province', width: 80 },
-          { title: '需求类型', dataIndex: 'demandType', width: 90 },
+          { title: 'PO单号', dataIndex: 'poNo', width: 150, fixed: 'left' },
+          { title: 'GSP案例号', dataIndex: 'gspCaseNo', width: 140 },
           {
-            title: 'PO总额',
+            title: 'PO总金额',
             dataIndex: 'poTotalAmount',
-            width: 130,
+            width: 120,
             render: (v) => <span className="finance-money">¥ {Number(v).toFixed(2)}</span>,
+          },
+          {
+            title: '产品型号',
+            dataIndex: 'productModel',
+            width: 110,
+            ellipsis: true,
+            render: (v) => v || '-',
+          },
+          {
+            title: '产品台数',
+            dataIndex: 'productQty',
+            width: 90,
+            render: (v) => (v == null || v === '' ? '-' : Number(v)),
+          },
+          {
+            title: '故障等级',
+            dataIndex: 'faultLevel',
+            width: 90,
+            render: (v) => v || '-',
+          },
+          {
+            title: '工期要求',
+            dataIndex: 'durationReq',
+            width: 100,
+            ellipsis: true,
+            render: (v) => v || '-',
+          },
+          {
+            title: '项目名称',
+            dataIndex: 'projectName',
+            width: 200,
+            ellipsis: true,
+            render: (v) => v || '-',
+          },
+          {
+            title: '项目场景',
+            dataIndex: 'projectScene',
+            width: 90,
+            render: (v) => v || '-',
+          },
+          {
+            title: '专用条目',
+            width: 90,
+            render: (_, r) => r.specialItemCount ?? itemsOf(r, 'special').length,
+          },
+          {
+            title: '通用条目',
+            width: 90,
+            render: (_, r) => r.generalItemCount ?? itemsOf(r, 'general').length,
           },
           {
             title: '匹配状态',
@@ -153,6 +263,7 @@ export default function PoOrdersPage() {
           {
             title: '操作',
             width: 100,
+            fixed: 'right',
             render: (_, r) =>
               r.matchStatus === 'pending' ? (
                 <Button type="link" icon={<LinkOutlined />} onClick={() => setMatch(r)}>

@@ -23,6 +23,17 @@ export interface FinanceCase {
   updatedAt: string;
   caseRevenue: string;
 }
+export interface PoItemRow {
+  id: string;
+  poId: string;
+  itemCategory: 'special' | 'general';
+  itemCode: string;
+  itemName: string;
+  itemDesc?: string | null;
+  unit?: string | null;
+  qty: string | number;
+  priceStatus?: string;
+}
 export interface PoOrder {
   id: string;
   poNo: string;
@@ -31,10 +42,16 @@ export interface PoOrder {
   demandDate?: string;
   demandType?: string;
   productModel?: string;
+  productQty?: string | number | null;
+  faultLevel?: string;
+  durationReq?: string;
   province?: string;
   projectName?: string;
   projectScene?: string;
   matchStatus: 'matched' | 'pending';
+  items?: PoItemRow[];
+  specialItemCount?: number;
+  generalItemCount?: number;
 }
 export interface PriceItem {
   id: string;

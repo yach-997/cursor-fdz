@@ -214,11 +214,30 @@ export class FinanceQueryService {
       .offset((page - 1) * limit)
       .limit(limit)
       .getRawAndEntities();
+    const orderIds = raw.entities.map((entity) => entity.id);
+    const items = orderIds.length
+      ? await this.items.find({
+          where: { poId: In(orderIds) },
+          order: { sourceRow: 'ASC', id: 'ASC' },
+        })
+      : [];
+    const itemsByPo = new Map<string, PoItem[]>();
+    for (const item of items) {
+      const list = itemsByPo.get(item.poId) || [];
+      list.push(item);
+      itemsByPo.set(item.poId, list);
+    }
     return {
-      list: raw.entities.map((entity, index) => ({
-        ...entity,
-        caseRegion: raw.raw[index]?.caseRegion,
-      })),
+      list: raw.entities.map((entity, index) => {
+        const poItems = itemsByPo.get(entity.id) || [];
+        return {
+          ...entity,
+          caseRegion: raw.raw[index]?.caseRegion,
+          items: poItems,
+          specialItemCount: poItems.filter((x) => x.itemCategory === 'special').length,
+          generalItemCount: poItems.filter((x) => x.itemCategory === 'general').length,
+        };
+      }),
       total,
       page,
       limit,
