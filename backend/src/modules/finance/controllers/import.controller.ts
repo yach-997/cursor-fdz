@@ -23,6 +23,22 @@ const excelOptions = { storage: memoryStorage(), limits: { fileSize: 20 * 1024 *
 @Controller('import')
 export class FinanceImportController {
   constructor(private readonly service: FinanceImportService) {}
+
+  @Get('templates/:kind')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
+  async template(@Param('kind') kind: string, @Res() res: Response) {
+    const { filename, buffer } = await this.service.downloadTemplate(kind);
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    );
+    res.send(buffer);
+  }
+
   @Post('gsp-cases')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   @UseInterceptors(FileInterceptor('file', excelOptions))

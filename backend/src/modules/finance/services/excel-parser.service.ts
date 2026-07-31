@@ -603,6 +603,187 @@ export class ExcelParserService {
     }
     return { prices, failures };
   }
+
+  /** 清单式价格模板（含条目编码+单价），区别于附件1技术平台 BOQ */
+  async isFlatPriceTemplate(buffer: Buffer): Promise<boolean> {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
+    const sheet = workbook.worksheets[0];
+    if (!sheet) return false;
+    for (let r = 1; r <= Math.min(5, sheet.rowCount); r += 1) {
+      const labels: string[] = [];
+      for (let c = 1; c <= Math.min(20, sheet.columnCount || 20); c += 1) {
+        const label = cellText(sheet.getCell(r, c).value);
+        if (label) labels.push(label);
+      }
+      const joined = labels.join('|');
+      if (/条目编码|编码/.test(joined) && /单价/.test(joined)) return true;
+    }
+    return false;
+  }
+
+  async buildImportTemplate(
+    kind: 'gsp' | 'po' | 'settle-price' | 'perf-price',
+  ): Promise<{ filename: string; buffer: Buffer }> {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = '费用结算中心';
+    if (kind === 'gsp') {
+      const sheet = workbook.addWorksheet('GSP案例');
+      sheet.addRow([
+        '服务案例号',
+        '项目名称',
+        '服务类型',
+        '创建人',
+        '省份',
+        '城市',
+        '失效现象描述',
+      ]);
+      sheet.addRow([
+        'GSP-示例-001',
+        '示例光伏项目',
+        '巡检',
+        '张三',
+        '云南',
+        '昆明',
+        '示例：设备告警待现场核查',
+      ]);
+      sheet.getRow(1).font = { bold: true };
+      sheet.columns.forEach((col) => {
+        col.width = 18;
+      });
+      const tip = workbook.addWorksheet('填写说明');
+      tip.addRow(['用途：第一次导入，建立服务案例']);
+      tip.addRow(['必填：服务案例号']);
+      tip.addRow(['可空：项目名称（空则系统用案例号占位，后续 PO 导入可补全）']);
+      tip.addRow(['导入入口：案例管理 → 导入案例']);
+      const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+      return { filename: 'GSP案例导入模板.xlsx', buffer };
+    }
+
+    if (kind === 'po') {
+      const sheet = workbook.addWorksheet('PO表');
+      const header1 = Array.from({ length: 30 }, () => '');
+      header1[0] = 'PO单号';
+      header1[1] = 'GSP案例号';
+      header1[2] = 'PO总额';
+      header1[3] = '需求日期';
+      header1[4] = '需求人';
+      header1[5] = '需求类型';
+      header1[6] = '产品线';
+      header1[7] = '产品型号';
+      header1[8] = '产品数量';
+      header1[9] = '故障现象';
+      header1[10] = '故障等级';
+      header1[11] = '时长要求';
+      header1[12] = '需求描述';
+      header1[13] = '项目区域';
+      header1[14] = '项目国家';
+      header1[15] = '项目地区';
+      header1[16] = '省份';
+      header1[17] = '项目名称';
+      header1[18] = '项目场景';
+      header1[19] = '专用服务条目';
+      header1[23] = '通用服务条目';
+      header1[27] = '提交人';
+      header1[28] = '创建时间';
+      header1[29] = '更新时间';
+      const header2 = Array.from({ length: 30 }, () => '');
+      header2[19] = '服务条目';
+      header2[20] = '条目说明';
+      header2[21] = '单位';
+      header2[22] = '数量';
+      header2[23] = '服务条目';
+      header2[24] = '条目说明';
+      header2[25] = '单位';
+      header2[26] = '数量';
+      sheet.addRow(header1);
+      sheet.addRow(header2);
+      const sample = Array.from({ length: 30 }, () => '');
+      sample[0] = 'PO-示例-001';
+      sample[1] = 'GSP-示例-001';
+      sample[2] = '1000';
+      sample[5] = '维修';
+      sample[7] = 'SG320HX';
+      sample[16] = '云南';
+      sample[17] = '示例光伏项目';
+      sample[18] = '平地';
+      sample[19] = '维护_示例条目';
+      sample[20] = '示例说明';
+      sample[21] = '台';
+      sample[22] = '1';
+      sample[23] = '在途1';
+      sample[24] = '通用';
+      sample[25] = '次';
+      sample[26] = '1';
+      sheet.addRow(sample);
+      sheet.getRow(1).font = { bold: true };
+      sheet.columns.forEach((col) => {
+        col.width = 14;
+      });
+      const tip = workbook.addWorksheet('填写说明');
+      tip.addRow(['用途：第二次导入，用钉钉 PO 表给案例补价格']);
+      tip.addRow(['格式：与钉钉导出一致的双行表头（第1行字段名，第2行专用/通用服务条目子列）']);
+      tip.addRow(['必填：PO单号、GSP案例号；服务条目需填数量']);
+      tip.addRow(['也可直接使用钉钉导出的原表导入，无需改成此模板']);
+      tip.addRow(['导入入口：PO 管理 → 导入 PO']);
+      const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+      return { filename: '钉钉PO导入模板.xlsx', buffer };
+    }
+
+    const isPerf = kind === 'perf-price';
+    const sheet = workbook.addWorksheet(isPerf ? '内部绩效价' : '甲方结算价');
+    sheet.addRow([
+      '条目编码',
+      '条目名称',
+      '产品型号',
+      '项目场景',
+      '区域',
+      '合作类型',
+      '单位',
+      '工时',
+      '单价',
+      '状态',
+      '生效日期',
+      '定价依据',
+    ]);
+    sheet.addRow([
+      isPerf ? 'PERF-示例-001' : 'SETTLE-示例-001',
+      '示例服务条目',
+      '通用',
+      '平地',
+      isPerf ? '云南' : '',
+      isPerf ? '自有' : '',
+      '台',
+      '2',
+      '100',
+      '启用',
+      new Date().toISOString().slice(0, 10),
+      '示例：按合同单价',
+    ]);
+    sheet.getRow(1).font = { bold: true };
+    sheet.columns.forEach((col) => {
+      col.width = 14;
+    });
+    const tip = workbook.addWorksheet('填写说明');
+    if (isPerf) {
+      tip.addRow(['用途：批量导入内部绩效价']);
+      tip.addRow(['必填：条目编码、单价']);
+      tip.addRow(['区域：云南 / 华南（可空）']);
+      tip.addRow(['状态：启用 / 停用']);
+      tip.addRow(['导入入口：价格库 → 导入内部绩效价']);
+    } else {
+      tip.addRow(['用途：按清单批量导入甲方结算价（简易模板）']);
+      tip.addRow(['必填：条目编码、单价']);
+      tip.addRow(['场景：平地/水上/山地/高原/屋顶等（可空表示通用）']);
+      tip.addRow(['若持有正式「附件1」报价表，仍可用「从附件1初始化结算价」导入']);
+      tip.addRow(['导入入口：价格库 → 从附件1初始化结算价（本模板亦可直接导入）']);
+    }
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    return {
+      filename: isPerf ? '内部绩效价导入模板.xlsx' : '甲方结算价导入模板.xlsx',
+      buffer,
+    };
+  }
 }
 
 function normalizeBlank(value: string): string | null {

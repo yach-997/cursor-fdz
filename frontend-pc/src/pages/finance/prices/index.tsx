@@ -25,6 +25,7 @@ import {
   clearPrices,
   createPrice,
   deletePrice,
+  downloadFinanceImportTemplate,
   fetchPrices,
   updatePrice,
 } from '../../../api/finance';
@@ -122,7 +123,17 @@ export default function PricesPage() {
             <Button type="primary" icon={<PlusOutlined />} onClick={() => openEdit()}>
               新增价格
             </Button>
-            <Button icon={<DownloadOutlined />} onClick={() => setImportOpen(true)}>
+            <Button
+              icon={<DownloadOutlined />}
+              onClick={() => {
+                void downloadFinanceImportTemplate(
+                  type === 'perf' ? 'perf-price' : 'settle-price',
+                ).catch(() => undefined);
+              }}
+            >
+              下载模板
+            </Button>
+            <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>
               从附件1初始化结算价
             </Button>
             <Button icon={<UploadOutlined />} onClick={() => setPerfImportOpen(true)}>

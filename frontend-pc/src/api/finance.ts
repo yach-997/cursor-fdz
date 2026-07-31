@@ -71,6 +71,25 @@ export async function exportMonthlySettlements(month: string, template: 'reconci
   anchor.click();
   URL.revokeObjectURL(url);
 }
+
+const TEMPLATE_FILENAMES: Record<'gsp' | 'po' | 'settle-price' | 'perf-price', string> = {
+  gsp: 'GSP案例导入模板.xlsx',
+  po: '钉钉PO导入模板.xlsx',
+  'settle-price': '甲方结算价导入模板.xlsx',
+  'perf-price': '内部绩效价导入模板.xlsx',
+};
+
+export async function downloadFinanceImportTemplate(
+  kind: 'gsp' | 'po' | 'settle-price' | 'perf-price',
+) {
+  const response = await request.get(`/import/templates/${kind}`, { responseType: 'blob' });
+  const url = URL.createObjectURL(response.data);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = TEMPLATE_FILENAMES[kind];
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 export async function fetchFinanceInspectors(caseId: string) {
   return unwrap(
     await request.get<ApiResponse<FinanceInspectorOption[]>>(`/cases/${caseId}/inspectors`),

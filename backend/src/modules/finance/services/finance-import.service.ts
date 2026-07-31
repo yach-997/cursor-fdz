@@ -167,6 +167,14 @@ export class FinanceImportService {
     };
   }
 
+  async downloadTemplate(kind: string) {
+    const allowed = ['gsp', 'po', 'settle-price', 'perf-price'] as const;
+    if (!allowed.includes(kind as (typeof allowed)[number])) {
+      throw new BadRequestException('模板类型无效，可选：gsp / po / settle-price / perf-price');
+    }
+    return this.parser.buildImportTemplate(kind as (typeof allowed)[number]);
+  }
+
   async importSettlePrices(
     file: Express.Multer.File,
     user: CurrentUserContext,
@@ -174,7 +182,23 @@ export class FinanceImportService {
     options: { offset?: number; limit?: number; batchId?: string } = {},
   ) {
     this.assertExcel(file);
-    const parsed = await this.parser.parseSettlePrices(file.buffer);
+    const flat = await this.parser.isFlatPriceTemplate(file.buffer);
+    const parsed = flat
+      ? await this.parser.parsePerfPrices(file.buffer).then((result) => ({
+          prices: result.prices.map((price) => ({
+            sourceRow: price.sourceRow,
+            itemCode: price.itemCode,
+            itemName: price.itemName,
+            itemDesc: price.itemDesc,
+            unit: price.unit,
+            productModel: price.productModel,
+            scene: price.scene,
+            workHours: price.workHours,
+            unitPrice: price.unitPrice,
+          })),
+          failures: result.failures,
+        }))
+      : await this.parser.parseSettlePrices(file.buffer);
     if (preview)
       return {
         preview: parsed.prices.slice(0, 20),
@@ -232,7 +256,9 @@ export class FinanceImportService {
         entity.unitPrice = money(price.unitPrice);
         entity.workHours = price.workHours === null ? null : money(price.workHours);
         entity.createdBy = user.id;
-        entity.changeRemark = `由${file.originalname}初始化，已应用0.990应答系数`;
+        entity.changeRemark = flat
+          ? `由${file.originalname}清单模板导入`
+          : `由${file.originalname}初始化，已应用0.990应答系数`;
         toSave.push(entity);
         priceMap.set(key, entity);
       } catch (error) {

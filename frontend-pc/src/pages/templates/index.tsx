@@ -11,7 +11,6 @@ import {
   Select,
   Space,
   Table,
-  Tabs,
   Tag,
   Upload,
   message,
@@ -34,18 +33,17 @@ import { DEVICE_TYPE_LABEL } from '../../types';
 import { uploadImage } from '../../api/upload';
 import { displayPhotoUrl } from '../../utils/photo-url';
 
-const DEVICE_TABS: DeviceType[] = [
-  'string_inverter',
-  'central_inverter',
-  'energy_storage',
-];
+const DEVICE_TYPE_OPTIONS = (
+  Object.entries(DEVICE_TYPE_LABEL) as Array<[DeviceType, string]>
+).map(([value, label]) => ({ value, label }));
 
-/** 模板配置：按设备类型 Tab，条目编辑排序，克隆到站点 */
+/** 模板配置：统一列表 + 名称搜索，按需新建各类模板 */
 export default function TemplatesPage() {
   const currentUser = useAuthStore((s) => s.user);
   const isAdmin = currentUser?.role === 'super_admin';
 
-  const [deviceType, setDeviceType] = useState<DeviceType>('string_inverter');
+  const [keyword, setKeyword] = useState('');
+  const [searchKeyword, setSearchKeyword] = useState('');
   const [loading, setLoading] = useState(false);
   const [list, setList] = useState<TemplateItem[]>([]);
   const [sites, setSites] = useState<SiteItem[]>([]);
@@ -63,12 +61,14 @@ export default function TemplatesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchTemplates({ deviceType });
+      const data = await fetchTemplates({
+        keyword: searchKeyword || undefined,
+      });
       setList(data);
     } finally {
       setLoading(false);
     }
-  }, [deviceType]);
+  }, [searchKeyword]);
 
   useEffect(() => {
     load();
@@ -82,9 +82,9 @@ export default function TemplatesPage() {
     setEditing(null);
     form.resetFields();
     form.setFieldsValue({
-      name: `${DEVICE_TYPE_LABEL[deviceType]}巡检模板`,
+      name: '',
       isGlobal: isAdmin,
-      deviceType,
+      deviceType: 'string_inverter',
     });
     setEntries([
       {
@@ -123,7 +123,7 @@ export default function TemplatesPage() {
     }
     const payload = {
       ...values,
-      deviceType: values.deviceType || deviceType,
+      deviceType: values.deviceType,
       entries: entries.map((e, i) => ({ ...e, order: i })),
       siteId: values.isGlobal ? null : values.siteId,
     };
@@ -140,6 +140,12 @@ export default function TemplatesPage() {
 
   const columns: ColumnsType<TemplateItem> = [
     { title: '模板名称', dataIndex: 'name' },
+    {
+      title: '设备类型',
+      dataIndex: 'deviceType',
+      width: 140,
+      render: (v: DeviceType) => DEVICE_TYPE_LABEL[v] || v,
+    },
     {
       title: '范围',
       width: 100,
@@ -429,12 +435,15 @@ export default function TemplatesPage() {
 
   return (
     <div>
-      <Tabs
-        activeKey={deviceType}
-        onChange={(k) => setDeviceType(k as DeviceType)}
-        items={DEVICE_TABS.map((t) => ({ key: t, label: DEVICE_TYPE_LABEL[t] }))}
-      />
-      <Space style={{ marginBottom: 16 }}>
+      <Space wrap style={{ marginBottom: 16 }}>
+        <Input.Search
+          allowClear
+          placeholder="搜索模板名称"
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          onSearch={(v) => setSearchKeyword(v.trim())}
+          style={{ width: 260 }}
+        />
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
           新建模板
         </Button>
@@ -458,10 +467,14 @@ export default function TemplatesPage() {
       >
         <Form form={form} layout="vertical">
           <Form.Item name="name" label="模板名称" rules={[{ required: true }]}>
-            <Input />
+            <Input placeholder="例如：组串式逆变器巡检、分布式巡检" />
           </Form.Item>
-          <Form.Item name="deviceType" label="设备类型" initialValue={deviceType} hidden>
-            <Input />
+          <Form.Item
+            name="deviceType"
+            label="设备类型"
+            rules={[{ required: true, message: '请选择设备类型' }]}
+          >
+            <Select options={DEVICE_TYPE_OPTIONS} placeholder="选择设备类型" />
           </Form.Item>
           {isAdmin && (
             <Form.Item name="isGlobal" label="全局模板" valuePropName="checked">

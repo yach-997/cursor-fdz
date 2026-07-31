@@ -23,7 +23,11 @@ export interface TemplateItem {
   createdAt: string;
 }
 
-export async function fetchTemplates(params?: { deviceType?: DeviceType; siteId?: string }) {
+export async function fetchTemplates(params?: {
+  deviceType?: DeviceType;
+  siteId?: string;
+  keyword?: string;
+}) {
   const { data } = await request.get<ApiResponse<TemplateItem[]>>('/templates', { params });
   return data.data;
 }

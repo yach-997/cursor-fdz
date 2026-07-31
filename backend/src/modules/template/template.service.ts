@@ -34,6 +34,11 @@ export class TemplateService {
       qb.andWhere('tpl.device_type = :deviceType', { deviceType: query.deviceType });
     }
 
+    const keyword = String(query.keyword || '').trim();
+    if (keyword) {
+      qb.andWhere('tpl.name ILIKE :keyword', { keyword: `%${keyword}%` });
+    }
+
     if (currentUser.role === UserRole.SUPER_ADMIN) {
       if (query.siteId) {
         qb.andWhere('(tpl.is_global = true OR tpl.site_id = :siteId)', {

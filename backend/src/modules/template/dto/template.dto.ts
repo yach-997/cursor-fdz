@@ -101,6 +101,11 @@ export class QueryTemplateDto {
   @IsOptional()
   @IsPostgresUuid({ message: '站点标识格式不正确' })
   siteId?: string;
+
+  /** 按模板名称模糊搜索 */
+  @IsOptional()
+  @IsString()
+  keyword?: string;
 }
 
 /** 克隆模板到站点 */

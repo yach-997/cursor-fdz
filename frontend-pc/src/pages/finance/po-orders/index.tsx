@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Button, Card, Form, Input, Modal, Table, Tag, Tabs, message } from 'antd';
 import { DeleteOutlined, DownloadOutlined, LinkOutlined, SyncOutlined } from '@ant-design/icons';
-import { clearPoOrders, fetchPoOrders, generateCasesFromPo, matchPoOrder } from '../../../api/finance';
+import { clearPoOrders, downloadFinanceImportTemplate, fetchPoOrders, generateCasesFromPo, matchPoOrder } from '../../../api/finance';
 import type { PoOrder } from '../../../types/finance';
 import { useAuthStore } from '../../../stores/auth';
 import ImportDialog from '../components/ImportDialog';
@@ -91,6 +91,14 @@ export default function PoOrdersPage() {
         description="从钉钉导出的一张 PO Excel 即可（表很宽：左侧案例/产品信息，右侧专用与通用服务条目）。按 GSP 案例号挂接第一次导入的案例并补全价格数量。未找到案例的 PO 进入「待匹配」；可用人工挂接，或仅在漏导 GSP 时使用下方应急补建。"
       />
       <div className="finance-toolbar">
+        <Button
+          icon={<DownloadOutlined />}
+          onClick={() => {
+            void downloadFinanceImportTemplate('po').catch(() => undefined);
+          }}
+        >
+          下载模板
+        </Button>
         <Button type="primary" icon={<DownloadOutlined />} onClick={() => setImportOpen(true)}>
           导入 PO
         </Button>

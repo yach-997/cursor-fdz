@@ -26,6 +26,7 @@ import {
   batchAssignFinanceCasesToSites,
   batchCreateTasksFromCases,
   clearFinanceCases,
+  downloadFinanceImportTemplate,
   fetchFinanceCase,
   fetchFinanceCases,
   fetchFinanceInspectors,
@@ -223,6 +224,14 @@ export default function FinanceCasesPage() {
             { value: 'service', label: '服务作业' },
           ]}
         />
+        <Button
+          icon={<DownloadOutlined />}
+          onClick={() => {
+            void downloadFinanceImportTemplate('gsp').catch(() => undefined);
+          }}
+        >
+          下载模板
+        </Button>
         <Button type="primary" icon={<DownloadOutlined />} onClick={() => setOpen(true)}>
           导入案例
         </Button>

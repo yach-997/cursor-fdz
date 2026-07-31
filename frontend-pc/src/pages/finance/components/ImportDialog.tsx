@@ -1,10 +1,20 @@
 import { useRef, useState } from 'react';
 import { Alert, Button, Modal, Progress, Space, Upload, message } from 'antd';
-import { InboxOutlined } from '@ant-design/icons';
-import { uploadFinanceExcel } from '../../../api/finance';
+import { DownloadOutlined, InboxOutlined } from '@ant-design/icons';
+import { downloadFinanceImportTemplate, uploadFinanceExcel } from '../../../api/finance';
 import type { ImportResult } from '../../../types/finance';
 
 const IMPORT_CHUNK = 25;
+
+const templateKindMap: Record<
+  'gsp' | 'po' | 'price' | 'perf-price',
+  'gsp' | 'po' | 'settle-price' | 'perf-price'
+> = {
+  gsp: 'gsp',
+  po: 'po',
+  price: 'settle-price',
+  'perf-price': 'perf-price',
+};
 
 export default function ImportDialog({
   open,
@@ -23,6 +33,7 @@ export default function ImportDialog({
   const [preview, setPreview] = useState<ImportResult>();
   const [importStatus, setImportStatus] = useState<ImportResult>();
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const resumeRef = useRef<{ offset: number; batchId?: string }>({ offset: 0 });
 
@@ -32,6 +43,17 @@ export default function ImportDialog({
     setImportStatus(undefined);
     setProgress(null);
     resumeRef.current = { offset: 0 };
+  };
+
+  const onDownloadTemplate = async () => {
+    setDownloading(true);
+    try {
+      await downloadFinanceImportTemplate(templateKindMap[kind]);
+    } catch {
+      /* 全局拦截器已提示 */
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const runPreview = async () => {
@@ -123,6 +145,13 @@ export default function ImportDialog({
       onCancel={onClose}
       footer={
         <Space>
+          <Button
+            icon={<DownloadOutlined />}
+            loading={downloading}
+            onClick={() => void onDownloadTemplate()}
+          >
+            下载模板
+          </Button>
           <Button onClick={onClose}>关闭</Button>
           <Button disabled={!file || loading} onClick={() => void runPreview()}>
             解析预览
@@ -143,6 +172,13 @@ export default function ImportDialog({
         </Space>
       }
     >
+      <Alert
+        style={{ marginBottom: 12 }}
+        type="success"
+        showIcon
+        message="建议先下载模板，按表头填写后再导入"
+        description="第一次使用请点「下载模板」；钉钉 PO 也可直接用钉钉导出原表。甲方结算价既可用清单模板，也可用正式附件1。"
+      />
       <Upload.Dragger
         accept=".xlsx"
         maxCount={1}
