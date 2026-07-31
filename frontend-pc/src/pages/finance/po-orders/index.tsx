@@ -87,8 +87,8 @@ export default function PoOrdersPage() {
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="第二次导入：钉钉 PO（图2 主表 + 图3 专用/通用条目）"
-        description="按 GSP 案例号挂接第一次导入的案例并补全价格数量。未找到案例的 PO 进入「待匹配」；可用人工挂接，或仅在漏导 GSP 时使用下方应急补建。"
+        message="第二次导入：钉钉 PO 表（单文件）"
+        description="从钉钉导出的一张 PO Excel 即可（表很宽：左侧案例/产品信息，右侧专用与通用服务条目）。按 GSP 案例号挂接第一次导入的案例并补全价格数量。未找到案例的 PO 进入「待匹配」；可用人工挂接，或仅在漏导 GSP 时使用下方应急补建。"
       />
       <div className="finance-toolbar">
         <Button type="primary" icon={<DownloadOutlined />} onClick={() => setImportOpen(true)}>

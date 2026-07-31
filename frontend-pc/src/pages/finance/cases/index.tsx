@@ -168,7 +168,7 @@ export default function FinanceCasesPage() {
         showIcon
         style={{ marginBottom: 12 }}
         message="案例主流程"
-        description="① 导入 GSP（图1）建案例 → ② 分配站点/设类型/派工程师现场作业 → ③ 完工后导入钉钉 PO（图2+图3）按案例号补价格与条目 → ④ 工程师可查看收入；异常由区域审核人调整。"
+        description="① 导入 GSP 案例表建案例 → ② 分配站点/设类型/派工程师现场作业 → ③ 完工后导入钉钉 PO 表（一张宽表，含案例信息与专用/通用条目）按案例号补价格 → ④ 工程师可查看收入；异常由区域审核人调整。"
       />
       <div className="finance-toolbar">
         <Input.Search

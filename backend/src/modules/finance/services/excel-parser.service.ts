@@ -202,7 +202,9 @@ export class ExcelParserService {
       cellText(sheet.getCell(2, index + 1).value),
     );
     if (header1[0] !== 'PO单号' || header1[1] !== 'GSP案例号' || header2[19] !== '服务条目') {
-      throw new BadRequestException('PO 表头不符合要求，请使用钉钉导出的双表头模板');
+      throw new BadRequestException(
+        'PO 表头不符合要求：请上传钉钉导出的单份 PO Excel（第1行含「PO单号」「GSP案例号」，第2行含专用/通用「服务条目」子列）',
+      );
     }
 
     const orders = new Map<string, ParsedPoOrder>();

@@ -176,8 +176,8 @@ export default function ImportDialog({
           style={{ marginTop: 12 }}
           type="info"
           showIcon
-          message="第二次导入（钉钉 PO + 专用/通用条目）"
-          description="使用钉钉双表头模板：PO单号、GSP案例号、金额与产品信息 + 专用/通用服务条目（条目、说明、单位、数量）。按案例号挂接已有 GSP 案例并补全价格；若案例尚不存在则进入「待匹配」。"
+          message="第二次导入（钉钉 PO 表，单文件）"
+          description="使用钉钉导出的一张 PO Excel（双行表头）：含 PO单号、GSP案例号、金额与产品信息，以及同表内的专用/通用服务条目（条目、说明、单位、数量）。不是两份表。按案例号挂接已有 GSP 案例并补全价格；若案例尚不存在则进入「待匹配」。"
         />
       )}
       {(loading || progress) && progress && (
