@@ -8,8 +8,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Repository } from 'typeorm';
 import {
   CaseWorkRecord,
-  Device,
-  InspectionTask,
   ServiceCase,
   Site,
   SiteMember,
@@ -18,11 +16,8 @@ import { CurrentUserContext } from '../../../common/interfaces';
 import {
   CommonStatus,
   SiteMemberRole,
-  TaskStatus,
   UserRole,
-  WorkTaskType,
 } from '../../../common/enums';
-import { TemplateService } from '../../template/template.service';
 import { ChangeLogService } from './change-log.service';
 import { FinanceScopeService } from './finance-scope.service';
 import {
@@ -32,17 +27,14 @@ import {
   SetCaseTaskTypeDto,
 } from '../dto/finance.dto';
 
-/** 案例 ↔ 站点 ↔ 任务桥接 */
+/** 案例 ↔ 站点桥接（派单不依赖设备台账） */
 @Injectable()
 export class CaseBridgeService {
   constructor(
     @InjectRepository(ServiceCase) private readonly cases: Repository<ServiceCase>,
     @InjectRepository(Site) private readonly sites: Repository<Site>,
-    @InjectRepository(Device) private readonly devices: Repository<Device>,
-    @InjectRepository(InspectionTask) private readonly tasks: Repository<InspectionTask>,
     @InjectRepository(SiteMember) private readonly members: Repository<SiteMember>,
     @InjectRepository(CaseWorkRecord) private readonly work: Repository<CaseWorkRecord>,
-    private readonly templates: TemplateService,
     private readonly scope: FinanceScopeService,
     private readonly logs: ChangeLogService,
   ) {}
@@ -111,18 +103,17 @@ export class CaseBridgeService {
   }
 
   /**
-   * 站点按案例批量创建任务：
-   * - inspection：创建巡检任务（需 deviceId），可选派工程师
-   * - service：不建巡检任务，可选直接派本站工程师到案例
+   * 按案例批量派单：导入案例后的唯一作业入口。
+   * 巡检/服务作业均直接派本站工程师，不再创建依赖设备台账的巡检任务。
    */
   async batchCreateTasks(dto: BatchCreateTasksFromCasesDto, user: CurrentUserContext) {
     this.assertAdminOrManager(user);
     if (!dto.caseIds?.length) throw new BadRequestException('请选择案例');
+    if (!dto.inspectorId) throw new BadRequestException('请指定本站工程师');
 
     const list = await this.cases.find({ where: { id: In(dto.caseIds) } });
     if (!list.length) throw new NotFoundException('未找到案例');
 
-    const createdTaskIds: string[] = [];
     const serviceAssigned: string[] = [];
     const skipped: Array<{ caseId: string; reason: string }> = [];
 
@@ -136,92 +127,34 @@ export class CaseBridgeService {
         skipped.push({ caseId: item.id, reason: '未设置任务类型' });
         continue;
       }
-
-      if (item.taskType === WorkTaskType.SERVICE) {
-        if (dto.inspectorId) {
-          if (item.status !== 'pending_assign') {
-            skipped.push({ caseId: item.id, reason: '案例已派单或已进入后续状态' });
-            continue;
-          }
-          await this.assertHired(item.siteId, dto.inspectorId);
-          item.inspectorId = dto.inspectorId;
-          item.assignBy = user.id;
-          item.assignTime = new Date();
-          item.status = 'assigned';
-          await this.cases.save(item);
-          await this.ensureWorkRecord(item, dto.inspectorId);
-          serviceAssigned.push(item.id);
-        } else {
-          skipped.push({
-            caseId: item.id,
-            reason: '服务作业类型请指定本站工程师，或仅保留案例待派单',
-          });
-        }
+      if (item.status !== 'pending_assign') {
+        skipped.push({ caseId: item.id, reason: '案例已派单或已进入后续状态' });
         continue;
       }
-
-      // inspection
-      const exists = await this.tasks.findOne({
-        where: { serviceCaseId: item.id },
-      });
-      if (exists) {
-        skipped.push({ caseId: item.id, reason: '已存在关联任务' });
-        continue;
-      }
-      if (!dto.deviceId) {
-        skipped.push({ caseId: item.id, reason: '巡检类型须指定设备' });
-        continue;
-      }
-      const device = await this.devices.findOne({
-        where: { id: dto.deviceId, siteId: item.siteId },
-      });
-      if (!device) {
-        skipped.push({ caseId: item.id, reason: '设备不属于该站点' });
-        continue;
-      }
-      if (dto.inspectorId) {
-        await this.assertHired(item.siteId, dto.inspectorId);
-      }
-
-      const template = await this.templates.resolveForDevice(device.deviceType, item.siteId);
-      if (!template) {
-        skipped.push({
-          caseId: item.id,
-          reason: `未找到设备类型「${device.deviceType}」的巡检模板`,
-        });
-        continue;
-      }
-
-      const task = this.tasks.create({
-        siteId: item.siteId,
-        deviceId: device.id,
-        taskName: `${item.gspCaseNo}-${item.projectName || '巡检'}`.slice(0, 120),
-        inspectorId: dto.inspectorId || null,
-        createdBy: user.id,
-        serviceCaseId: item.id,
-        taskType: WorkTaskType.INSPECTION,
-        status: TaskStatus.PENDING,
-        plannedDate: null,
-        aiEnabled: dto.aiEnabled !== false,
-        templateSnapshot: template.entries,
-      } as Partial<InspectionTask>);
-      const saved = await this.tasks.save(task);
-      createdTaskIds.push(saved.id);
-
-      if (dto.inspectorId) {
-        item.inspectorId = dto.inspectorId;
-        item.assignBy = user.id;
-        item.assignTime = new Date();
-        item.status = 'assigned';
-        await this.cases.save(item);
-      }
+      await this.assertHired(item.siteId, dto.inspectorId);
+      item.inspectorId = dto.inspectorId;
+      item.assignBy = user.id;
+      item.assignTime = new Date();
+      item.status = 'assigned';
+      await this.cases.save(item);
+      await this.ensureWorkRecord(item, dto.inspectorId);
+      serviceAssigned.push(item.id);
+      await this.logs.write(
+        'service_case',
+        item.id,
+        'status',
+        'pending_assign',
+        'assigned',
+        user.id,
+        `案例派单 → ${dto.inspectorId}`,
+      );
     }
 
     return {
-      createdTasks: createdTaskIds.length,
+      createdTasks: 0,
       serviceAssigned: serviceAssigned.length,
       skipped,
-      taskIds: createdTaskIds,
+      taskIds: [] as string[],
     };
   }
 

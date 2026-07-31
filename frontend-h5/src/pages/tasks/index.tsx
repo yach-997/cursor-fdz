@@ -144,8 +144,6 @@ export default function TasksPage() {
 
     const kw = appliedFilters.keyword.toLowerCase();
     for (const c of data?.financeCases || []) {
-      // 巡检类型走 inspection_tasks，避免与案例作业重复
-      if (c.taskType === 'inspection') continue;
       if (currentSite?.id && c.siteId && c.siteId !== currentSite.id) continue;
       if (!financeMatchesTab(c.status, tab)) continue;
       if (kw && !`${c.projectName} ${c.gspCaseNo}`.toLowerCase().includes(kw)) continue;
@@ -156,7 +154,7 @@ export default function TasksPage() {
         title: c.projectName || c.gspCaseNo,
         statusLabel: label,
         statusClass: statusClass(c.status, label),
-        meta: `${c.gspCaseNo} · 服务作业${c.province ? ` · ${c.province}` : ''}`,
+        meta: `${c.gspCaseNo} · ${c.taskType === 'inspection' ? '巡检案例' : '服务作业'}${c.province ? ` · ${c.province}` : ''}`,
         financeCase: c,
       });
     }
@@ -303,9 +301,9 @@ export default function TasksPage() {
       <button
         type="button"
         className="tasks-page__create"
-        onClick={() => navigate('/m/tasks/create')}
+        onClick={() => navigate('/m/finance-cases')}
       >
-        临时新建巡检
+        查看费用案例
       </button>
 
       <PullRefresh onRefresh={load}>
@@ -322,7 +320,7 @@ export default function TasksPage() {
             </button>
           ) : list.length === 0 ? (
             <div className="tasks-page__empty">
-              <Empty description="暂无任务，点上方新建" />
+              <Empty description="暂无待办，请等待网格长按案例派单" />
             </div>
           ) : (
             list.map((item) => (

@@ -10,7 +10,6 @@ const SitesPage = lazy(() => import('../pages/sites'));
 const StartWizardPage = lazy(() => import('../pages/start'));
 const HomePage = lazy(() => import('../pages/home'));
 const TasksPage = lazy(() => import('../pages/tasks'));
-const CreateTaskPage = lazy(() => import('../pages/tasks/create'));
 const TaskDetailPage = lazy(() => import('../pages/tasks/detail'));
 const InspectionPage = lazy(() => import('../pages/inspection'));
 const SuccessPage = lazy(() => import('../pages/success'));
@@ -88,9 +87,7 @@ export const router = createBrowserRouter([
     path: '/m/tasks/create',
     element: (
       <AuthGuard>
-        <Lazy>
-          <CreateTaskPage />
-        </Lazy>
+        <Navigate to="/m/finance-cases" replace />
       </AuthGuard>
     ),
   },

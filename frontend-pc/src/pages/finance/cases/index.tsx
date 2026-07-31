@@ -32,10 +32,9 @@ import {
   setFinanceCaseSite,
   setFinanceCaseTaskType,
 } from '../../../api/finance';
-import { fetchDevices } from '../../../api/device';
 import { fetchSiteMembers, fetchSites } from '../../../api/site';
 import type { FinanceCase, FinanceInspectorOption } from '../../../types/finance';
-import type { DeviceItem, SiteItem } from '../../../types';
+import type { SiteItem } from '../../../types';
 import { useAuthStore } from '../../../stores/auth';
 import ImportDialog from '../components/ImportDialog';
 import { canUseDangerousClear, confirmDangerousClear } from '../../../utils/finance-clear';
@@ -82,11 +81,9 @@ export default function FinanceCasesPage() {
   const [typeModal, setTypeModal] = useState<FinanceCase>();
   const [taskType, setTaskType] = useState<'inspection' | 'service'>();
   const [batchTaskOpen, setBatchTaskOpen] = useState(false);
-  const [devices, setDevices] = useState<DeviceItem[]>([]);
   const [siteMembers, setSiteMembers] = useState<
     Array<{ userId: string; user: { realName: string; phone: string } | null }>
   >([]);
-  const [batchDeviceId, setBatchDeviceId] = useState<string>();
   const [batchInspectorId, setBatchInspectorId] = useState<string>();
 
   const selectedCases = useMemo(
@@ -146,17 +143,16 @@ export default function FinanceCasesPage() {
     }
     const siteIds = [...new Set(selectedCases.map((c) => c.siteId).filter(Boolean))];
     if (siteIds.length !== 1) {
-      message.warning('批量建任务要求所选案例已归属同一站点');
+      message.warning('批量派单要求所选案例已归属同一站点');
+      return;
+    }
+    if (selectedCases.some((c) => !c.taskType)) {
+      message.warning('请先为所选案例设置任务类型');
       return;
     }
     const sid = siteIds[0] as string;
-    const [deviceRes, members] = await Promise.all([
-      fetchDevices({ siteId: sid, limit: 100 }),
-      fetchSiteMembers(sid, 'inspector'),
-    ]);
-    setDevices(deviceRes.list);
+    const members = await fetchSiteMembers(sid, 'inspector');
     setSiteMembers(members);
-    setBatchDeviceId(undefined);
     setBatchInspectorId(undefined);
     setBatchTaskOpen(true);
   };
@@ -168,7 +164,7 @@ export default function FinanceCasesPage() {
         showIcon
         style={{ marginBottom: 12 }}
         message="案例主流程"
-        description="① 导入 GSP 案例表建案例 → ② 分配站点/设类型/派工程师现场作业 → ③ 完工后导入钉钉 PO 表（一张宽表，含案例信息与专用/通用条目）按案例号补价格 → ④ 工程师可查看收入；异常由区域审核人调整。服务派单不依赖设备台账；仅「巡检」类型任务才需选择站点设备。"
+        description="① 导入案例模板建案例 → ② 分配站点/设类型 → ③ 派工程师现场作业 → ④ 完工后导入钉钉 PO 表补价格 → ⑤ 工程师可查看收入。全程按案例派单，不使用设备台账。"
       />
       <div className="finance-toolbar">
         <Input.Search
@@ -241,7 +237,7 @@ export default function FinanceCasesPage() {
           批量分配站点
         </Button>
         <Button icon={<SettingOutlined />} disabled={!selectedRowKeys.length} onClick={() => void openBatchTasks()}>
-          批量建任务
+          批量派单
         </Button>
         {canClear && (
           <Button danger icon={<DeleteOutlined />} loading={clearing} onClick={() => void onClear()}>
@@ -403,43 +399,36 @@ export default function FinanceCasesPage() {
           await load();
         }}
       >
-        <p>巡检：将创建巡检任务走模板拍照；服务作业：工程师在费用案例中登记工作量。</p>
+        <p>任务类型仅作业务分类标记。派单后工程师均在「费用案例」中接单、登记工作量并完工，不依赖设备台账。</p>
         <Select
           style={{ width: '100%' }}
           value={taskType}
           placeholder="选择任务类型"
           onChange={setTaskType}
           options={[
-            { value: 'inspection', label: '巡检' },
-            { value: 'service', label: '服务作业' },
+            { value: 'inspection', label: '巡检（案例派单）' },
+            { value: 'service', label: '服务作业（案例派单）' },
           ]}
         />
       </Modal>
       <Modal
         open={batchTaskOpen}
-        title="按案例批量建任务 / 派单"
-        okText="执行"
+        title="按案例批量派单"
+        okText="派单"
         cancelText="取消"
         width={560}
         onCancel={() => setBatchTaskOpen(false)}
         onOk={async () => {
-          const hasInspection = selectedCases.some((c) => c.taskType === 'inspection');
-          const hasService = selectedCases.some((c) => c.taskType === 'service');
-          if (hasInspection && !batchDeviceId) {
-            message.warning('所选含巡检案例，请指定本站设备');
-            return;
-          }
-          if (hasService && !batchInspectorId) {
-            message.warning('所选含服务作业案例，请指定本站工程师');
+          if (!batchInspectorId) {
+            message.warning('请指定本站工程师');
             return;
           }
           const result = await batchCreateTasksFromCases({
             caseIds: selectedCases.map((c) => c.id),
-            deviceId: batchDeviceId,
             inspectorId: batchInspectorId,
           });
           message.success(
-            `巡检任务 ${result.createdTasks} 个，服务派单 ${result.serviceAssigned} 个` +
+            `已派单 ${result.serviceAssigned} 个` +
               (result.skipped.length ? `，跳过 ${result.skipped.length} 个` : ''),
           );
           if (result.skipped.length) {
@@ -466,30 +455,12 @@ export default function FinanceCasesPage() {
           type="info"
           showIcon
           style={{ marginBottom: 12 }}
-          message={`已选 ${selectedCases.length} 个案例（须同一站点、已设任务类型）`}
+          message={`已选 ${selectedCases.length} 个案例（须同一站点、已设任务类型、待派单）`}
         />
-        {selectedCases.some((c) => c.taskType === 'inspection') && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ marginBottom: 6 }}>巡检设备（仅巡检类型需要，本批共用）</div>
-            <Select
-              style={{ width: '100%' }}
-              showSearch
-              optionFilterProp="label"
-              value={batchDeviceId}
-              placeholder={devices.length ? '选择本站设备' : '本站暂无设备，请先在库中建档或改用服务作业类型'}
-              onChange={setBatchDeviceId}
-              options={devices.map((d) => ({
-                value: d.id,
-                label: `${d.serialNumber}${d.model ? ` · ${d.model}` : ''}`,
-              }))}
-            />
-          </div>
-        )}
         <div>
-          <div style={{ marginBottom: 6 }}>本站工程师（可选；服务作业必填）</div>
+          <div style={{ marginBottom: 6 }}>本站工程师</div>
           <Select
             style={{ width: '100%' }}
-            allowClear
             showSearch
             optionFilterProp="label"
             value={batchInspectorId}

@@ -2,30 +2,23 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NavBar, Cell, Empty, Button, Toast, Tag } from 'react-vant';
 import { useAuthStore } from '../../stores/auth';
-import { fetchTasks, type TaskItem } from '../../api/task';
+import { fetchMyFinanceCases, type MobileFinanceCase } from '../../api/finance';
 
-const DEVICE_TYPES = [
-  { value: 'string_inverter', label: '组串式逆变器' },
-  { value: 'central_inverter', label: '集中式逆变器' },
-  { value: 'energy_storage', label: '储能系统' },
-] as const;
-
-type Step = 'region' | 'project' | 'device' | 'task';
+type Step = 'region' | 'project' | 'task';
 
 const STATUS_TEXT: Record<string, string> = {
-  pending: '待办',
-  in_progress: '进行中',
+  assigned: '待开始',
+  working: '作业中',
 };
 
-/** 开检向导：地区 → 巡检项目(站点) → 设备类型 → 任务 */
+/** 开检向导：地区 → 站点 → 已派案例（不走设备台账） */
 export default function StartWizardPage() {
   const navigate = useNavigate();
   const { user, setCurrentSite } = useAuthStore();
   const [step, setStep] = useState<Step>('region');
   const [region, setRegion] = useState('');
   const [projectId, setProjectId] = useState('');
-  const [deviceType, setDeviceType] = useState('');
-  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [cases, setCases] = useState<MobileFinanceCase[]>([]);
   const [loading, setLoading] = useState(false);
 
   const sites = useMemo(
@@ -53,22 +46,19 @@ export default function StartWizardPage() {
     });
   }, [sites, region]);
 
-  const loadTasks = async (siteId: string, dt: string) => {
+  const loadCases = async (siteId: string) => {
     setLoading(true);
     try {
-      const res = await fetchTasks({
-        page: 1,
-        limit: 50,
-        siteId,
-        deviceType: dt,
-      });
-      const list = res.list.filter((t) =>
-        ['pending', 'in_progress', 'rejected'].includes(t.status),
+      const list = await fetchMyFinanceCases();
+      const filtered = list.filter(
+        (c) =>
+          c.siteId === siteId &&
+          ['assigned', 'working'].includes(c.status),
       );
-      setTasks(list);
+      setCases(filtered);
       setStep('task');
-      if (!list.length) {
-        Toast.info('该条件下暂无待办任务，请联系网格长分配');
+      if (!filtered.length) {
+        Toast.info('该站点暂无已派案例，请联系网格长派单');
       }
     } catch {
       /* 拦截器 */
@@ -80,8 +70,7 @@ export default function StartWizardPage() {
   const onPickRegion = (r: string) => {
     setRegion(r);
     setProjectId('');
-    setDeviceType('');
-    setTasks([]);
+    setCases([]);
     setStep('project');
   };
 
@@ -89,45 +78,37 @@ export default function StartWizardPage() {
     const site = sites.find((s) => s.id === siteId);
     if (site) setCurrentSite(site);
     setProjectId(siteId);
-    setDeviceType('');
-    setTasks([]);
-    setStep('device');
-  };
-
-  const onPickDevice = (dt: string) => {
-    setDeviceType(dt);
-    void loadTasks(projectId, dt);
+    void loadCases(siteId);
   };
 
   const onBack = () => {
-    if (step === 'region') {
-      navigate('/m', { replace: true });
-      return;
-    }
     if (step === 'project') setStep('region');
-    else if (step === 'device') setStep('project');
-    else setStep('device');
+    else if (step === 'task') setStep('project');
+    else navigate(-1);
   };
 
   return (
     <div style={{ minHeight: '100vh', background: '#f2f5f3', paddingBottom: 24 }}>
-      <NavBar
-        title="执行待办任务"
-        leftText="返回"
-        rightText="临时新建"
-        onClickLeft={onBack}
-        onClickRight={() => navigate('/m/tasks/create')}
-      />
+      <NavBar title="执行已派案例" leftText="返回" onClickLeft={onBack} />
 
-      <div style={{ margin: '12px 16px 0', padding: 12, borderRadius: 12, background: '#eaf6f1', color: '#47685c', fontSize: 12, lineHeight: 1.65 }}>
-        这里用于执行管理员或网格长已分配的待办任务；突发检查或现场漏建任务时，可点右上角“临时新建”。
+      <div
+        style={{
+          margin: '12px 16px 0',
+          padding: 12,
+          borderRadius: 12,
+          background: '#eaf6f1',
+          color: '#47685c',
+          fontSize: 12,
+          lineHeight: 1.65,
+        }}
+      >
+        作业均由网格长导入案例后派单。请选择地区与站点，进入已派给你的案例接单作业。
       </div>
 
       <div style={{ padding: '12px 16px', fontSize: 13, color: '#666' }}>
         {step === 'region' && '第 1 步：选择所在地区'}
-        {step === 'project' && `第 2 步：选择巡检项目（${region}）`}
-        {step === 'device' && '第 3 步：选择设备类型'}
-        {step === 'task' && '第 4 步：选择待办任务进入检查流程'}
+        {step === 'project' && `第 2 步：选择站点（${region}）`}
+        {step === 'task' && '第 3 步：选择已派案例'}
       </div>
 
       {step === 'region' && (
@@ -160,7 +141,7 @@ export default function StartWizardPage() {
       {step === 'project' && (
         <>
           {!projects.length ? (
-            <Empty description="该地区暂无巡检项目" />
+            <Empty description="该地区暂无站点" />
           ) : (
             <Cell.Group inset>
               {projects.map((s) => (
@@ -177,53 +158,30 @@ export default function StartWizardPage() {
         </>
       )}
 
-      {step === 'device' && (
-        <Cell.Group inset>
-          {DEVICE_TYPES.map((d) => (
-            <Cell
-              key={d.value}
-              title={d.label}
-              isLink
-              onClick={() => onPickDevice(d.value)}
-            />
-          ))}
-        </Cell.Group>
-      )}
-
       {step === 'task' && (
         <>
           <div style={{ padding: '0 16px 8px', fontSize: 13, color: '#888' }}>
-            {region} / {projects.find((p) => p.id === projectId)?.name} /{' '}
-            {DEVICE_TYPES.find((d) => d.value === deviceType)?.label}
+            {region} / {projects.find((p) => p.id === projectId)?.name}
           </div>
           {loading ? (
-            <Empty description="加载任务中..." />
-          ) : tasks.length === 0 ? (
+            <Empty description="加载案例中..." />
+          ) : cases.length === 0 ? (
             <div style={{ padding: 16 }}>
-              <Empty description="暂无匹配任务" />
-              <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
-                <Button block round onClick={() => setStep('device')}>
-                  重选设备类型
-                </Button>
-                <Button block round type="primary" onClick={() => navigate('/m/tasks/create')}>
-                  临时新建巡检任务
-                </Button>
-              </div>
+              <Empty description="暂无已派案例" />
+              <Button block round style={{ marginTop: 12 }} onClick={() => setStep('project')}>
+                重选站点
+              </Button>
             </div>
           ) : (
             <Cell.Group inset>
-              {tasks.map((t) => (
+              {cases.map((c) => (
                 <Cell
-                  key={t.id}
-                  title={t.taskName}
-                  label={`序列号：${t.device?.serialNumber || '-'} · ${STATUS_TEXT[t.status] || '未知状态'}`}
+                  key={c.id}
+                  title={c.projectName || c.gspCaseNo}
+                  label={`${c.gspCaseNo} · ${STATUS_TEXT[c.status] || c.status}`}
                   isLink
-                  value={
-                    <Tag type={t.status === 'in_progress' ? 'primary' : 'success'} plain>
-                      {STATUS_TEXT[t.status] || '未知状态'}
-                    </Tag>
-                  }
-                  onClick={() => navigate(`/m/inspection/${t.id}`)}
+                  value={<Tag type="primary">{c.taskType === 'inspection' ? '巡检' : '服务'}</Tag>}
+                  onClick={() => navigate(`/m/finance-cases/${c.id}`)}
                 />
               ))}
             </Cell.Group>

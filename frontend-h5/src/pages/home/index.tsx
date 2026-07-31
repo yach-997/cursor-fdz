@@ -62,14 +62,13 @@ export default function HomePage() {
         href: `/m/tasks/${t.id}`,
       }));
     for (const c of data?.financeCases || []) {
-      if (c.taskType === 'inspection') continue;
       if (!['assigned', 'working'].includes(c.status)) continue;
       if (currentSite?.id && c.siteId && c.siteId !== currentSite.id) continue;
       list.push({
         key: `case-${c.id}`,
         kind: 'service',
         title: c.projectName || c.gspCaseNo,
-        meta: `${c.gspCaseNo} · 服务作业`,
+        meta: `${c.gspCaseNo} · ${c.taskType === 'inspection' ? '巡检案例' : '服务作业'}`,
         status: c.status,
         statusLabel: STATUS_TEXT[c.status] || c.status,
         href: `/m/finance-cases/${c.id}`,

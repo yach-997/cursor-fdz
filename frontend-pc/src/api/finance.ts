@@ -106,9 +106,7 @@ export async function setFinanceCaseTaskType(
 }
 export async function batchCreateTasksFromCases(payload: {
   caseIds: string[];
-  deviceId?: string;
-  inspectorId?: string;
-  aiEnabled?: boolean;
+  inspectorId: string;
 }) {
   return unwrap(
     await request.post<

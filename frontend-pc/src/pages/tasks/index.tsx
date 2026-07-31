@@ -12,7 +12,6 @@ import {
   Tag,
   message,
 } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import {
@@ -305,8 +304,12 @@ export default function TasksPage() {
         >
           查询
         </Button>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          创建任务
+        <Button
+          onClick={() => {
+            message.info('请到「费用结算中心 → 案例管理」导入案例后派单');
+          }}
+        >
+          去案例派单
         </Button>
       </Space>
 

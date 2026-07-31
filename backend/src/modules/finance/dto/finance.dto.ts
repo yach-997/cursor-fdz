@@ -54,11 +54,8 @@ export class BatchCreateTasksFromCasesDto {
   @IsArray()
   @IsString({ each: true })
   caseIds: string[];
-  /** 巡检类型必填：同一批使用同一设备 */
-  @IsOptional() @IsPostgresUuid() deviceId?: string;
-  /** 可选：创建时一并派给本站工程师 */
-  @IsOptional() @IsPostgresUuid() inspectorId?: string;
-  @IsOptional() @IsBoolean() aiEnabled?: boolean;
+  /** 必填：派给本站工程师（案例作业，不依赖设备） */
+  @IsPostgresUuid() inspectorId: string;
 }
 
 export class PoOrderQueryDto extends PaginationDto {
