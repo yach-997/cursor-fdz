@@ -57,7 +57,6 @@ export class UserService {
     } else if (currentUser.role === UserRole.SITE_MANAGER) {
       const creatorIds = await this.getStaffingCreatorIds(currentUser.id);
       if (!creatorIds.length) {
-        // 未任职任何站点的网格长账号：无编制权
         return { list: [], total: 0, page, limit };
       }
       // 正/副网格长权限相同：共享所管站点编制池，A/B 站互不可见
@@ -87,9 +86,37 @@ export class UserService {
       .take(limit);
 
     const [list, total] = await qb.getManyAndCount();
+    const rows = list.map((u) => this.toSafeUser(u));
+    let finalTotal = total;
+
+    // 网格长本人由管理员创建（created_by≠自己），默认不在编制池；首页插入本人便于查看/开通工程师身份
+    if (currentUser.role === UserRole.SITE_MANAGER && page === 1) {
+      const self = await this.getUserOrThrow(currentUser.id);
+      const selfMatchRole =
+        !query.role ||
+        (query.role === UserRole.SITE_MANAGER && userHasRole(self, UserRole.SITE_MANAGER)) ||
+        (query.role === UserRole.INSPECTOR && userHasRole(self, UserRole.INSPECTOR));
+      const selfMatchStatus = !query.status || self.status === query.status;
+      const kw = query.keyword?.trim();
+      const selfMatchKw =
+        !kw ||
+        self.username.includes(kw) ||
+        self.realName.includes(kw) ||
+        self.phone.includes(kw);
+      if (
+        selfMatchRole &&
+        selfMatchStatus &&
+        selfMatchKw &&
+        !rows.some((u) => u.id === self.id)
+      ) {
+        rows.unshift(this.toSafeUser(self));
+        finalTotal += 1;
+      }
+    }
+
     return {
-      list: list.map((u) => this.toSafeUser(u)),
-      total,
+      list: rows,
+      total: finalTotal,
       page,
       limit,
     };
@@ -104,16 +131,26 @@ export class UserService {
       where: { username: dto.username },
     });
     const existsPhone = await this.userRepo.findOne({ where: { phone: dto.phone } });
+    const selfAccount =
+      currentUser.role === UserRole.SITE_MANAGER
+        ? existsUsername?.id === currentUser.id || existsPhone?.id === currentUser.id
+          ? existsUsername?.id === currentUser.id
+            ? existsUsername!
+            : existsPhone!
+          : null
+        : null;
 
-    // 正/副网格长给「自己」开通工程师：用户名/手机号与当前账号相同 → 合并角色，可登 H5
-    if (currentUser.role === UserRole.SITE_MANAGER && roles.includes(UserRole.INSPECTOR)) {
-      const selfHit =
-        (existsUsername && existsUsername.id === currentUser.id) ||
-        (existsPhone && existsPhone.id === currentUser.id);
-      if (selfHit) {
-        const self = existsUsername?.id === currentUser.id ? existsUsername! : existsPhone!;
-        return this.grantInspectorRole(self);
+    // 正网格长不能给自己设副网格长；只能给自己开通工程师
+    if (selfAccount) {
+      if (roles.includes(UserRole.SITE_MANAGER)) {
+        throw new BadRequestException(
+          '正网格长不能给自己设立副网格长（角色冲突）；如需登 H5，请只勾选「工程师」或点「开通我的工程师身份」',
+        );
       }
+      if (!roles.includes(UserRole.INSPECTOR)) {
+        throw new BadRequestException('给自己开通时请勾选「工程师」');
+      }
+      return this.grantInspectorRole(selfAccount);
     }
 
     if (existsUsername) throw new ConflictException('用户名已存在');
@@ -148,6 +185,8 @@ export class UserService {
 
   private async grantInspectorRole(user: User) {
     ensureUserHasRole(user, UserRole.INSPECTOR);
+    // 确保 roles jsonb 与 legacy role 同步落库
+    applyUserRoles(user, getUserRoles(user));
     const saved = await this.userRepo.save(user);
     return this.toSafeUser(saved);
   }
@@ -178,8 +217,15 @@ export class UserService {
       applyUserRoles(user, [...next]);
     } else if (dto.roles || dto.role) {
       const roles = this.normalizeRolesInput(dto.roles, dto.role);
-      this.assertAllowedRolesForUpdate(roles, currentUser, user);
-      applyUserRoles(user, roles);
+      if (user.id === currentUser.id && currentUser.role === UserRole.SITE_MANAGER) {
+        // 自己：保留网格长身份，只可附加工程师；不能「改成副网格长」
+        const next: UserRole[] = [UserRole.SITE_MANAGER];
+        if (roles.includes(UserRole.INSPECTOR)) next.push(UserRole.INSPECTOR);
+        applyUserRoles(user, next);
+      } else {
+        this.assertAllowedRolesForUpdate(roles, currentUser, user);
+        applyUserRoles(user, roles);
+      }
     }
 
     const saved = await this.userRepo.save(user);
@@ -387,6 +433,7 @@ export class UserService {
       return;
     }
     if (currentUser.role === UserRole.SITE_MANAGER) {
+      if (target.id === currentUser.id) return;
       const creatorIds = await this.getStaffingCreatorIds(currentUser.id);
       if (!creatorIds.length) {
         throw new ForbiddenException('未任职站点，无权管理下属账号');

@@ -47,6 +47,8 @@ export default function UsersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<UserInfo | null>(null);
   const [form] = Form.useForm();
+  const watchUsername = Form.useWatch('username', form);
+  const watchPhone = Form.useWatch('phone', form);
 
   const [pwdOpen, setPwdOpen] = useState(false);
   const [pwdUser, setPwdUser] = useState<UserInfo | null>(null);
@@ -65,8 +67,46 @@ export default function UsersPage() {
   const [hireSiteId, setHireSiteId] = useState<string>();
   const [memberMap, setMemberMap] = useState<Record<string, string[]>>({});
 
+  const isPrimaryManager = managedSites.some((s) => s.managerId === currentUser?.id);
   const canStaffAsManager = isSiteManager && managedSites.length > 0;
   const canStaffAccounts = isAdmin || canStaffAsManager;
+
+  const creatingForSelf =
+    !editing &&
+    isSiteManager &&
+    Boolean(currentUser) &&
+    ((watchUsername && watchUsername === currentUser?.username) ||
+      (watchPhone && watchPhone === currentUser?.phone));
+
+  const editingSelf = Boolean(editing && editing.id === currentUser?.id);
+
+  const roleOptions = useMemo(() => {
+    if (isAdmin) {
+      return [{ value: 'site_manager', label: '正网格长' }];
+    }
+    // 本人：只能附加工程师，不可勾选「副网格长」（与正网格长冲突）
+    if (creatingForSelf || editingSelf) {
+      return [
+        {
+          value: 'site_manager',
+          label: isPrimaryManager ? '正网格长（本账号）' : '网格长（本账号）',
+          disabled: true,
+        },
+        { value: 'inspector', label: '工程师（H5）' },
+      ];
+    }
+    return [
+      { value: 'site_manager', label: '副网格长（PC）' },
+      { value: 'inspector', label: '工程师（H5）' },
+    ];
+  }, [isAdmin, creatingForSelf, editingSelf, isPrimaryManager]);
+
+  useEffect(() => {
+    if (creatingForSelf) {
+      // 新增时走「只开通工程师」；提交走 enableMyInspector，不新建副网格长
+      form.setFieldsValue({ roles: ['site_manager', 'inspector'] });
+    }
+  }, [creatingForSelf, form]);
 
   const loadManagedSites = useCallback(async () => {
     if (!isSiteManager || !currentUser?.id) {
@@ -125,16 +165,6 @@ export default function UsersPage() {
     else if (tab === 'pool' && canStaffAsManager) void loadPool();
   }, [tab, loadList, loadPool, canStaffAsManager]);
 
-  const roleOptions = useMemo(() => {
-    if (isAdmin) {
-      return [{ value: 'site_manager', label: '正网格长' }];
-    }
-    return [
-      { value: 'site_manager', label: '副网格长（PC）' },
-      { value: 'inspector', label: '工程师（H5）' },
-    ];
-  }, [isAdmin]);
-
   const iAmInspector = Boolean(
     currentUser?.roles?.includes('inspector') || currentUser?.role === 'inspector',
   );
@@ -149,15 +179,59 @@ export default function UsersPage() {
   const openEdit = (record: UserInfo) => {
     setEditing(record);
     const list = record.roles?.length ? record.roles : record.role ? [record.role] : [];
+    const isSelf = record.id === currentUser?.id;
     form.setFieldsValue({
       ...record,
-      roles: isAdmin ? ['site_manager'] : list,
+      roles: isAdmin
+        ? ['site_manager']
+        : isSelf
+          ? list.includes('inspector')
+            ? ['site_manager', 'inspector']
+            : ['site_manager']
+          : list,
     });
     setModalOpen(true);
   };
 
   const submitUser = async () => {
     const values = await form.validateFields();
+    const isSelfCreate =
+      !editing &&
+      (values.username === currentUser?.username || values.phone === currentUser?.phone);
+
+    // 本人新增：不能设副网格长，只开通工程师（site_manager 勾选仅作展示）
+    if (!editing && isSelfCreate) {
+      if (!values.roles?.includes('inspector')) {
+        message.error('给自己开通时请勾选工程师');
+        return;
+      }
+      await enableMyInspector();
+      await useAuthStore.getState().fetchMe();
+      message.success('已为本账号开通工程师身份，请退出后用同一账号登录 H5');
+      setModalOpen(false);
+      void loadList();
+      return;
+    }
+
+    if (editing && editing.id === currentUser?.id && !isAdmin) {
+      const nextRoles: UserRole[] = ['site_manager'];
+      if (values.roles?.includes('inspector')) nextRoles.push('inspector');
+      await updateUser(editing.id, {
+        realName: values.realName,
+        phone: values.phone,
+        roles: nextRoles,
+      });
+      await useAuthStore.getState().fetchMe();
+      message.success(
+        nextRoles.includes('inspector')
+          ? '已更新；工程师身份已保留/开通，请用同一账号重新登录 H5'
+          : '已更新（未勾选工程师则无法登录 H5）',
+      );
+      setModalOpen(false);
+      void loadList();
+      return;
+    }
+
     const roles: UserRole[] = isAdmin
       ? ['site_manager']
       : values.roles?.length
@@ -170,6 +244,7 @@ export default function UsersPage() {
         roles,
       });
       message.success('用户已更新');
+      if (editing.id === currentUser?.id) await useAuthStore.getState().fetchMe();
     } else {
       await createUser({
         username: values.username,
@@ -178,18 +253,7 @@ export default function UsersPage() {
         phone: values.phone,
         roles,
       });
-      message.success(
-        roles.includes('inspector') &&
-          (values.username === currentUser?.username || values.phone === currentUser?.phone)
-          ? '已为本账号开通工程师身份，可用同一账号登录 H5'
-          : '用户已创建',
-      );
-      if (
-        roles.includes('inspector') &&
-        (values.username === currentUser?.username || values.phone === currentUser?.phone)
-      ) {
-        await useAuthStore.getState().fetchMe();
-      }
+      message.success('用户已创建');
     }
     setModalOpen(false);
     void loadList();
@@ -198,7 +262,8 @@ export default function UsersPage() {
   const onEnableMyInspector = async () => {
     await enableMyInspector();
     await useAuthStore.getState().fetchMe();
-    message.success('已开通工程师身份，可用本账号登录 H5 巡检端');
+    message.success('已开通工程师身份，请退出后用同一账号登录 H5 巡检端');
+    void loadList();
   };
 
   const toggleStatus = async (record: UserInfo) => {
@@ -247,14 +312,19 @@ export default function UsersPage() {
       render: (_roles: UserRole[] | undefined, r) => {
         const list = r.roles?.length ? r.roles : r.role ? [r.role] : [];
         if (isAdmin) return <Tag>正网格长</Tag>;
+        const isSelf = r.id === currentUser?.id;
         const tags: string[] = [];
-        if (list.includes('site_manager')) tags.push('副网格长');
+        if (list.includes('site_manager')) {
+          tags.push(isSelf && isPrimaryManager ? '正网格长' : '副网格长');
+        }
         if (list.includes('inspector')) tags.push('工程师');
         if (!tags.length) tags.push('未知角色');
         return (
           <Space size={[4, 4]} wrap>
             {tags.map((t) => (
-              <Tag key={t}>{t}</Tag>
+              <Tag key={t} color={t === '工程师' ? 'blue' : 'green'}>
+                {t}
+              </Tag>
             ))}
           </Space>
         );
@@ -354,7 +424,7 @@ export default function UsersPage() {
           isAdmin
             ? '管理员只设立正网格长（PC）。工程师须由正/副网格长设立；正/副网格长也可为自己开通工程师身份后登录 H5。'
             : canStaffAsManager
-              ? '正/副网格长权限相同。可设立副网格长/工程师；给自己勾选工程师或点「开通我的工程师身份」后，同一账号可登 H5。'
+              ? '正/副网格长权限相同。可设立下属副网格长/工程师；正网格长不能给自己设副网格长，可开通工程师后同一账号登 H5。'
               : '请先被任命为正网格长或副网格长后，再编制下属账号。'
         }
       />
@@ -469,9 +539,16 @@ export default function UsersPage() {
               <Form.Item
                 name="password"
                 label="密码"
-                rules={[{ required: true, min: 6, message: '至少6位' }]}
+                rules={
+                  creatingForSelf
+                    ? []
+                    : [{ required: true, min: 6, message: '至少6位' }]
+                }
               >
-                <Input.Password />
+                <Input.Password
+                  placeholder={creatingForSelf ? '给自己开通工程师时无需填写' : undefined}
+                  disabled={creatingForSelf}
+                />
               </Form.Item>
             </>
           )}
@@ -499,7 +576,9 @@ export default function UsersPage() {
             extra={
               isAdmin
                 ? '正网格长登录 PC；创建后到「站点管理」任命到电站'
-                : '可只建工程师，或副网格长兼工程师。给自己开通工程师时，用户名/手机号填本账号即可。'
+                : creatingForSelf || editingSelf
+                  ? '本账号只能开通/取消工程师，不能设为副网格长（与正网格长冲突）。开通后请重新登录 H5。'
+                  : '可设立副网格长或工程师。给自己开通工程师时，用户名/手机填本账号即可。'
             }
           >
             <Checkbox.Group options={roleOptions} />
