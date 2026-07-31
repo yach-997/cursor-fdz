@@ -1,10 +1,18 @@
-import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
+import axios, {
+  AxiosError,
+  AxiosRequestConfig,
+  InternalAxiosRequestConfig,
+} from 'axios';
 import { message } from 'antd';
 import type { ApiResponse } from '../types';
 import { chineseErrorMessage } from './displayLabels';
 
 /** 业务侧自行提示时跳过全局错误 toast */
-export type AppAxiosRequestConfig = AxiosRequestConfig & { skipErrorToast?: boolean };
+export type AppAxiosRequestConfig = AxiosRequestConfig & {
+  skipErrorToast?: boolean;
+  /** 已自动重试次数（内部使用） */
+  __retryCount?: number;
+};
 
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/$/, '') || '';
 const supabaseAnon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || '';
@@ -112,7 +120,55 @@ function isAuthLoginRequest(url?: string) {
 }
 
 function shouldSkipErrorToast(config?: AxiosRequestConfig) {
-  return !!(config as AppAxiosRequestConfig | undefined)?.skipErrorToast;
+  const cfg = config as AppAxiosRequestConfig | undefined;
+  if (cfg?.skipErrorToast) return true;
+  const url = cfg?.url || '';
+  // 探活失败只更新登录页状态，不弹全局错误
+  if (url.includes('/health') || url.endsWith('health')) return true;
+  return false;
+}
+
+function isCanceledError(error: AxiosError | Error) {
+  if (axios.isCancel?.(error)) return true;
+  const ax = error as AxiosError;
+  if (ax.code === 'ERR_CANCELED') return true;
+  const msg = String(ax.message || '');
+  // 注意：ECONNABORTED 多为超时，不要当取消
+  return /cancell?ed|request aborted/i.test(msg);
+}
+
+/** 相同文案 2 秒内只弹一次，避免切页并发失败刷屏 */
+let lastToastAt = 0;
+let lastToastMsg = '';
+function toastError(msg: string) {
+  const text = String(msg || '').trim();
+  if (!text) return;
+  const now = Date.now();
+  if (text === lastToastMsg && now - lastToastAt < 2000) return;
+  lastToastAt = now;
+  lastToastMsg = text;
+  message.error(text);
+}
+
+function isRetriableGet(error: AxiosError, config?: AppAxiosRequestConfig) {
+  if (!config) return false;
+  const method = (config.method || 'get').toLowerCase();
+  if (method !== 'get' && method !== 'head') return false;
+  if ((config.__retryCount || 0) >= 1) return false;
+  if (isCanceledError(error)) return false;
+  const status = error.response?.status;
+  if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) return false;
+  // 无响应（冷启动/断连）、超时、网关错误可重试一次
+  return (
+    !error.response ||
+    status === 408 ||
+    status === 429 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    error.code === 'ECONNABORTED' ||
+    error.code === 'ERR_NETWORK'
+  );
 }
 
 request.interceptors.response.use(
@@ -123,7 +179,7 @@ request.interceptors.response.use(
       if (res.code === 401) {
         if (isAuthLoginRequest(response.config.url)) {
           if (!shouldSkipErrorToast(response.config)) {
-            message.error(chineseErrorMessage(res.message, '用户名或密码错误'));
+            toastError(chineseErrorMessage(res.message, '用户名或密码错误'));
           }
           return Promise.reject(new Error(res.message || '登录失败'));
         }
@@ -135,19 +191,30 @@ request.interceptors.response.use(
       }
       if (res.code === 403) {
         if (!shouldSkipErrorToast(response.config)) {
-          message.error(chineseErrorMessage(res.message, '暂无操作权限'));
+          toastError(chineseErrorMessage(res.message, '暂无操作权限'));
         }
         if (!isAuthLoginRequest(response.config.url)) window.location.href = '/403';
         return Promise.reject(new Error(res.message || '无权限'));
       }
       if (!shouldSkipErrorToast(response.config)) {
-        message.error(chineseErrorMessage(res.message, '请求失败，请稍后重试'));
+        toastError(chineseErrorMessage(res.message, '请求失败，请稍后重试'));
       }
       return Promise.reject(new Error(res.message || '请求失败'));
     }
     return response;
   },
-  (error: AxiosError<ApiResponse>) => {
+  async (error: AxiosError<ApiResponse>) => {
+    if (isCanceledError(error)) {
+      return Promise.reject(error);
+    }
+
+    const cfg = error.config as AppAxiosRequestConfig | undefined;
+    if (isRetriableGet(error, cfg) && cfg) {
+      cfg.__retryCount = (cfg.__retryCount || 0) + 1;
+      await new Promise((r) => setTimeout(r, 700));
+      return request(cfg);
+    }
+
     const status = error.response?.status;
     const msg = chineseErrorMessage(
       error.response?.data?.message || error.message,
@@ -157,7 +224,7 @@ request.interceptors.response.use(
     const skipToast = shouldSkipErrorToast(error.config);
     if (status === 401) {
       if (isAuthLoginRequest(reqUrl)) {
-        if (!skipToast) message.error(msg || '用户名或密码错误');
+        if (!skipToast) toastError(msg || '用户名或密码错误');
         return Promise.reject(error);
       }
       localStorage.removeItem('accessToken');
@@ -165,9 +232,9 @@ request.interceptors.response.use(
       localStorage.removeItem('userInfo');
       window.location.href = '/login';
     } else if (status === 403) {
-      if (!skipToast) message.error(msg || '无权限');
+      if (!skipToast) toastError(msg || '无权限');
     } else if (!skipToast) {
-      message.error(msg || '网络错误');
+      toastError(msg || '网络错误');
     }
     return Promise.reject(error);
   },

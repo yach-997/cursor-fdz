@@ -1,7 +1,16 @@
-import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
+import axios, {
+  AxiosError,
+  AxiosRequestConfig,
+  InternalAxiosRequestConfig,
+} from 'axios';
 import { Toast } from 'react-vant';
 import type { ApiResponse } from '../types';
 import { chineseErrorMessage } from './displayLabels';
+
+export type AppAxiosRequestConfig = AxiosRequestConfig & {
+  skipErrorToast?: boolean;
+  __retryCount?: number;
+};
 
 /**
  * 模式 A（本地）：VITE_API_BASE 空 → /api 代理 Nest
@@ -48,7 +57,6 @@ async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<{ data
     });
   }
   if (typeof data === 'object' && data !== null && 'code' in data && 'message' in data) {
-    // PostgREST error shape
     const msg = (data as { message?: string }).message || '请求失败';
     throw Object.assign(new Error(msg), {
       response: { status: 400, data: { code: 400, message: msg, data: null } },
@@ -109,7 +117,6 @@ async function dispatchRpc(config: AxiosRequestConfig) {
 
 request.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   if (useRpc) {
-    // 走 RPC 时拦截真实发送
     const adapterResult = await dispatchRpc(config);
     config.adapter = async () =>
       ({
@@ -136,44 +143,107 @@ function isAuthLoginRequest(url?: string) {
   return !!url && (url.includes('/auth/login') || url.endsWith('/login'));
 }
 
+function shouldSkipErrorToast(config?: AxiosRequestConfig) {
+  const cfg = config as AppAxiosRequestConfig | undefined;
+  if (cfg?.skipErrorToast) return true;
+  const url = cfg?.url || '';
+  if (url.includes('/health') || url.endsWith('health')) return true;
+  return false;
+}
+
+function isCanceledError(error: AxiosError | Error) {
+  if (axios.isCancel?.(error)) return true;
+  const ax = error as AxiosError;
+  if (ax.code === 'ERR_CANCELED') return true;
+  return /cancell?ed|request aborted/i.test(String(ax.message || ''));
+}
+
+let lastToastAt = 0;
+let lastToastMsg = '';
+function toastInfo(msg: string) {
+  const text = String(msg || '').trim();
+  if (!text) return;
+  const now = Date.now();
+  if (text === lastToastMsg && now - lastToastAt < 2000) return;
+  lastToastAt = now;
+  lastToastMsg = text;
+  Toast.info(text);
+}
+
+function isRetriableGet(error: AxiosError, config?: AppAxiosRequestConfig) {
+  if (!config) return false;
+  const method = (config.method || 'get').toLowerCase();
+  if (method !== 'get' && method !== 'head') return false;
+  if ((config.__retryCount || 0) >= 1) return false;
+  if (isCanceledError(error)) return false;
+  const status = error.response?.status;
+  if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) return false;
+  return (
+    !error.response ||
+    status === 408 ||
+    status === 429 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    error.code === 'ECONNABORTED' ||
+    error.code === 'ERR_NETWORK'
+  );
+}
+
 request.interceptors.response.use(
   (response) => {
     const res = response.data as ApiResponse;
     if (res.code && res.code !== 200) {
       if (res.code === 401) {
         if (isAuthLoginRequest(response.config.url)) {
-          Toast.info(chineseErrorMessage(res.message, '用户名或密码错误'));
+          if (!shouldSkipErrorToast(response.config)) {
+            toastInfo(chineseErrorMessage(res.message, '用户名或密码错误'));
+          }
           return Promise.reject(new Error(res.message || '登录失败'));
         }
         clearAuth();
         window.location.href = '/m/login';
         return Promise.reject(new Error(res.message || '未登录'));
       }
-      Toast.info(chineseErrorMessage(res.message, '请求失败，请稍后重试'));
+      if (!shouldSkipErrorToast(response.config)) {
+        toastInfo(chineseErrorMessage(res.message, '请求失败，请稍后重试'));
+      }
       return Promise.reject(new Error(res.message || '请求失败'));
     }
     return response;
   },
-  (error: AxiosError<ApiResponse>) => {
+  async (error: AxiosError<ApiResponse>) => {
+    if (isCanceledError(error)) {
+      return Promise.reject(error);
+    }
+
+    const cfg = error.config as AppAxiosRequestConfig | undefined;
+    if (isRetriableGet(error, cfg) && cfg) {
+      cfg.__retryCount = (cfg.__retryCount || 0) + 1;
+      await new Promise((r) => setTimeout(r, 700));
+      return request(cfg);
+    }
+
     const status = error.response?.status;
     const msg = chineseErrorMessage(
       error.response?.data?.message || error.message,
       '请求失败，请稍后重试',
     );
     const reqUrl = error.config?.url;
+    const skipToast = shouldSkipErrorToast(error.config);
     if (status === 401) {
       if (isAuthLoginRequest(reqUrl)) {
-        Toast.info(msg || '用户名或密码错误');
+        if (!skipToast) toastInfo(msg || '用户名或密码错误');
         return Promise.reject(error);
       }
       clearAuth();
-      Toast.info('登录已过期');
+      toastInfo('登录已过期');
       window.location.href = '/m/login';
     } else if (status === 403 && isAuthLoginRequest(reqUrl)) {
-      Toast.info(msg || '无权限登录巡检端');
+      if (!skipToast) toastInfo(msg || '无权限登录巡检端');
       return Promise.reject(error);
-    } else {
-      Toast.info(msg || '网络错误');
+    } else if (!skipToast) {
+      toastInfo(msg || '网络错误');
     }
     return Promise.reject(error);
   },

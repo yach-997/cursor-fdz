@@ -24,6 +24,8 @@ export interface SystemStatus {
 }
 
 export async function fetchSystemStatus() {
-  const { data } = await request.get<ApiResponse<SystemStatus>>('/system/status');
+  const { data } = await request.get<ApiResponse<SystemStatus>>('/system/status', {
+    skipErrorToast: true,
+  } as import('../utils/request').AppAxiosRequestConfig);
   return data.data;
 }

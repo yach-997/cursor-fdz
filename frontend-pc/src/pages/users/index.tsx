@@ -10,7 +10,6 @@ import {
   Select,
   Space,
   Table,
-  Tabs,
   Tag,
   Typography,
   message,
@@ -23,20 +22,22 @@ import {
   updateUser,
   updateUserStatus,
   resetUserPassword,
-  fetchInspectorPool,
   enableMyInspector,
 } from '../../api/user';
 import { fetchSites, addSiteMember, removeSiteMember, fetchSiteMembers } from '../../api/site';
 import { useAuthStore } from '../../stores/auth';
 import type { UserInfo, SiteItem, UserRole, CommonStatus } from '../../types';
 
-/** 用户管理：管理员→正网格长；正/副网格长权限对齐，设立副网格长与工程师（单一角色） */
+function userRolesOf(record: UserInfo): UserRole[] {
+  return record.roles?.length ? record.roles : record.role ? [record.role] : [];
+}
+
+/** 用户管理：管理员→正网格长；正/副网格长在列表内设立账号并聘用工程师到站点 */
 export default function UsersPage() {
   const currentUser = useAuthStore((s) => s.user);
   const isAdmin = currentUser?.role === 'super_admin';
   const isSiteManager = currentUser?.role === 'site_manager';
 
-  const [tab, setTab] = useState('list');
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<UserInfo[]>([]);
   const [total, setTotal] = useState(0);
@@ -54,15 +55,8 @@ export default function UsersPage() {
   const [pwdUser, setPwdUser] = useState<UserInfo | null>(null);
   const [pwdForm] = Form.useForm();
 
-  const [poolLoading, setPoolLoading] = useState(false);
-  const [pool, setPool] = useState<UserInfo[]>([]);
-  const [poolTotal, setPoolTotal] = useState(0);
-  const [poolPage, setPoolPage] = useState(1);
-  const [poolKeyword, setPoolKeyword] = useState('');
-
   const [hireOpen, setHireOpen] = useState(false);
   const [hireUser, setHireUser] = useState<UserInfo | null>(null);
-  const [sites, setSites] = useState<SiteItem[]>([]);
   const [managedSites, setManagedSites] = useState<SiteItem[]>([]);
   const [hireSiteId, setHireSiteId] = useState<string>();
   const [memberMap, setMemberMap] = useState<Record<string, string[]>>({});
@@ -84,7 +78,6 @@ export default function UsersPage() {
     if (isAdmin) {
       return [{ value: 'site_manager', label: '正网格长' }];
     }
-    // 本人：只能附加工程师，不可勾选「副网格长」（与正网格长冲突）
     if (creatingForSelf || editingSelf) {
       return [
         {
@@ -103,7 +96,6 @@ export default function UsersPage() {
 
   useEffect(() => {
     if (creatingForSelf) {
-      // 新增时走「只开通工程师」；提交走 enableMyInspector，不新建副网格长
       form.setFieldsValue({ roles: ['site_manager', 'inspector'] });
     }
   }, [creatingForSelf, form]);
@@ -121,6 +113,21 @@ export default function UsersPage() {
     void loadManagedSites();
   }, [loadManagedSites]);
 
+  const loadMemberMap = useCallback(async (sites: SiteItem[]) => {
+    if (!sites.length) {
+      setMemberMap({});
+      return;
+    }
+    const map: Record<string, string[]> = {};
+    await Promise.all(
+      sites.map(async (site) => {
+        const members = await fetchSiteMembers(site.id, 'inspector');
+        map[site.id] = members.filter((m) => m.status === 'active').map((m) => m.userId);
+      }),
+    );
+    setMemberMap(map);
+  }, []);
+
   const loadList = useCallback(async () => {
     setLoading(true);
     try {
@@ -132,38 +139,19 @@ export default function UsersPage() {
       });
       setData(res.list);
       setTotal(res.total);
+      if (canStaffAsManager) {
+        await loadMemberMap(managedSites);
+      } else {
+        setMemberMap({});
+      }
     } finally {
       setLoading(false);
     }
-  }, [page, keyword, role]);
-
-  const loadPool = useCallback(async () => {
-    if (!canStaffAsManager) return;
-    setPoolLoading(true);
-    try {
-      const res = await fetchInspectorPool({
-        page: poolPage,
-        limit: 10,
-        keyword: poolKeyword || undefined,
-      });
-      setPool(res.list);
-      setPoolTotal(res.total);
-      setSites(managedSites);
-      const map: Record<string, string[]> = {};
-      for (const site of managedSites) {
-        const members = await fetchSiteMembers(site.id, 'inspector');
-        map[site.id] = members.filter((m) => m.status === 'active').map((m) => m.userId);
-      }
-      setMemberMap(map);
-    } finally {
-      setPoolLoading(false);
-    }
-  }, [poolPage, poolKeyword, canStaffAsManager, managedSites]);
+  }, [page, keyword, role, canStaffAsManager, managedSites, loadMemberMap]);
 
   useEffect(() => {
-    if (tab === 'list') void loadList();
-    else if (tab === 'pool' && canStaffAsManager) void loadPool();
-  }, [tab, loadList, loadPool, canStaffAsManager]);
+    void loadList();
+  }, [loadList]);
 
   const iAmInspector = Boolean(
     currentUser?.roles?.includes('inspector') || currentUser?.role === 'inspector',
@@ -178,7 +166,7 @@ export default function UsersPage() {
 
   const openEdit = (record: UserInfo) => {
     setEditing(record);
-    const list = record.roles?.length ? record.roles : record.role ? [record.role] : [];
+    const list = userRolesOf(record);
     const isSelf = record.id === currentUser?.id;
     form.setFieldsValue({
       ...record,
@@ -199,7 +187,6 @@ export default function UsersPage() {
       !editing &&
       (values.username === currentUser?.username || values.phone === currentUser?.phone);
 
-    // 本人新增：不能设副网格长，只开通工程师（site_manager 勾选仅作展示）
     if (!editing && isSelfCreate) {
       if (!values.roles?.includes('inspector')) {
         message.error('给自己开通时请勾选工程师');
@@ -292,13 +279,13 @@ export default function UsersPage() {
     await addSiteMember(hireSiteId, hireUser.id);
     message.success('聘用成功');
     setHireOpen(false);
-    void loadPool();
+    void loadList();
   };
 
   const doFire = async (userId: string, siteId: string) => {
     await removeSiteMember(siteId, userId);
     message.success('已解聘');
-    void loadPool();
+    void loadList();
   };
 
   const listColumns: ColumnsType<UserInfo> = [
@@ -308,9 +295,9 @@ export default function UsersPage() {
     {
       title: '角色',
       dataIndex: 'roles',
-      width: 120,
+      width: 140,
       render: (_roles: UserRole[] | undefined, r) => {
-        const list = r.roles?.length ? r.roles : r.role ? [r.role] : [];
+        const list = userRolesOf(r);
         if (isAdmin) return <Tag>正网格长</Tag>;
         const isSelf = r.id === currentUser?.id;
         const tags: string[] = [];
@@ -330,6 +317,30 @@ export default function UsersPage() {
         );
       },
     },
+    ...(canStaffAsManager
+      ? ([
+          {
+            title: '已聘站点',
+            width: 160,
+            render: (_: unknown, record: UserInfo) => {
+              if (!userRolesOf(record).includes('inspector')) {
+                return <Typography.Text type="secondary">—</Typography.Text>;
+              }
+              const hired = managedSites.filter((s) => (memberMap[s.id] || []).includes(record.id));
+              if (!hired.length) {
+                return <Typography.Text type="secondary">未聘用</Typography.Text>;
+              }
+              return (
+                <Space size={[4, 4]} wrap>
+                  {hired.map((s) => (
+                    <Tag key={s.id}>{s.name}</Tag>
+                  ))}
+                </Space>
+              );
+            },
+          },
+        ] as ColumnsType<UserInfo>)
+      : []),
     {
       title: '状态',
       dataIndex: 'status',
@@ -340,14 +351,38 @@ export default function UsersPage() {
     },
     {
       title: '操作',
-      width: 260,
+      width: canStaffAsManager ? 360 : 260,
       fixed: 'right',
-      render: (_, record) =>
-        canStaffAccounts ? (
+      render: (_, record) => {
+        if (!canStaffAccounts) {
+          return <Typography.Text type="secondary">只读</Typography.Text>;
+        }
+        const roles = userRolesOf(record);
+        const canHire = canStaffAsManager && roles.includes('inspector');
+        const hiredSites = canHire
+          ? managedSites.filter((s) => (memberMap[s.id] || []).includes(record.id))
+          : [];
+        return (
           <Space wrap>
             <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(record)}>
               编辑
             </Button>
+            {canHire && (
+              <Button type="link" onClick={() => openHire(record)}>
+                聘用到站点
+              </Button>
+            )}
+            {hiredSites.map((s) => (
+              <Popconfirm
+                key={s.id}
+                title={`确认从「${s.name}」解聘？`}
+                onConfirm={() => void doFire(record.id, s.id)}
+              >
+                <Button type="link" danger>
+                  解聘·{s.name}
+                </Button>
+              </Popconfirm>
+            ))}
             <Button
               type="link"
               onClick={() => {
@@ -367,51 +402,9 @@ export default function UsersPage() {
               </Button>
             </Popconfirm>
           </Space>
-        ) : (
-          <Typography.Text type="secondary">只读</Typography.Text>
-        ),
-    },
-  ];
-
-  const poolColumns: ColumnsType<UserInfo> = [
-    { title: '姓名', dataIndex: 'realName', width: 100 },
-    { title: '手机号', dataIndex: 'phone', width: 130 },
-    {
-      title: '已加入站点数',
-      dataIndex: 'membershipCount',
-      width: 120,
-      render: (v) => v ?? 0,
-    },
-    {
-      title: '操作',
-      width: 280,
-      render: (_, record) => {
-        const hiredSites = sites.filter((s) => (memberMap[s.id] || []).includes(record.id));
-        return (
-          <Space wrap>
-            <Button type="primary" size="small" onClick={() => openHire(record)}>
-              聘用
-            </Button>
-            {hiredSites.map((s) => (
-              <Popconfirm
-                key={s.id}
-                title={`确认从「${s.name}」解聘？`}
-                onConfirm={() => void doFire(record.id, s.id)}
-              >
-                <Button size="small" danger>
-                  解聘·{s.name}
-                </Button>
-              </Popconfirm>
-            ))}
-          </Space>
         );
       },
     },
-  ];
-
-  const tabItems = [
-    { key: 'list', label: '用户列表' },
-    ...(canStaffAsManager ? [{ key: 'pool', label: '人才池' }] : []),
   ];
 
   return (
@@ -424,7 +417,7 @@ export default function UsersPage() {
           isAdmin
             ? '管理员只设立正网格长（PC）。工程师须由正/副网格长设立；正/副网格长也可为自己开通工程师身份后登录 H5。'
             : canStaffAsManager
-              ? '正/副网格长权限相同。可设立下属副网格长/工程师；正网格长不能给自己设副网格长，可开通工程师后同一账号登 H5。'
+              ? '在用户列表设立副网格长/工程师；工程师可直接「聘用到站点」。正网格长不能给自己设副网格长，可开通工程师后同一账号登 H5。'
               : '请先被任命为正网格长或副网格长后，再编制下属账号。'
         }
       />
@@ -444,80 +437,49 @@ export default function UsersPage() {
         />
       )}
 
-      <Tabs activeKey={tab} onChange={setTab} items={tabItems} />
+      <Space style={{ marginBottom: 16 }} wrap>
+        <Input.Search
+          placeholder="搜索用户名/姓名/手机"
+          allowClear
+          onSearch={(v) => {
+            setPage(1);
+            setKeyword(v);
+          }}
+          style={{ width: 240 }}
+        />
+        <Select
+          allowClear
+          placeholder="角色"
+          style={{ width: 140 }}
+          value={role}
+          onChange={(v) => {
+            setPage(1);
+            setRole(v);
+          }}
+          options={
+            isAdmin
+              ? [{ value: 'site_manager', label: '正网格长' }]
+              : [
+                  { value: 'site_manager', label: '副网格长' },
+                  { value: 'inspector', label: '工程师' },
+                ]
+          }
+        />
+        {canStaffAccounts && (
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+            新增用户
+          </Button>
+        )}
+      </Space>
 
-      {tab === 'list' ? (
-        <>
-          <Space style={{ marginBottom: 16 }} wrap>
-            <Input.Search
-              placeholder="搜索用户名/姓名/手机"
-              allowClear
-              onSearch={(v) => {
-                setPage(1);
-                setKeyword(v);
-              }}
-              style={{ width: 240 }}
-            />
-            <Select
-              allowClear
-              placeholder="角色"
-              style={{ width: 140 }}
-              value={role}
-              onChange={(v) => {
-                setPage(1);
-                setRole(v);
-              }}
-              options={
-                isAdmin
-                  ? [{ value: 'site_manager', label: '正网格长' }]
-                  : [
-                      { value: 'site_manager', label: '副网格长' },
-                      { value: 'inspector', label: '工程师' },
-                    ]
-              }
-            />
-            {canStaffAccounts && (
-              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-                新增用户
-              </Button>
-            )}
-          </Space>
-          <Table
-            rowKey="id"
-            loading={loading}
-            columns={listColumns}
-            dataSource={data}
-            scroll={{ x: 900 }}
-            pagination={{ current: page, total, pageSize: 10, onChange: setPage }}
-          />
-        </>
-      ) : (
-        <>
-          <Space style={{ marginBottom: 16 }}>
-            <Input.Search
-              placeholder="搜索人才池"
-              allowClear
-              onSearch={(v) => {
-                setPoolPage(1);
-                setPoolKeyword(v);
-              }}
-              style={{ width: 240 }}
-            />
-          </Space>
-          <Table
-            rowKey="id"
-            loading={poolLoading}
-            columns={poolColumns}
-            dataSource={pool}
-            pagination={{
-              current: poolPage,
-              total: poolTotal,
-              pageSize: 10,
-              onChange: setPoolPage,
-            }}
-          />
-        </>
-      )}
+      <Table
+        rowKey="id"
+        loading={loading}
+        columns={listColumns}
+        dataSource={data}
+        scroll={{ x: canStaffAsManager ? 1100 : 900 }}
+        pagination={{ current: page, total, pageSize: 10, onChange: setPage }}
+      />
 
       <Modal
         title={editing ? '编辑用户' : '新增用户'}
@@ -578,7 +540,7 @@ export default function UsersPage() {
                 ? '正网格长登录 PC；创建后到「站点管理」任命到电站'
                 : creatingForSelf || editingSelf
                   ? '本账号只能开通/取消工程师，不能设为副网格长（与正网格长冲突）。开通后请重新登录 H5。'
-                  : '可设立副网格长或工程师。给自己开通工程师时，用户名/手机填本账号即可。'
+                  : '可设立副网格长或工程师。创建工程师后，在列表中点「聘用到站点」即可安排上岗。'
             }
           >
             <Checkbox.Group options={roleOptions} />
@@ -604,7 +566,7 @@ export default function UsersPage() {
       </Modal>
 
       <Modal
-        title={`聘用工程师 - ${hireUser?.realName || ''}`}
+        title={`聘用到站点 - ${hireUser?.realName || ''}`}
         open={hireOpen}
         onCancel={() => setHireOpen(false)}
         onOk={() => void submitHire()}

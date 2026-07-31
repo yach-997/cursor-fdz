@@ -53,11 +53,18 @@ export function displayLabel(
 export function chineseErrorMessage(value: unknown, fallback = '操作失败，请稍后重试') {
   const raw = String(value || '').trim();
   if (!raw) return fallback;
-  if (/network error|failed to fetch|load failed|socket hang up|econnreset|econnrefused/i.test(raw)) {
+  if (/cancell?ed|request aborted/i.test(raw)) {
+    return '';
+  }
+  if (/network error|failed to fetch|load failed|socket hang up|econnreset|econnrefused|err_network/i.test(raw)) {
     return '网络连接失败，请检查网络后重试';
   }
-  if (/timeout|timed out|exceeded/i.test(raw)) return '请求超时，请稍后重试';
-  if (/request failed with status code|internal server error|bad gateway|service unavailable/i.test(raw)) {
+  if (/timeout|timed out|exceeded|econnaborted/i.test(raw)) return '请求超时，请稍后重试';
+  if (
+    /request failed with status code|internal server error|bad gateway|service unavailable|gateway timeout/i.test(
+      raw,
+    )
+  ) {
     return '服务暂时不可用，请稍后重试';
   }
   if (/unauthorized|invalid token|jwt/i.test(raw)) return '登录已过期，请重新登录';
