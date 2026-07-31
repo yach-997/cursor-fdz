@@ -9,8 +9,10 @@ export interface FinanceCase {
   gspCaseNo: string;
   projectName: string;
   serviceType?: string;
+  creator?: string;
   province?: string;
   city?: string;
+  siteDesc?: string;
   region: string;
   status: string;
   siteId?: string | null;

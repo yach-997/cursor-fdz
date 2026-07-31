@@ -263,10 +263,21 @@ export default function FinanceCasesPage() {
           onChange: setSelectedRowKeys,
         }}
         pagination={{ current: page, total, pageSize: 10, onChange: setPage }}
-        scroll={{ x: 1280 }}
+        scroll={{ x: 1680 }}
         columns={[
-          { title: '案例号', dataIndex: 'gspCaseNo', width: 150 },
-          { title: '项目名称', dataIndex: 'projectName' },
+          { title: '服务案例号', dataIndex: 'gspCaseNo', width: 150, fixed: 'left' },
+          { title: '项目名称', dataIndex: 'projectName', width: 220, ellipsis: true },
+          { title: '服务类型', dataIndex: 'serviceType', width: 100 },
+          { title: '创建人', dataIndex: 'creator', width: 90, render: (v) => v || '-' },
+          { title: '省份', dataIndex: 'province', width: 80, render: (v) => v || '-' },
+          { title: '城市', dataIndex: 'city', width: 90, render: (v) => v || '-' },
+          {
+            title: '失效现象描述',
+            dataIndex: 'siteDesc',
+            width: 220,
+            ellipsis: true,
+            render: (v) => v || '-',
+          },
           {
             title: '归属站点',
             dataIndex: 'siteName',
@@ -279,14 +290,12 @@ export default function FinanceCasesPage() {
             width: 100,
             render: (v) => (v ? <Tag color="blue">{taskTypeLabel[v] || v}</Tag> : <Tag>未设置</Tag>),
           },
-          { title: '省份', dataIndex: 'province', width: 80 },
           {
             title: '区域',
             dataIndex: 'region',
             width: 90,
             render: (v) => (v === 'yunnan' ? '云南' : '华南'),
           },
-          { title: '服务类型', dataIndex: 'serviceType', width: 100 },
           {
             title: '状态',
             dataIndex: 'status',
@@ -529,13 +538,23 @@ export default function FinanceCasesPage() {
               bordered
               column={2}
               items={[
-                { key: 'no', label: '案例号', children: detail.gspCaseNo },
+                { key: 'no', label: '服务案例号', children: detail.gspCaseNo },
+                { key: 'project', label: '项目名称', children: detail.projectName || '-' },
+                { key: 'serviceType', label: '服务类型', children: detail.serviceType || '-' },
+                { key: 'creator', label: '创建人', children: detail.creator || '-' },
+                { key: 'province', label: '省份', children: detail.province || '-' },
+                { key: 'city', label: '城市', children: detail.city || '-' },
+                {
+                  key: 'siteDesc',
+                  label: '失效现象描述',
+                  span: 2,
+                  children: detail.siteDesc || '-',
+                },
                 {
                   key: 'region',
                   label: '区域',
                   children: detail.region === 'yunnan' ? '云南' : '华南',
                 },
-                { key: 'province', label: '省份', children: detail.province || '-' },
                 {
                   key: 'site',
                   label: '归属站点',
