@@ -56,16 +56,19 @@ export class UserService {
       }
     } else if (currentUser.role === UserRole.SITE_MANAGER) {
       const creatorIds = await this.getStaffingCreatorIds(currentUser.id);
-      if (!creatorIds.length) {
-        return { list: [], total: 0, page, limit };
-      }
-      // 正/副网格长权限相同：共享所管站点编制池，A/B 站互不可见
-      qb.andWhere('user.created_by IN (:...creatorIds)', { creatorIds });
-      if (query.role === UserRole.INSPECTOR || query.role === UserRole.SITE_MANAGER) {
-        const filter = qbUserHasRole('user', query.role, 'filter');
-        qb.andWhere(filter.sql, filter.params);
-      } else if (query.role) {
-        return { list: [], total: 0, page, limit };
+      // 无编制池时仍返回本人（管理员创建的正网格长默认不在池内）
+      if (creatorIds.length) {
+        // 正/副网格长权限相同：共享所管站点编制池，A/B 站互不可见
+        qb.andWhere('user.created_by IN (:...creatorIds)', { creatorIds });
+        if (query.role === UserRole.INSPECTOR || query.role === UserRole.SITE_MANAGER) {
+          const filter = qbUserHasRole('user', query.role, 'filter');
+          qb.andWhere(filter.sql, filter.params);
+        } else if (query.role) {
+          return this.withSelfOnFirstPage([], 0, page, limit, query, currentUser);
+        }
+      } else {
+        // 强制空结果，后面再注入本人
+        qb.andWhere('1 = 0');
       }
     } else {
       throw new ForbiddenException('无权查看用户列表');
@@ -86,10 +89,27 @@ export class UserService {
       .take(limit);
 
     const [list, total] = await qb.getManyAndCount();
-    const rows = list.map((u) => this.toSafeUser(u));
-    let finalTotal = total;
+    return this.withSelfOnFirstPage(
+      list.map((u) => this.toSafeUser(u)),
+      total,
+      page,
+      limit,
+      query,
+      currentUser,
+    );
+  }
 
-    // 网格长本人由管理员创建（created_by≠自己），默认不在编制池；首页插入本人便于查看/开通工程师身份
+  /** 网格长本人由管理员创建，默认不在编制池；首页插入本人便于查看/开通工程师 */
+  private async withSelfOnFirstPage(
+    rows: ReturnType<UserService['toSafeUser']>[],
+    total: number,
+    page: number,
+    limit: number,
+    query: QueryUserDto,
+    currentUser: CurrentUserContext,
+  ) {
+    let finalRows = rows;
+    let finalTotal = total;
     if (currentUser.role === UserRole.SITE_MANAGER && page === 1) {
       const self = await this.getUserOrThrow(currentUser.id);
       const selfMatchRole =
@@ -107,19 +127,13 @@ export class UserService {
         selfMatchRole &&
         selfMatchStatus &&
         selfMatchKw &&
-        !rows.some((u) => u.id === self.id)
+        !finalRows.some((u) => u.id === self.id)
       ) {
-        rows.unshift(this.toSafeUser(self));
+        finalRows = [this.toSafeUser(self), ...finalRows];
         finalTotal += 1;
       }
     }
-
-    return {
-      list: rows,
-      total: finalTotal,
-      page,
-      limit,
-    };
+    return { list: finalRows, total: finalTotal, page, limit };
   }
 
   async create(dto: CreateUserDto, currentUser: CurrentUserContext) {
