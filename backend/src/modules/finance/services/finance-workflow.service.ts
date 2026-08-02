@@ -9,9 +9,11 @@ import { In, Repository } from 'typeorm';
 import {
   CasePerformance,
   CaseWorkRecord,
+  InspectionTemplate,
   PoItem,
   PoOrder,
   ServiceCase,
+  TemplateEntry,
   User,
   Assessment,
   MonthlySettlement,
@@ -29,6 +31,20 @@ import { FinanceScopeService } from './finance-scope.service';
 
 const ACTIVE_CASE_STATUSES = ['assigned', 'working'] as const;
 
+export type CaseChecklistItem = {
+  entryId: string;
+  name: string;
+  description: string;
+  isRequired: boolean;
+  isOptionalModule: boolean;
+  /** 可选分项是否开启；必检项恒为 true */
+  enabled: boolean;
+  done: boolean;
+  photoUrls: string[];
+  note: string;
+  order: number;
+};
+
 @Injectable()
 export class FinanceWorkflowService {
   constructor(
@@ -41,6 +57,8 @@ export class FinanceWorkflowService {
     @InjectRepository(Assessment) private readonly assessments: Repository<Assessment>,
     @InjectRepository(MonthlySettlement) private readonly monthly: Repository<MonthlySettlement>,
     @InjectRepository(SiteMember) private readonly members: Repository<SiteMember>,
+    @InjectRepository(InspectionTemplate)
+    private readonly templates: Repository<InspectionTemplate>,
     private readonly scope: FinanceScopeService,
     private readonly logs: ChangeLogService,
   ) {}
@@ -187,21 +205,67 @@ export class FinanceWorkflowService {
 
   async myCase(caseId: string, user: CurrentUserContext) {
     const serviceCase = await this.caseForInspector(caseId, user);
-    const [workRecord, orders] = await Promise.all([
+    const [workRecord, orders, template] = await Promise.all([
       this.work.findOne({ where: { serviceCaseId: caseId } }),
       this.orders.find({ where: { serviceCaseId: caseId }, order: { demandDate: 'DESC' } }),
+      serviceCase.taskTemplateId
+        ? this.templates.findOne({ where: { id: serviceCase.taskTemplateId } })
+        : Promise.resolve(null),
     ]);
-    return { ...serviceCase, workRecord, orders };
+    const checklist = this.readChecklist(workRecord) || this.buildChecklist(template?.entries || []);
+    return {
+      ...serviceCase,
+      taskTypeName: template?.name || serviceCase.taskType || null,
+      taskEntries: (template?.entries || []).slice().sort((a, b) => a.order - b.order),
+      checklist,
+      workRecord,
+      orders,
+    };
   }
 
   async start(caseId: string, user: CurrentUserContext) {
     const serviceCase = await this.caseForInspector(caseId, user);
     if (serviceCase.status !== 'assigned') throw new BadRequestException('当前案例不能开始作业');
+    if (!serviceCase.taskTemplateId && !serviceCase.taskType) {
+      throw new BadRequestException('案例未设置任务类型，无法开始巡检');
+    }
     serviceCase.status = 'working';
     await this.cases.save(serviceCase);
-    await this.work.update({ serviceCaseId: caseId }, { startedAt: new Date() });
-    await this.logs.write('service_case', caseId, 'status', 'assigned', 'working', user.id, '工程师开始作业');
-    return serviceCase;
+    let record = await this.work.findOne({ where: { serviceCaseId: caseId } });
+    record ||= this.work.create({
+      serviceCaseId: caseId,
+      gspCaseNo: serviceCase.gspCaseNo,
+      inspectorId: user.id,
+      workload: {},
+      mileage: '0.00',
+      expenses: '0.00',
+      mileageScreenshotUrls: [],
+      acceptedAt: new Date(),
+    });
+    record.startedAt = new Date();
+    if (!this.readChecklist(record)?.length) {
+      const template = serviceCase.taskTemplateId
+        ? await this.templates.findOne({ where: { id: serviceCase.taskTemplateId } })
+        : null;
+      const checklist = this.buildChecklist(template?.entries || []);
+      record.workload = {
+        ...(record.workload || {}),
+        checklist,
+        templateId: template?.id || serviceCase.taskTemplateId || null,
+        templateName: template?.name || serviceCase.taskType || null,
+      };
+    }
+    await this.work.save(record);
+    await this.logs.write(
+      'service_case',
+      caseId,
+      'status',
+      'assigned',
+      'working',
+      user.id,
+      '工程师开始作业',
+    );
+    return this.myCase(caseId, user);
   }
 
   async saveWork(caseId: string, dto: SaveCaseWorkDto, user: CurrentUserContext) {
@@ -220,7 +284,18 @@ export class FinanceWorkflowService {
       mileageScreenshotUrls: [],
       acceptedAt: new Date(),
     });
-    if (dto.workload !== undefined) record.workload = dto.workload;
+    if (dto.workload !== undefined) {
+      const incoming = dto.workload || {};
+      const prev = (record.workload || {}) as Record<string, unknown>;
+      const nextChecklist = Array.isArray((incoming as any).checklist)
+        ? this.normalizeChecklist((incoming as any).checklist)
+        : this.readChecklist(record) || [];
+      record.workload = {
+        ...prev,
+        ...incoming,
+        checklist: nextChecklist,
+      };
+    }
     if (dto.mileage !== undefined) record.mileage = dto.mileage.toFixed(2);
     if (dto.expenses !== undefined) record.expenses = dto.expenses.toFixed(2);
     if (dto.expenseNote !== undefined) record.expenseNote = dto.expenseNote;
@@ -234,7 +309,27 @@ export class FinanceWorkflowService {
     const serviceCase = await this.caseForInspector(caseId, user);
     if (serviceCase.status !== 'working') throw new BadRequestException('请先开始作业再完工');
     const record = await this.work.findOne({ where: { serviceCaseId: caseId } });
-    if (!record) throw new BadRequestException('请先填写工作量、里程和费用记录');
+    if (!record) throw new BadRequestException('请先完成巡检条目与工作记录');
+    const checklist = this.readChecklist(record) || [];
+    if (checklist.length) {
+      const pending = checklist.filter(
+        (item) => item.enabled && (item.isRequired || item.isOptionalModule) && !item.done,
+      );
+      if (pending.length) {
+        throw new BadRequestException(
+          `还有 ${pending.length} 个检查条目未完成：${pending
+            .slice(0, 3)
+            .map((x) => x.name)
+            .join('、')}`,
+        );
+      }
+      const noPhoto = checklist.filter(
+        (item) => item.enabled && item.done && !(item.photoUrls || []).length,
+      );
+      if (noPhoto.length) {
+        throw new BadRequestException(`请为已完成的条目上传照片：${noPhoto[0].name}`);
+      }
+    }
     if (!record.mileageScreenshotUrls?.length) throw new BadRequestException('请上传里程截图后再完工');
     const hasPo = (await this.orders.count({ where: { serviceCaseId: caseId } })) > 0;
     serviceCase.status = hasPo ? 'settle_review' : 'finished';
@@ -245,6 +340,46 @@ export class FinanceWorkflowService {
     if (hasPo) await this.refreshLedger(serviceCase, true);
     await this.logs.write('service_case', caseId, 'status', 'working', serviceCase.status, user.id, '工程师完工确认');
     return serviceCase;
+  }
+
+  private buildChecklist(entries: TemplateEntry[]): CaseChecklistItem[] {
+    return [...entries]
+      .sort((a, b) => a.order - b.order)
+      .map((entry, index) => ({
+        entryId: entry.id || `entry-${index}`,
+        name: entry.name,
+        description: entry.description || '',
+        isRequired: entry.isRequired !== false && !entry.isOptionalModule,
+        isOptionalModule: !!entry.isOptionalModule,
+        enabled: !entry.isOptionalModule,
+        done: false,
+        photoUrls: [],
+        note: '',
+        order: entry.order ?? index,
+      }));
+  }
+
+  private readChecklist(record?: CaseWorkRecord | null): CaseChecklistItem[] | null {
+    const raw = (record?.workload as any)?.checklist;
+    if (!Array.isArray(raw) || !raw.length) return null;
+    return this.normalizeChecklist(raw);
+  }
+
+  private normalizeChecklist(raw: any[]): CaseChecklistItem[] {
+    return raw.map((item, index) => ({
+      entryId: String(item.entryId || item.id || `entry-${index}`),
+      name: String(item.name || `条目${index + 1}`),
+      description: String(item.description || ''),
+      isRequired: item.isRequired !== false && !item.isOptionalModule,
+      isOptionalModule: !!item.isOptionalModule,
+      enabled: item.isOptionalModule ? !!item.enabled : true,
+      done: !!item.done,
+      photoUrls: Array.isArray(item.photoUrls)
+        ? item.photoUrls.map(String).filter(Boolean).slice(0, 9)
+        : [],
+      note: String(item.note || ''),
+      order: Number(item.order ?? index),
+    }));
   }
 
   async pendingReview(user: CurrentUserContext) {

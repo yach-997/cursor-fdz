@@ -3,6 +3,18 @@ import type { ApiResponse } from '../types';
 
 const unwrap = <T>(response: { data: ApiResponse<T> }) => response.data.data;
 
+export interface CaseChecklistItem {
+  entryId: string;
+  name: string;
+  description: string;
+  isRequired: boolean;
+  isOptionalModule: boolean;
+  enabled: boolean;
+  done: boolean;
+  photoUrls: string[];
+  note: string;
+  order: number;
+}
 export interface MobileFinanceCase {
   id: string;
   gspCaseNo: string;
@@ -15,12 +27,25 @@ export interface MobileFinanceCase {
   taskType?: 'inspection' | 'service' | string | null;
   taskTypeName?: string | null;
   taskTemplateId?: string | null;
+  taskEntries?: Array<{
+    id: string;
+    name: string;
+    description: string;
+    isRequired: boolean;
+    isOptionalModule?: boolean;
+    order: number;
+  }>;
+  checklist?: CaseChecklistItem[];
   assignTime?: string;
   finishTime?: string;
   workRecord?: CaseWorkRecord | null;
 }
 export interface CaseWorkRecord {
-  workload?: { description?: string };
+  workload?: {
+    description?: string;
+    checklist?: CaseChecklistItem[];
+    templateName?: string;
+  };
   mileage: string;
   expenses: string;
   expenseNote?: string;

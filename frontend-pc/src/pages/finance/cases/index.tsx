@@ -41,7 +41,7 @@ import { useAuthStore } from '../../../stores/auth';
 import ImportDialog from '../components/ImportDialog';
 import { canUseDangerousClear, confirmDangerousClear } from '../../../utils/finance-clear';
 
-const statusLabel: Record<string, string> = {
+const dispatchStatusLabel: Record<string, string> = {
   pending_assign: '待派单',
   assigned: '已派单',
   working: '作业中',
@@ -64,9 +64,23 @@ function hasTaskType(c: Pick<FinanceCase, 'taskTypeName' | 'taskType' | 'taskTem
   return !!(c.taskTemplateId || c.taskType);
 }
 
+/** 管理员视角：是否已分配站点；网格长视角：派单进度 */
+function roleStatus(c: FinanceCase, isAdmin: boolean) {
+  if (isAdmin) {
+    return c.siteId
+      ? { text: '已分配站点', color: 'blue' as const }
+      : { text: '未分配站点', color: 'default' as const };
+  }
+  return {
+    text: dispatchStatusLabel[c.status] || c.status,
+    color: (c.status === 'pending_assign' ? 'warning' : 'green') as 'warning' | 'green',
+  };
+}
+
 export default function FinanceCasesPage() {
   const user = useAuthStore((s) => s.user);
   const admin = user?.role === 'super_admin';
+  const isManager = user?.role === 'site_manager';
   const canClear = admin && canUseDangerousClear();
   const [data, setData] = useState<FinanceCase[]>([]);
   const [total, setTotal] = useState(0);
@@ -175,8 +189,12 @@ export default function FinanceCasesPage() {
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="案例主流程"
-        description="① 导入案例建案例 → ② 分配站点 → ③ 在「任务类型」维护类型后「设类型」→ ④ 派工程师现场作业 → ⑤ 完工后导入钉钉 PO 表补价格 → ⑥ 工程师可查看收入。"
+        message={admin ? '管理员：主责分配站点（可协助设类型/派单）' : '网格长：主责设类型与派单'}
+        description={
+          admin
+            ? '状态按「是否分配站点」查看。导入案例后先分配站点；设类型与派单可由网格长完成，你也可协助。'
+            : '状态按「是否派单」查看。管理员分配站点后，请设置任务类型并派单；工程师将按该类型检查条目巡检。'
+        }
       />
       <div className="finance-toolbar">
         <Input.Search
@@ -187,29 +205,35 @@ export default function FinanceCasesPage() {
             setKeyword(v);
           }}
         />
-        <Select
-          allowClear
-          placeholder="案例状态"
-          value={status}
-          onChange={(v) => {
-            setPage(1);
-            setStatus(v);
-          }}
-          options={Object.entries(statusLabel).map(([value, label]) => ({ value, label }))}
-        />
-        <Select
-          allowClear
-          placeholder="站点归属"
-          value={siteBind}
-          onChange={(v) => {
-            setPage(1);
-            setSiteBind(v);
-          }}
-          options={[
-            { value: 'unassigned', label: '未挂站点' },
-            { value: 'assigned_site', label: '已挂站点' },
-          ]}
-        />
+        {admin ? (
+          <Select
+            allowClear
+            placeholder="站点归属"
+            value={siteBind}
+            onChange={(v) => {
+              setPage(1);
+              setSiteBind(v);
+            }}
+            options={[
+              { value: 'unassigned', label: '未分配站点' },
+              { value: 'assigned_site', label: '已分配站点' },
+            ]}
+          />
+        ) : (
+          <Select
+            allowClear
+            placeholder="派单状态"
+            value={status}
+            onChange={(v) => {
+              setPage(1);
+              setStatus(v);
+            }}
+            options={Object.entries(dispatchStatusLabel).map(([value, label]) => ({
+              value,
+              label,
+            }))}
+          />
+        )}
         <Select
           allowClear
           showSearch
@@ -234,30 +258,42 @@ export default function FinanceCasesPage() {
           }}
           options={taskTypes.map((t) => ({ value: t.id, label: t.name }))}
         />
-        <Button
-          icon={<DownloadOutlined />}
-          onClick={() => {
-            void downloadFinanceImportTemplate('gsp').catch(() => undefined);
-          }}
-        >
-          下载模板
-        </Button>
-        <Button type="primary" icon={<DownloadOutlined />} onClick={() => setOpen(true)}>
-          导入案例
-        </Button>
-        <Button
-          icon={<TeamOutlined />}
-          disabled={!selectedRowKeys.length}
-          onClick={() => {
-            setSiteId(undefined);
-            setSiteModal({ mode: 'batch' });
-          }}
-        >
-          批量分配站点
-        </Button>
-        <Button icon={<SettingOutlined />} disabled={!selectedRowKeys.length} onClick={() => void openBatchTasks()}>
-          批量派单
-        </Button>
+        {admin && (
+          <>
+            <Button
+              icon={<DownloadOutlined />}
+              onClick={() => {
+                void downloadFinanceImportTemplate('gsp').catch(() => undefined);
+              }}
+            >
+              下载模板
+            </Button>
+            <Button type="primary" icon={<DownloadOutlined />} onClick={() => setOpen(true)}>
+              导入案例
+            </Button>
+            <Button
+              type="primary"
+              icon={<TeamOutlined />}
+              disabled={!selectedRowKeys.length}
+              onClick={() => {
+                setSiteId(undefined);
+                setSiteModal({ mode: 'batch' });
+              }}
+            >
+              批量分配站点
+            </Button>
+          </>
+        )}
+        {(admin || isManager) && (
+          <Button
+            type={isManager ? 'primary' : 'default'}
+            icon={<SettingOutlined />}
+            disabled={!selectedRowKeys.length}
+            onClick={() => void openBatchTasks()}
+          >
+            批量派单
+          </Button>
+        )}
         {canClear && (
           <Button danger icon={<DeleteOutlined />} loading={clearing} onClick={() => void onClear()}>
             清空全部案例
@@ -311,10 +347,13 @@ export default function FinanceCasesPage() {
             render: (v) => (v === 'yunnan' ? '云南' : '华南'),
           },
           {
-            title: '状态',
+            title: admin ? '站点状态' : '派单状态',
             dataIndex: 'status',
-            width: 100,
-            render: (v) => <Tag color="green">{statusLabel[v] || v}</Tag>,
+            width: 120,
+            render: (_, r) => {
+              const s = roleStatus(r, admin);
+              return <Tag color={s.color}>{s.text}</Tag>;
+            },
           },
           {
             title: '案例收入',
@@ -324,21 +363,25 @@ export default function FinanceCasesPage() {
           },
           {
             title: '操作',
-            width: 280,
+            width: 300,
             fixed: 'right',
             render: (_, r) => (
               <Space wrap size={0}>
+                {admin && (
+                  <Button
+                    type="link"
+                    style={!r.siteId ? { fontWeight: 600 } : undefined}
+                    onClick={() => {
+                      setSiteId(r.siteId || undefined);
+                      setSiteModal({ mode: 'single', case: r });
+                    }}
+                  >
+                    分配站点
+                  </Button>
+                )}
                 <Button
                   type="link"
-                  onClick={() => {
-                    setSiteId(r.siteId || undefined);
-                    setSiteModal({ mode: 'single', case: r });
-                  }}
-                >
-                  分配站点
-                </Button>
-                <Button
-                  type="link"
+                  style={isManager && r.siteId && !hasTaskType(r) ? { fontWeight: 600 } : undefined}
                   disabled={!r.siteId}
                   onClick={() => {
                     setTaskTemplateId(r.taskTemplateId || undefined);
@@ -350,6 +393,9 @@ export default function FinanceCasesPage() {
                 {r.status === 'pending_assign' && (
                   <Button
                     type="link"
+                    style={
+                      isManager && r.siteId && hasTaskType(r) ? { fontWeight: 600 } : undefined
+                    }
                     icon={<UserAddOutlined />}
                     disabled={!r.siteId || !hasTaskType(r)}
                     onClick={() => {
@@ -374,16 +420,18 @@ export default function FinanceCasesPage() {
           },
         ]}
       />
-      <ImportDialog
-        open={open}
-        kind="gsp"
-        title="导入 GSP 案例"
-        onClose={() => setOpen(false)}
-        onDone={() => {
-          setOpen(false);
-          void load();
-        }}
-      />
+      {admin && (
+        <ImportDialog
+          open={open}
+          kind="gsp"
+          title="导入 GSP 案例"
+          onClose={() => setOpen(false)}
+          onDone={() => {
+            setOpen(false);
+            void load();
+          }}
+        />
+      )}
       <Modal
         open={!!siteModal}
         title={siteModal?.mode === 'batch' ? '批量分配到站点' : `分配站点 · ${siteModal?.case?.gspCaseNo || ''}`}
@@ -586,8 +634,13 @@ export default function FinanceCasesPage() {
                 },
                 {
                   key: 'status',
-                  label: '状态',
-                  children: statusLabel[detail.status] || detail.status,
+                  label: admin ? '站点状态' : '派单状态',
+                  children: roleStatus(detail as FinanceCase, admin).text,
+                },
+                {
+                  key: 'pipeline',
+                  label: '作业进度',
+                  children: dispatchStatusLabel[detail.status] || detail.status,
                 },
               ]}
             />

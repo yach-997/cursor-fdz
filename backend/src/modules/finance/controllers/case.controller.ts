@@ -40,7 +40,7 @@ export class FinanceCaseController {
   ) {
     return this.service.clearCases(user, query.confirm);
   }
-  @Post('assign-sites') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) assignSites(
+  @Post('assign-sites') @Roles(UserRole.SUPER_ADMIN) assignSites(
     @Body() dto: BatchAssignCasesToSitesDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
@@ -61,7 +61,7 @@ export class FinanceCaseController {
   ) {
     return this.workflow.myCase(id, user);
   }
-  @Put(':id/site') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) setSite(
+  @Put(':id/site') @Roles(UserRole.SUPER_ADMIN) setSite(
     @Param('id') id: string,
     @Body() dto: SetCaseSiteDto,
     @CurrentUser() user: CurrentUserContext,

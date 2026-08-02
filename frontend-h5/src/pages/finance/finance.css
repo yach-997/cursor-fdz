@@ -16,6 +16,11 @@
 .mobile-finance-primary { border: 0; color: #fff; background: linear-gradient(135deg,#19ad7b,#087b59); }
 .mobile-finance-secondary { border: 1px solid #b9d4ca; color: #126f55; background: #fff; }
 .mobile-finance-photo { width: 88px; height: 88px; border-radius: 12px; object-fit: cover; margin: 8px 8px 0 0; }
+.mobile-finance-check-item { margin-top: 14px; padding-top: 14px; border-top: 1px solid #edf2f0; }
+.mobile-finance-check-item:first-of-type { border-top: 0; padding-top: 4px; }
+.mobile-finance-tag { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: #eef6f3; color: #087b5b; font-size: 12px; font-weight: 500; }
+.mobile-finance-check-done { display: flex !important; align-items: center; gap: 8px; margin: 10px 0 !important; font-weight: 500 !important; }
+.mobile-finance-check-done input { width: auto !important; }
 .income-hero { padding: 24px; color: #fff; background: linear-gradient(135deg,#16a875,#086c51); }
 .income-hero strong { display: block; font-size: 32px; margin-top: 8px; }
 .income-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
