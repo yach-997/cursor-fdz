@@ -47,8 +47,15 @@ export default function HomePage() {
     loader,
   );
   const items: HomeItem[] = useMemo(() => {
-    const list: HomeItem[] = (data?.tasks || [])
-      .filter((t) => t.status !== 'archived')
+    const allTasks = data?.tasks || [];
+    // 案例派单会自动建巡检任务：列表只保留案例一条，避免同一订单出现两条
+    const taskByCaseId = new Map(
+      allTasks
+        .filter((t) => t.serviceCaseId)
+        .map((t) => [String(t.serviceCaseId), t] as const),
+    );
+    const list: HomeItem[] = allTasks
+      .filter((t) => t.status !== 'archived' && !t.serviceCaseId)
       .map((t) => ({
         key: `task-${t.id}`,
         kind: 'inspection' as const,
@@ -64,13 +71,20 @@ export default function HomePage() {
     for (const c of data?.financeCases || []) {
       if (!['assigned', 'working'].includes(c.status)) continue;
       if (currentSite?.id && c.siteId && c.siteId !== currentSite.id) continue;
+      const linked = taskByCaseId.get(String(c.id));
+      const status = linked?.status || c.status;
+      const statusLabel = linked
+        ? linked.statusLabel && linked.statusLabel !== '草稿'
+          ? linked.statusLabel
+          : STATUS_TEXT[linked.status] || '进行中'
+        : STATUS_TEXT[c.status] || c.status;
       list.push({
         key: `case-${c.id}`,
         kind: 'service',
         title: c.projectName || c.gspCaseNo,
         meta: `${c.gspCaseNo} · ${c.taskTypeName || (c.taskType === 'inspection' ? '巡检' : c.taskType === 'service' ? '服务作业' : c.taskType || '未设类型')}`,
-        status: c.status,
-        statusLabel: STATUS_TEXT[c.status] || c.status,
+        status,
+        statusLabel,
         href: `/m/finance-cases/${c.id}`,
       });
     }

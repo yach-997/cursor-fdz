@@ -125,35 +125,55 @@ export default function TasksPage() {
   );
 
   const list: UnifiedItem[] = useMemo(() => {
-    const tasks = (data?.tasks || []).filter((t) => t.status !== 'archived');
-    const items: UnifiedItem[] = tasks.map((t) => {
-      const label = inspectionStatusText(t);
-      return {
-        key: `task-${t.id}`,
-        kind: 'inspection' as const,
-        title: t.taskName,
-        statusLabel: label,
-        statusClass: statusClass(t.status, label),
-        meta: `${t.device?.serialNumber || '无序列号'}${
-          t.site?.region || t.site?.name ? ` · ${t.site?.region || t.site?.name}` : ''
-        }${t.serviceCaseId ? ' · 关联案例' : ''}`,
-        canDelete: ['pending', 'in_progress', 'rejected'].includes(t.status),
-        task: t,
-      };
-    });
+    const allTasks = (data?.tasks || []).filter((t) => t.status !== 'archived');
+    // 案例派单自动创建的巡检任务与费用案例是同一订单，列表只展示案例一条
+    const taskByCaseId = new Map(
+      allTasks
+        .filter((t) => t.serviceCaseId)
+        .map((t) => [String(t.serviceCaseId), t] as const),
+    );
+    const items: UnifiedItem[] = allTasks
+      .filter((t) => !t.serviceCaseId)
+      .map((t) => {
+        const label = inspectionStatusText(t);
+        return {
+          key: `task-${t.id}`,
+          kind: 'inspection' as const,
+          title: t.taskName,
+          statusLabel: label,
+          statusClass: statusClass(t.status, label),
+          meta: `${t.device?.serialNumber || '无序列号'}${
+            t.site?.region || t.site?.name ? ` · ${t.site?.region || t.site?.name}` : ''
+          }`,
+          canDelete: ['pending', 'in_progress', 'rejected'].includes(t.status),
+          task: t,
+        };
+      });
 
     const kw = appliedFilters.keyword.toLowerCase();
     for (const c of data?.financeCases || []) {
       if (currentSite?.id && c.siteId && c.siteId !== currentSite.id) continue;
-      if (!financeMatchesTab(c.status, tab)) continue;
+      const linked = taskByCaseId.get(String(c.id));
+      // 有关联巡检任务时按任务状态归类，避免案例仍为「已派单」却显示两条/落错筛选项
+      const tabStatus = linked
+        ? linked.status === 'pending'
+          ? 'assigned'
+          : linked.status === 'submitted' || linked.status === 'approved'
+            ? 'finished'
+            : 'working'
+        : c.status;
+      if (!financeMatchesTab(tabStatus, tab)) continue;
       if (kw && !`${c.projectName} ${c.gspCaseNo}`.toLowerCase().includes(kw)) continue;
-      const label = financeStatusText(c.status);
+      const label = linked
+        ? inspectionStatusText(linked)
+        : financeStatusText(c.status);
+      const statusForClass = linked?.status || c.status;
       items.push({
         key: `case-${c.id}`,
         kind: 'service',
         title: c.projectName || c.gspCaseNo,
         statusLabel: label,
-        statusClass: statusClass(c.status, label),
+        statusClass: statusClass(statusForClass, label),
         meta: `${c.gspCaseNo} · ${c.taskTypeName || (c.taskType === 'inspection' ? '巡检' : c.taskType === 'service' ? '服务作业' : c.taskType || '未设类型')}${c.province ? ` · ${c.province}` : ''}`,
         financeCase: c,
       });
