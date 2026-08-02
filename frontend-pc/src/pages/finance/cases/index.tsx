@@ -83,6 +83,7 @@ export default function FinanceCasesPage() {
   const [page, setPage] = useState(1);
   const [keyword, setKeyword] = useState('');
   const [status, setStatus] = useState<string>();
+  const [region, setRegion] = useState<string>();
   const [siteBind, setSiteBind] = useState<'unassigned' | 'assigned_site'>();
   const [filterSiteId, setFilterSiteId] = useState<string>();
   const [filterTaskType, setFilterTaskType] = useState<string>();
@@ -112,6 +113,14 @@ export default function FinanceCasesPage() {
     [data, selectedRowKeys],
   );
 
+  const sitesInRegion = useMemo(() => {
+    if (!region) return sites;
+    return sites.filter((s) => {
+      const inYunnan = `${s.province || ''}${s.city || ''}`.includes('云南');
+      return region === 'yunnan' ? inYunnan : !inYunnan;
+    });
+  }, [sites, region]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -120,6 +129,7 @@ export default function FinanceCasesPage() {
         limit: 10,
         keyword,
         status,
+        region,
         siteBind,
         siteId: filterSiteId,
         taskType: filterTaskType,
@@ -129,7 +139,7 @@ export default function FinanceCasesPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, keyword, status, siteBind, filterSiteId, filterTaskType]);
+  }, [page, keyword, status, region, siteBind, filterSiteId, filterTaskType]);
 
   useEffect(() => {
     void load();
@@ -188,7 +198,7 @@ export default function FinanceCasesPage() {
         message={admin ? '管理员：分配/改派站点；可协助设类型与派单' : '网格长：设类型、派单与改派工程师'}
         description={
           admin
-            ? '分配错站点可改派到其他网格长站点（将清空原工程师派单）。派错工程师可改派。巡检报告已提交后不可改派。'
+            ? '建议批量：按区域筛选 → 勾选未分配案例 → 批量分配站点 → 设类型 → 再批量派单（须同一站点）。改派站点会清空原工程师派单；巡检报告已提交后不可改派。'
             : '管理员分配站点后，请设类型并派单；派错工程师可改派给本站其他工程师。巡检报告已提交后不可改派。'
         }
       />
@@ -201,7 +211,22 @@ export default function FinanceCasesPage() {
             setKeyword(v);
           }}
         />
-        {admin ? (
+        <Select
+          allowClear
+          placeholder="区域"
+          value={region}
+          onChange={(v) => {
+            setPage(1);
+            setRegion(v);
+            setFilterSiteId(undefined);
+            setSelectedRowKeys([]);
+          }}
+          options={[
+            { value: 'south_china', label: '华南' },
+            { value: 'yunnan', label: '云南' },
+          ]}
+        />
+        {admin && (
           <Select
             allowClear
             placeholder="站点归属"
@@ -209,27 +234,28 @@ export default function FinanceCasesPage() {
             onChange={(v) => {
               setPage(1);
               setSiteBind(v);
+              setSelectedRowKeys([]);
             }}
             options={[
               { value: 'unassigned', label: '未分配站点' },
               { value: 'assigned_site', label: '已分配站点' },
             ]}
           />
-        ) : (
-          <Select
-            allowClear
-            placeholder="派单状态"
-            value={status}
-            onChange={(v) => {
-              setPage(1);
-              setStatus(v);
-            }}
-            options={Object.entries(dispatchStatusLabel).map(([value, label]) => ({
-              value,
-              label,
-            }))}
-          />
         )}
+        <Select
+          allowClear
+          placeholder="派单状态"
+          value={status}
+          onChange={(v) => {
+            setPage(1);
+            setStatus(v);
+            setSelectedRowKeys([]);
+          }}
+          options={Object.entries(dispatchStatusLabel).map(([value, label]) => ({
+            value,
+            label,
+          }))}
+        />
         <Select
           allowClear
           showSearch
@@ -239,8 +265,12 @@ export default function FinanceCasesPage() {
           onChange={(v) => {
             setPage(1);
             setFilterSiteId(v);
+            setSelectedRowKeys([]);
           }}
-          options={sites.map((s) => ({ value: s.id, label: s.name }))}
+          options={sitesInRegion.map((s) => ({
+            value: s.id,
+            label: `${s.name}${s.manager?.realName ? `（${s.manager.realName}）` : ''}`,
+          }))}
         />
         <Select
           allowClear
@@ -251,6 +281,7 @@ export default function FinanceCasesPage() {
           onChange={(v) => {
             setPage(1);
             setFilterTaskType(v);
+            setSelectedRowKeys([]);
           }}
           options={taskTypes.map((t) => ({ value: t.id, label: t.name }))}
         />
@@ -515,7 +546,7 @@ export default function FinanceCasesPage() {
           value={siteId}
           placeholder="选择归属站点（对应网格长）"
           onChange={setSiteId}
-          options={sites.map((s) => ({
+          options={sitesInRegion.map((s) => ({
             value: s.id,
             label: `${s.name}（网格长：${s.manager?.realName || '未任命'}）`,
           }))}
