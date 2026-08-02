@@ -27,6 +27,10 @@ export class ImportPreviewQueryDto {
 export class FinanceCaseQueryDto extends PaginationDto {
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() region?: string;
+  /** 按案例省份筛选（GSP 导入字段） */
+  @IsOptional() @IsString() @MaxLength(32) province?: string;
+  /** 按案例城市筛选；建议与 province 联用 */
+  @IsOptional() @IsString() @MaxLength(32) city?: string;
   @IsOptional() @IsString() month?: string;
   @IsOptional() @IsString() keyword?: string;
   @IsOptional() @IsPostgresUuid() siteId?: string;

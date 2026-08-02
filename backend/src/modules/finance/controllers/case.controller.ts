@@ -34,6 +34,11 @@ export class FinanceCaseController {
   ) {
     return this.service.listCases(query, user);
   }
+  @Get('location-options')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
+  locationOptions(@CurrentUser() user: CurrentUserContext) {
+    return this.service.caseLocationOptions(user);
+  }
   @Delete('clear') @Roles(UserRole.SUPER_ADMIN) clear(
     @Query() query: ClearConfirmQueryDto,
     @CurrentUser() user: CurrentUserContext,

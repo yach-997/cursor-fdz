@@ -20,6 +20,13 @@ const unwrap = <T>(response: { data: ApiResponse<T> }) => response.data.data;
 export async function fetchFinanceCases(params: Record<string, unknown>) {
   return unwrap(await request.get<ApiResponse<FinancePage<FinanceCase>>>('/cases', { params }));
 }
+export async function fetchFinanceCaseLocationOptions() {
+  return unwrap(
+    await request.get<
+      ApiResponse<{ provinces: string[]; citiesByProvince: Record<string, string[]> }>
+    >('/cases/location-options'),
+  );
+}
 export async function clearFinanceCases() {
   return unwrap(
     await request.delete<ApiResponse<{ deleted: number }>>('/cases/clear', {

@@ -124,6 +124,12 @@ export class FinanceQueryService {
       if (query.siteBind === 'assigned_site') qb.andWhere('c.site_id IS NOT NULL');
     }
     if (query.region) qb.andWhere('c.region = :filterRegion', { filterRegion: query.region });
+    if (query.province?.trim()) {
+      qb.andWhere('c.province = :province', { province: query.province.trim() });
+    }
+    if (query.city?.trim()) {
+      qb.andWhere('c.city = :city', { city: query.city.trim() });
+    }
     if (query.status) qb.andWhere('c.status = :status', { status: query.status });
     if (query.taskType) {
       const uuidLike =
@@ -153,6 +159,39 @@ export class FinanceQueryService {
       .limit(limit)
       .getRawMany();
     return { list, total, page, limit };
+  }
+
+  /** 案例列表筛选用：已有省份/城市去重选项 */
+  async caseLocationOptions(user: CurrentUserContext) {
+    const qb = this.cases
+      .createQueryBuilder('c')
+      .select('c.province', 'province')
+      .addSelect('c.city', 'city')
+      .where("COALESCE(TRIM(c.province), '') <> ''");
+    if (user.role === UserRole.SITE_MANAGER) {
+      if (!user.managedSiteIds?.length) {
+        return { provinces: [] as string[], citiesByProvince: {} as Record<string, string[]> };
+      }
+      qb.andWhere('(c.site_id IN (:...siteIds) OR c.site_id IS NULL)', {
+        siteIds: user.managedSiteIds,
+      });
+    }
+    const rows = await qb.distinct(true).orderBy('c.province', 'ASC').addOrderBy('c.city', 'ASC').getRawMany<{
+      province: string;
+      city: string | null;
+    }>();
+    const provinces = [
+      ...new Set(rows.map((row) => String(row.province || '').trim()).filter(Boolean)),
+    ];
+    const citiesByProvince: Record<string, string[]> = {};
+    for (const row of rows) {
+      const province = String(row.province || '').trim();
+      const city = String(row.city || '').trim();
+      if (!province || !city) continue;
+      const list = citiesByProvince[province] || (citiesByProvince[province] = []);
+      if (!list.includes(city)) list.push(city);
+    }
+    return { provinces, citiesByProvince };
   }
 
   async caseDetail(id: string, user: CurrentUserContext) {

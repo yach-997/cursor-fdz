@@ -29,6 +29,7 @@ import {
   downloadFinanceImportTemplate,
   fetchFinanceCase,
   fetchFinanceCases,
+  fetchFinanceCaseLocationOptions,
   fetchFinanceInspectors,
   setFinanceCaseSite,
   setFinanceCaseTaskType,
@@ -83,7 +84,8 @@ export default function FinanceCasesPage() {
   const [page, setPage] = useState(1);
   const [keyword, setKeyword] = useState('');
   const [status, setStatus] = useState<string>();
-  const [region, setRegion] = useState<string>();
+  const [province, setProvince] = useState<string>();
+  const [city, setCity] = useState<string>();
   const [siteBind, setSiteBind] = useState<'unassigned' | 'assigned_site'>();
   const [filterSiteId, setFilterSiteId] = useState<string>();
   const [filterTaskType, setFilterTaskType] = useState<string>();
@@ -93,6 +95,8 @@ export default function FinanceCasesPage() {
   const [detail, setDetail] = useState<Record<string, any>>();
   const [sites, setSites] = useState<SiteItem[]>([]);
   const [taskTypes, setTaskTypes] = useState<TemplateItem[]>([]);
+  const [provinces, setProvinces] = useState<string[]>([]);
+  const [citiesByProvince, setCitiesByProvince] = useState<Record<string, string[]>>({});
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [assigning, setAssigning] = useState<FinanceCase>();
   const [inspectors, setInspectors] = useState<FinanceInspectorOption[]>([]);
@@ -113,13 +117,18 @@ export default function FinanceCasesPage() {
     [data, selectedRowKeys],
   );
 
-  const sitesInRegion = useMemo(() => {
-    if (!region) return sites;
+  const cityOptions = useMemo(
+    () => (province ? citiesByProvince[province] || [] : []),
+    [province, citiesByProvince],
+  );
+
+  const sitesInLocation = useMemo(() => {
     return sites.filter((s) => {
-      const inYunnan = `${s.province || ''}${s.city || ''}`.includes('云南');
-      return region === 'yunnan' ? inYunnan : !inYunnan;
+      if (province && s.province !== province) return false;
+      if (city && s.city !== city) return false;
+      return true;
     });
-  }, [sites, region]);
+  }, [sites, province, city]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,7 +138,8 @@ export default function FinanceCasesPage() {
         limit: 10,
         keyword,
         status,
-        region,
+        province,
+        city,
         siteBind,
         siteId: filterSiteId,
         taskType: filterTaskType,
@@ -139,7 +149,7 @@ export default function FinanceCasesPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, keyword, status, region, siteBind, filterSiteId, filterTaskType]);
+  }, [page, keyword, status, province, city, siteBind, filterSiteId, filterTaskType]);
 
   useEffect(() => {
     void load();
@@ -148,6 +158,15 @@ export default function FinanceCasesPage() {
   useEffect(() => {
     void fetchSites({ limit: 100 }).then((r) => setSites(r.list));
     void fetchTemplates().then(setTaskTypes).catch(() => setTaskTypes([]));
+    void fetchFinanceCaseLocationOptions()
+      .then((r) => {
+        setProvinces(r.provinces || []);
+        setCitiesByProvince(r.citiesByProvince || {});
+      })
+      .catch(() => {
+        setProvinces([]);
+        setCitiesByProvince({});
+      });
   }, []);
 
   const onClear = async () => {
@@ -198,7 +217,7 @@ export default function FinanceCasesPage() {
         message={admin ? '管理员：分配/改派站点；可协助设类型与派单' : '网格长：设类型、派单与改派工程师'}
         description={
           admin
-            ? '建议批量：按区域筛选 → 勾选未分配案例 → 批量分配站点 → 设类型 → 再批量派单（须同一站点）。改派站点会清空原工程师派单；巡检报告已提交后不可改派。'
+            ? '建议批量：按省份/城市筛选 → 勾选未分配案例 → 批量分配站点 → 设类型 → 再批量派单（须同一站点）。改派站点会清空原工程师派单；巡检报告已提交后不可改派。'
             : '管理员分配站点后，请设类型并派单；派错工程师可改派给本站其他工程师。巡检报告已提交后不可改派。'
         }
       />
@@ -213,18 +232,33 @@ export default function FinanceCasesPage() {
         />
         <Select
           allowClear
-          placeholder="区域"
-          value={region}
+          showSearch
+          optionFilterProp="label"
+          placeholder="省份"
+          value={province}
           onChange={(v) => {
             setPage(1);
-            setRegion(v);
+            setProvince(v);
+            setCity(undefined);
             setFilterSiteId(undefined);
             setSelectedRowKeys([]);
           }}
-          options={[
-            { value: 'south_china', label: '华南' },
-            { value: 'yunnan', label: '云南' },
-          ]}
+          options={provinces.map((p) => ({ value: p, label: p }))}
+        />
+        <Select
+          allowClear
+          showSearch
+          optionFilterProp="label"
+          placeholder="城市"
+          value={city}
+          disabled={!province}
+          onChange={(v) => {
+            setPage(1);
+            setCity(v);
+            setFilterSiteId(undefined);
+            setSelectedRowKeys([]);
+          }}
+          options={cityOptions.map((c) => ({ value: c, label: c }))}
         />
         {admin && (
           <Select
@@ -267,7 +301,7 @@ export default function FinanceCasesPage() {
             setFilterSiteId(v);
             setSelectedRowKeys([]);
           }}
-          options={sitesInRegion.map((s) => ({
+          options={sitesInLocation.map((s) => ({
             value: s.id,
             label: `${s.name}${s.manager?.realName ? `（${s.manager.realName}）` : ''}`,
           }))}
@@ -546,7 +580,7 @@ export default function FinanceCasesPage() {
           value={siteId}
           placeholder="选择归属站点（对应网格长）"
           onChange={setSiteId}
-          options={sitesInRegion.map((s) => ({
+          options={sitesInLocation.map((s) => ({
             value: s.id,
             label: `${s.name}（网格长：${s.manager?.realName || '未任命'}）`,
           }))}
