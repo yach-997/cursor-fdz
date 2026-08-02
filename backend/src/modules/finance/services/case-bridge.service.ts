@@ -91,7 +91,7 @@ export class CaseBridgeService {
     if (!item.siteId) throw new BadRequestException('请先将案例分配到站点');
     this.assertSiteManage(user, item.siteId);
     const template = await this.templates.findOne({ where: { id: dto.templateId } });
-    if (!template) throw new NotFoundException('任务类型不存在，请先在「任务类型设置」中创建');
+    if (!template) throw new NotFoundException('任务类型不存在，请先在「任务类型」中创建');
     const prev = { taskType: item.taskType, taskTemplateId: item.taskTemplateId };
     item.taskTemplateId = template.id;
     item.taskType = String(template.name || '').slice(0, 128) || template.id;
