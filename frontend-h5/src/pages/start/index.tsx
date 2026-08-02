@@ -30,14 +30,14 @@ export default function StartWizardPage() {
   );
 
   const regions = useMemo(() => {
+    // 仅按入职站点的省市区汇总，不要混入账号业务区域字段（如 yunnan/south_china）
     const set = new Set<string>();
     for (const s of sites) {
       const r = [s.province, s.city].filter(Boolean).join('') || '未分区';
       set.add(r);
     }
-    if (user?.region) set.add(user.region);
     return [...set];
-  }, [sites, user?.region]);
+  }, [sites]);
 
   const projects = useMemo(() => {
     return sites.filter((s) => {
