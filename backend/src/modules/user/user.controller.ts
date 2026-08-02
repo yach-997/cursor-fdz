@@ -36,9 +36,9 @@ export class UserController {
     return this.userService.findAll(query, user);
   }
 
-  /** 人才池（仅网格长；须放在 :id 路由之前） */
+  /** 人才池 / 工程师筛选列表（网格长看编制池；超管看全部工程师；须放在 :id 之前） */
   @Get('inspectors/pool')
-  @Roles(UserRole.SITE_MANAGER)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async getPool(@Query() query: QueryPoolDto, @CurrentUser() user: CurrentUserContext) {
     return this.userService.getInspectorPool(query, user);
   }

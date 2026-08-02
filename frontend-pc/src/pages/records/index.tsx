@@ -104,9 +104,13 @@ export default function RecordsPage() {
     } else {
       setDevices([]);
       setDeviceId(undefined);
-      fetchInspectorPool({ limit: 100 }).then((result) => {
-        setInspectors(result.list.map((user) => ({ value: user.id, label: user.realName })));
-      });
+      fetchInspectorPool({ limit: 100 })
+        .then((result) => {
+          setInspectors(result.list.map((user) => ({ value: user.id, label: user.realName })));
+        })
+        .catch(() => {
+          setInspectors([]);
+        });
     }
   }, [siteId]);
 

@@ -271,24 +271,30 @@ export class UserService {
   }
 
   async getInspectorPool(query: QueryPoolDto, currentUser: CurrentUserContext) {
-    if (currentUser.role !== UserRole.SITE_MANAGER) {
-      throw new ForbiddenException('仅正/副网格长可查看人才池');
-    }
-    await this.assertCanStaffAccounts(currentUser);
-    const creatorIds = await this.getStaffingCreatorIds(currentUser.id);
-    if (!creatorIds.length) {
-      return { list: [], total: 0, page: query.page || 1, limit: query.limit || 10 };
+    if (
+      currentUser.role !== UserRole.SITE_MANAGER &&
+      currentUser.role !== UserRole.SUPER_ADMIN
+    ) {
+      throw new ForbiddenException('无权查看工程师列表');
     }
 
     const page = query.page || 1;
     const limit = query.limit || 10;
-
     const roleCond = qbUserHasRole('user', UserRole.INSPECTOR, 'pool');
     const qb = this.userRepo
       .createQueryBuilder('user')
       .where(roleCond.sql, roleCond.params)
-      .andWhere('user.status = :status', { status: CommonStatus.ACTIVE })
-      .andWhere('user.created_by IN (:...creatorIds)', { creatorIds });
+      .andWhere('user.status = :status', { status: CommonStatus.ACTIVE });
+
+    // 网格长：仅看本站编制创建人下的工程师；超管：全部工程师（供历史查询等筛选）
+    if (currentUser.role === UserRole.SITE_MANAGER) {
+      await this.assertCanStaffAccounts(currentUser);
+      const creatorIds = await this.getStaffingCreatorIds(currentUser.id);
+      if (!creatorIds.length) {
+        return { list: [], total: 0, page, limit };
+      }
+      qb.andWhere('user.created_by IN (:...creatorIds)', { creatorIds });
+    }
 
     if (query.keyword) {
       qb.andWhere('(user.username ILIKE :kw OR user.realName ILIKE :kw OR user.phone ILIKE :kw)', {
