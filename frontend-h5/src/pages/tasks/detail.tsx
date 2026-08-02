@@ -172,15 +172,34 @@ export default function TaskDetailPage() {
             </div>
           )}
 
-          <Cell.Group inset title="设备信息" style={{ marginTop: 12 }}>
-            <Cell title="序列号" value={task.device?.serialNumber || '-'} />
+          <Cell.Group
+            inset
+            title={task.serviceCaseId ? '案例信息' : '设备信息'}
+            style={{ marginTop: 12 }}
+          >
+            {task.serviceCaseId || String(task.device?.serialNumber || '').startsWith('CASE-') ? (
+              <Cell
+                title="案例号"
+                value={
+                  String(task.device?.serialNumber || '')
+                    .replace(/^CASE-/, '')
+                    .replace(/-\d+$/, '') || '-'
+                }
+              />
+            ) : (
+              <Cell title="序列号" value={task.device?.serialNumber || '-'} />
+            )}
             <Cell
-              title="设备类型"
+              title={task.serviceCaseId ? '任务类型' : '设备类型'}
               value={
-                DEVICE_TYPE[task.device?.deviceType || ''] || '未知设备类型'
+                task.serviceCaseId
+                  ? task.device?.model || DEVICE_TYPE[task.device?.deviceType || ''] || '-'
+                  : DEVICE_TYPE[task.device?.deviceType || ''] || '未知设备类型'
               }
             />
-            <Cell title="型号" value={task.device?.model || '-'} />
+            {!task.serviceCaseId && (
+              <Cell title="型号" value={task.device?.model || '-'} />
+            )}
           </Cell.Group>
 
           <div style={{ margin: '12px 16px' }}>

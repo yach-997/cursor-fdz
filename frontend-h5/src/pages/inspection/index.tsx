@@ -921,7 +921,13 @@ export default function InspectionPage() {
           <Cell
             className="inspection-task-summary"
             title={task.taskName}
-            label={`序列号：${task.device?.serialNumber || '-'} · 已启用现场定位校验`}
+            label={`${
+              task.serviceCaseId || String(task.device?.serialNumber || '').startsWith('CASE-')
+                ? `案例号：${String(task.device?.serialNumber || '')
+                    .replace(/^CASE-/, '')
+                    .replace(/-\d+$/, '') || '-'}`
+                : `序列号：${task.device?.serialNumber || '-'}`
+            } · 已启用现场定位校验`}
           />
 
           <div
