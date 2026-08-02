@@ -407,7 +407,7 @@ export class VisionService {
       return `${n}请看抱箍/横担螺栓是否清晰；多张有侧面+特写或不同方位即可，勿因线管遮挡某一张就否决全部`;
     }
     if (opts.dcSide) {
-      return `${n}请检查直流接头与未使用端子是否有防护盖（蓝/红/黑盖），裸露未用端子 → 不合格`;
+      return `${n}已插电缆的 MC4/接头属于在用端子，不要求防尘盖；仅当空闲端口金属触点明显裸露无盖才不合格`;
     }
     if (opts.acSide) {
       return `${n}请检查相线与 PE 接地线是否接好；交流仓内 PE 空端子/未接 PE → 不合格`;
@@ -458,11 +458,16 @@ export class VisionService {
   private dcSideHardRules() {
     return [
       '【直流侧安装检查·硬性否决】',
-      '必须对照合格样本的防护状态。',
-      'unusedPortsCapped：未使用的直流端子/接口必须有防护盖（常见蓝/红/黑防尘盖）；金属触点或端口明显裸露未盖 → fail。',
-      'connectorsIntact：已插接头应插接到位，无破损烧蚀进水。',
-      'matchesSampleProtection：若样本中未用端子均有盖，而现场裸露 → fail。',
-      '画面只拍到局部且无法确认未用端子是否盖好 → unusedPortsCapped=false，fail。',
+      '重点区分「在用接头」与「空闲未用端子」，禁止把已插线的 MC4 当成未盖防护盖。',
+      'connectorsIntact：可见的直流接头/MC4 已插接到位，线缆固定，无破损烧蚀进水 → true。',
+      'unusedPortsCapped=true 的合法情况（满足其一即可）：',
+      '1) 画面中所有可见空闲（未插线）直流端口都有防尘盖（蓝/红/黑等）；',
+      '2) 画面中可见直流端口均已插接在用，没有空闲裸露端口；',
+      '3) 角度有限看不清是否还有空闲端口，但已见接头插接正常、未见明显空闲金属触点裸露。',
+      'unusedPortsCapped=false（必须 fail）仅当：能清楚看到空闲未插线的直流端口，且金属触点/端口明显裸露、没有防尘盖。',
+      '禁止误判：黑色 MC4 塑料外壳、已插上的接头尾端、线缆护套 ≠ 未盖防护的裸露端子。',
+      'matchesSampleProtection：仅在有合格样本时对比；无样本则忽略该项，不要因此 fail。',
+      '拿不准时：若 connectorsIntact=true 且未见明确空闲裸露端口 → unusedPortsCapped=true，优先 pass。',
     ].join('\n');
   }
 
@@ -634,18 +639,42 @@ export class VisionService {
       'unusedPortsCapped',
       'matchesSampleProtection',
     ]);
-    const missing: string[] = [];
-    if (!values.unusedPortsCapped) {
-      missing.push('未使用端子防护盖（裸露未盖不合格）');
+    // 模型未给出结构化证据时，不因默认 false 硬否决（避免把在用 MC4 误杀）
+    if (!reported) {
+      if (parsed.status === CheckResult.FAIL) {
+        const reason = parsed.reason || '';
+        // 常见误杀话术：把已插接头说成「未使用防护盖」
+        if (/防护盖|防尘盖|裸露/.test(reason) && !/空闲|未插|未使用端子/.test(reason)) {
+          return {
+            status: CheckResult.PASS,
+            confidence: Math.max(parsed.confidence, 0.8),
+            reason:
+              '现场直流接头已插接，未见明确空闲裸露端口；已按在用端子规则放宽为合格。',
+          };
+        }
+      }
+      return parsed;
     }
-    if (!values.connectorsIntact) missing.push('直流接头完好插接到位');
-    if (sampleCount > 0 && !values.matchesSampleProtection) {
+
+    const missing: string[] = [];
+    // 仅当模型明确给出 unusedPortsCapped=false 才否决
+    if (reported && /unusedPortsCapped"\s*:\s*false/.test(raw)) {
+      missing.push('空闲未用端子防护盖（明确裸露未盖）');
+    }
+    if (reported && /connectorsIntact"\s*:\s*false/.test(raw)) {
+      missing.push('直流接头完好插接到位');
+    }
+    if (
+      sampleCount > 0 &&
+      reported &&
+      /matchesSampleProtection"\s*:\s*false/.test(raw)
+    ) {
       missing.push('与合格样本一致的端子防护状态');
     }
     return this.enforceEvidencePass(
       parsed,
       missing,
-      '直流侧接头完好，未用端子已加盖防护，合格。',
+      '直流侧接头完好插接，未见空闲裸露端口，合格。',
       reported,
     );
   }
