@@ -111,7 +111,12 @@ export async function setFinanceCaseSite(caseId: string, siteId: string) {
 export async function batchAssignFinanceCasesToSites(caseIds: string[], siteId: string) {
   return unwrap(
     await request.post<
-      ApiResponse<{ updated: number; siteId: string; siteName: string }>
+      ApiResponse<{
+        updated: number;
+        siteId: string;
+        siteName: string;
+        skipped?: Array<{ caseId: string; reason: string }>;
+      }>
     >('/cases/assign-sites', { caseIds, siteId }),
   );
 }

@@ -9,6 +9,9 @@ import { In, Repository } from 'typeorm';
 import {
   CasePerformance,
   CaseWorkRecord,
+  Device,
+  InspectionRecord,
+  InspectionTask,
   InspectionTemplate,
   PoItem,
   PoOrder,
@@ -19,7 +22,14 @@ import {
   MonthlySettlement,
   SiteMember,
 } from '../../../entities';
-import { CommonStatus, SiteMemberRole, UserRole } from '../../../common/enums';
+import {
+  CommonStatus,
+  DeviceStatus,
+  SiteMemberRole,
+  TaskStatus,
+  UserRole,
+  WorkTaskType,
+} from '../../../common/enums';
 import { CurrentUserContext } from '../../../common/interfaces';
 import { userHasRole } from '../../../common/utils/user-roles';
 import {
@@ -28,6 +38,7 @@ import {
 } from '../dto/finance.dto';
 import { ChangeLogService } from './change-log.service';
 import { FinanceScopeService } from './finance-scope.service';
+import { TaskService } from '../../task/task.service';
 
 const ACTIVE_CASE_STATUSES = ['assigned', 'working'] as const;
 
@@ -59,6 +70,10 @@ export class FinanceWorkflowService {
     @InjectRepository(SiteMember) private readonly members: Repository<SiteMember>,
     @InjectRepository(InspectionTemplate)
     private readonly templates: Repository<InspectionTemplate>,
+    @InjectRepository(InspectionTask) private readonly tasks: Repository<InspectionTask>,
+    @InjectRepository(InspectionRecord) private readonly records: Repository<InspectionRecord>,
+    @InjectRepository(Device) private readonly devices: Repository<Device>,
+    private readonly taskService: TaskService,
     private readonly scope: FinanceScopeService,
     private readonly logs: ChangeLogService,
   ) {}
@@ -108,14 +123,18 @@ export class FinanceWorkflowService {
 
   async assign(caseId: string, inspectorId: string, reason: string | undefined, user: CurrentUserContext) {
     const serviceCase = await this.caseForManager(caseId, user);
-    if (serviceCase.status !== 'pending_assign') {
-      throw new BadRequestException('只有待派单案例可以派单');
+    const isReassign = ['assigned', 'working'].includes(serviceCase.status);
+    if (!isReassign && serviceCase.status !== 'pending_assign') {
+      throw new BadRequestException('当前状态不可派单或改派工程师');
     }
     if (!serviceCase.siteId) {
       throw new BadRequestException('请先将案例分配到站点，再派给本站工程师');
     }
     if (!serviceCase.taskTemplateId && !serviceCase.taskType) {
       throw new BadRequestException('请先设置案例任务类型');
+    }
+    if (isReassign) {
+      await this.assertInspectionTransferable(caseId);
     }
     const inspector = await this.users.findOne({ where: { id: inspectorId } });
     if (!inspector || inspector.status !== CommonStatus.ACTIVE || !userHasRole(inspector, UserRole.INSPECTOR)) {
@@ -132,10 +151,13 @@ export class FinanceWorkflowService {
     if (!member) {
       throw new BadRequestException('只能派给该站点已入职的工程师');
     }
-    // 允许同一工程师同时负责多个案例（并行作业）
+    if (isReassign && serviceCase.inspectorId === inspectorId) {
+      throw new BadRequestException('已是该工程师，无需改派');
+    }
 
     const before = { status: serviceCase.status, inspectorId: serviceCase.inspectorId };
-    serviceCase.status = 'assigned';
+    // 改派时保留作业中状态；首次派单进入已派单
+    if (!isReassign) serviceCase.status = 'assigned';
     serviceCase.inspectorId = inspectorId;
     serviceCase.assignBy = user.id;
     serviceCase.assignTime = new Date();
@@ -153,10 +175,11 @@ export class FinanceWorkflowService {
       acceptedAt: new Date(),
     });
     work.inspectorId = inspectorId;
-    work.acceptedAt = new Date();
+    work.acceptedAt = work.acceptedAt || new Date();
     await this.work.save(work);
 
     await this.ledgers.update({ serviceCaseId: caseId }, { inspectorId });
+    await this.ensureInspectionTask(serviceCase, inspectorId, user.id);
     await this.logs.write(
       'service_case',
       caseId,
@@ -164,9 +187,39 @@ export class FinanceWorkflowService {
       before,
       { status: serviceCase.status, inspectorId },
       user.id,
-      reason?.trim() ? `站点派单：${reason.trim()}` : '站点派单',
+      reason?.trim()
+        ? `${isReassign ? '改派工程师' : '站点派单'}：${reason.trim()}`
+        : isReassign
+          ? `改派工程师 → ${inspector.realName}`
+          : '站点派单',
     );
     return serviceCase;
+  }
+
+  /** 巡检报告已提交后禁止改派站点/工程师 */
+  async assertInspectionTransferable(caseId: string) {
+    const task = await this.tasks.findOne({ where: { serviceCaseId: caseId } });
+    if (
+      task &&
+      [TaskStatus.SUBMITTED, TaskStatus.APPROVED].includes(task.status as TaskStatus)
+    ) {
+      throw new BadRequestException('巡检报告已提交，不能再改派');
+    }
+    return task;
+  }
+
+  /**
+   * 改派站点时：清空原工程师派单，并删除未提交的巡检任务，供新站点重新派单。
+   */
+  async resetDispatchForSiteTransfer(serviceCase: ServiceCase) {
+    await this.assertInspectionTransferable(serviceCase.id);
+    const task = await this.tasks.findOne({ where: { serviceCaseId: serviceCase.id } });
+    if (task) {
+      await this.records.delete({ taskId: task.id });
+      await this.tasks.delete(task.id);
+    }
+    await this.work.delete({ serviceCaseId: serviceCase.id });
+    await this.ledgers.update({ serviceCaseId: serviceCase.id }, { inspectorId: null });
   }
 
   async myCases(user: CurrentUserContext) {
@@ -205,14 +258,17 @@ export class FinanceWorkflowService {
 
   async myCase(caseId: string, user: CurrentUserContext) {
     const serviceCase = await this.caseForInspector(caseId, user);
-    const [workRecord, orders, template] = await Promise.all([
+    const [workRecord, orders, template, inspectionTask] = await Promise.all([
       this.work.findOne({ where: { serviceCaseId: caseId } }),
       this.orders.find({ where: { serviceCaseId: caseId }, order: { demandDate: 'DESC' } }),
       serviceCase.taskTemplateId
         ? this.templates.findOne({ where: { id: serviceCase.taskTemplateId } })
         : Promise.resolve(null),
+      this.tasks.findOne({ where: { serviceCaseId: caseId } }),
     ]);
     const checklist = this.readChecklist(workRecord) || this.buildChecklist(template?.entries || []);
+    const inspectionDone = !!inspectionTask &&
+      [TaskStatus.SUBMITTED, TaskStatus.APPROVED].includes(inspectionTask.status as TaskStatus);
     return {
       ...serviceCase,
       taskTypeName: template?.name || serviceCase.taskType || null,
@@ -220,17 +276,25 @@ export class FinanceWorkflowService {
       checklist,
       workRecord,
       orders,
+      inspectionTaskId: inspectionTask?.id || null,
+      inspectionTaskStatus: inspectionTask?.status || null,
+      inspectionDone,
     };
   }
 
   async start(caseId: string, user: CurrentUserContext) {
     const serviceCase = await this.caseForInspector(caseId, user);
-    if (serviceCase.status !== 'assigned') throw new BadRequestException('当前案例不能开始作业');
+    if (!['assigned', 'working'].includes(serviceCase.status)) {
+      throw new BadRequestException('当前案例不能开始作业');
+    }
     if (!serviceCase.taskTemplateId && !serviceCase.taskType) {
       throw new BadRequestException('案例未设置任务类型，无法开始巡检');
     }
-    serviceCase.status = 'working';
-    await this.cases.save(serviceCase);
+    const fromStatus = serviceCase.status;
+    if (serviceCase.status === 'assigned') {
+      serviceCase.status = 'working';
+      await this.cases.save(serviceCase);
+    }
     let record = await this.work.findOne({ where: { serviceCaseId: caseId } });
     record ||= this.work.create({
       serviceCaseId: caseId,
@@ -242,30 +306,111 @@ export class FinanceWorkflowService {
       mileageScreenshotUrls: [],
       acceptedAt: new Date(),
     });
-    record.startedAt = new Date();
-    if (!this.readChecklist(record)?.length) {
-      const template = serviceCase.taskTemplateId
-        ? await this.templates.findOne({ where: { id: serviceCase.taskTemplateId } })
-        : null;
-      const checklist = this.buildChecklist(template?.entries || []);
-      record.workload = {
-        ...(record.workload || {}),
-        checklist,
-        templateId: template?.id || serviceCase.taskTemplateId || null,
-        templateName: template?.name || serviceCase.taskType || null,
-      };
-    }
+    if (!record.startedAt) record.startedAt = new Date();
     await this.work.save(record);
-    await this.logs.write(
-      'service_case',
-      caseId,
-      'status',
-      'assigned',
-      'working',
-      user.id,
-      '工程师开始作业',
-    );
+
+    const task = await this.ensureInspectionTask(serviceCase, user.id, user.id);
+    if (
+      task.status === TaskStatus.PENDING ||
+      task.status === TaskStatus.REJECTED
+    ) {
+      await this.taskService.start(task.id, user);
+    }
+
+    if (fromStatus === 'assigned') {
+      await this.logs.write(
+        'service_case',
+        caseId,
+        'status',
+        'assigned',
+        'working',
+        user.id,
+        '工程师开始作业',
+      );
+    }
     return this.myCase(caseId, user);
+  }
+
+  /**
+   * 为费用案例创建/复用带 AI 的规范巡检任务（模板快照来自任务类型）。
+   * 使用案例号生成占位设备，不依赖现场台账录入。
+   */
+  async ensureInspectionTask(
+    serviceCase: ServiceCase,
+    inspectorId: string,
+    createdBy: string,
+  ): Promise<InspectionTask> {
+    if (!serviceCase.siteId) {
+      throw new BadRequestException('案例未分配站点，无法创建巡检任务');
+    }
+    if (!serviceCase.taskTemplateId) {
+      throw new BadRequestException('案例未设置任务类型，无法创建巡检任务');
+    }
+
+    const existing = await this.tasks.findOne({
+      where: { serviceCaseId: serviceCase.id },
+    });
+    if (existing) {
+      if (
+        inspectorId &&
+        existing.inspectorId !== inspectorId &&
+        ![TaskStatus.SUBMITTED, TaskStatus.APPROVED].includes(existing.status as TaskStatus)
+      ) {
+        existing.inspectorId = inspectorId;
+        await this.tasks.save(existing);
+      }
+      return existing;
+    }
+
+    const template = await this.templates.findOne({
+      where: { id: serviceCase.taskTemplateId },
+    });
+    if (!template?.entries?.length) {
+      throw new BadRequestException('任务类型模板不存在或没有检查条目');
+    }
+
+    const serialBase = `CASE-${serviceCase.gspCaseNo}`.slice(0, 60);
+    let device = await this.devices.findOne({ where: { serialNumber: serialBase } });
+    if (!device) {
+      device = await this.devices.save(
+        this.devices.create({
+          siteId: serviceCase.siteId,
+          serialNumber: serialBase,
+          deviceType: template.deviceType,
+          model: template.name,
+          manufacturer: '案例巡检',
+          status: DeviceStatus.ACTIVE,
+        }),
+      );
+    } else if (device.siteId !== serviceCase.siteId) {
+      const serial = `${serialBase}-${serviceCase.id}`.slice(0, 64);
+      device = await this.devices.save(
+        this.devices.create({
+          siteId: serviceCase.siteId,
+          serialNumber: serial,
+          deviceType: template.deviceType,
+          model: template.name,
+          manufacturer: '案例巡检',
+          status: DeviceStatus.ACTIVE,
+        }),
+      );
+    }
+
+    return this.tasks.save(
+      this.tasks.create({
+        siteId: serviceCase.siteId,
+        deviceId: device.id,
+        taskName: `${serviceCase.gspCaseNo}-${serviceCase.projectName || '巡检'}`.slice(0, 120),
+        inspectorId,
+        createdBy,
+        serviceCaseId: serviceCase.id,
+        taskType: WorkTaskType.INSPECTION,
+        status: TaskStatus.PENDING,
+        plannedDate: null,
+        aiEnabled: true,
+        templateSnapshot: template.entries,
+      } as Partial<InspectionTask>),
+    );
   }
 
   async saveWork(caseId: string, dto: SaveCaseWorkDto, user: CurrentUserContext) {
@@ -309,25 +454,30 @@ export class FinanceWorkflowService {
     const serviceCase = await this.caseForInspector(caseId, user);
     if (serviceCase.status !== 'working') throw new BadRequestException('请先开始作业再完工');
     const record = await this.work.findOne({ where: { serviceCaseId: caseId } });
-    if (!record) throw new BadRequestException('请先完成巡检条目与工作记录');
-    const checklist = this.readChecklist(record) || [];
-    if (checklist.length) {
-      const pending = checklist.filter(
-        (item) => item.enabled && (item.isRequired || item.isOptionalModule) && !item.done,
-      );
-      if (pending.length) {
-        throw new BadRequestException(
-          `还有 ${pending.length} 个检查条目未完成：${pending
-            .slice(0, 3)
-            .map((x) => x.name)
-            .join('、')}`,
-        );
+    if (!record) throw new BadRequestException('请先完成巡检与工作记录');
+    const inspectionTask = await this.tasks.findOne({ where: { serviceCaseId: caseId } });
+    if (inspectionTask) {
+      if (
+        ![TaskStatus.SUBMITTED, TaskStatus.APPROVED].includes(
+          inspectionTask.status as TaskStatus,
+        )
+      ) {
+        throw new BadRequestException('请先完成并提交 AI 巡检报告后再确认完工');
       }
-      const noPhoto = checklist.filter(
-        (item) => item.enabled && item.done && !(item.photoUrls || []).length,
-      );
-      if (noPhoto.length) {
-        throw new BadRequestException(`请为已完成的条目上传照片：${noPhoto[0].name}`);
+    } else {
+      const checklist = this.readChecklist(record) || [];
+      if (checklist.length) {
+        const pending = checklist.filter(
+          (item) => item.enabled && (item.isRequired || item.isOptionalModule) && !item.done,
+        );
+        if (pending.length) {
+          throw new BadRequestException(
+            `还有 ${pending.length} 个检查条目未完成：${pending
+              .slice(0, 3)
+              .map((x) => x.name)
+              .join('、')}`,
+          );
+        }
       }
     }
     if (!record.mileageScreenshotUrls?.length) throw new BadRequestException('请上传里程截图后再完工');

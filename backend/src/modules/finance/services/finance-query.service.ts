@@ -73,6 +73,8 @@ export class FinanceQueryService {
       .createQueryBuilder('c')
       .leftJoin(CasePerformance, 'p', 'p.service_case_id = c.id')
       .leftJoin('sites', 's', 's.id = c.site_id')
+      .leftJoin('users', 'mgr', 'mgr.id = s.manager_id')
+      .leftJoin('users', 'ins', 'ins.id = c.inspector_id')
       .leftJoin('inspection_templates', 'tpl', 'tpl.id = c.task_template_id')
       .select([
         'c.id AS id',
@@ -87,10 +89,12 @@ export class FinanceQueryService {
         'c.status AS status',
         'c.site_id AS "siteId"',
         's.name AS "siteName"',
+        'mgr.real_name AS "siteManagerName"',
         'c.task_type AS "taskType"',
         'c.task_template_id AS "taskTemplateId"',
         'tpl.name AS "taskTypeName"',
         'c.inspector_id AS "inspectorId"',
+        'ins.real_name AS "inspectorName"',
         'c.finish_time AS "finishTime"',
         'c.updated_at AS "updatedAt"',
         'COALESCE(p.case_revenue,0) AS "caseRevenue"',
@@ -175,12 +179,24 @@ export class FinanceQueryService {
       delete safe.perfPrice;
       return safe;
     });
-    const siteName = item.siteId
+    const siteRow = item.siteId
       ? (
-          await this.cases.manager.query(`SELECT name FROM sites WHERE id = $1 LIMIT 1`, [
-            item.siteId,
-          ])
-        )[0]?.name
+          await this.cases.manager.query(
+            `SELECT s.name, u.real_name AS "managerName"
+             FROM sites s
+             LEFT JOIN users u ON u.id = s.manager_id
+             WHERE s.id = $1 LIMIT 1`,
+            [item.siteId],
+          )
+        )[0]
+      : null;
+    const inspectorName = item.inspectorId
+      ? (
+          await this.cases.manager.query(
+            `SELECT real_name AS "realName" FROM users WHERE id = $1 LIMIT 1`,
+            [item.inspectorId],
+          )
+        )[0]?.realName
       : null;
     const taskTypeName = item.taskTemplateId
       ? (
@@ -192,7 +208,9 @@ export class FinanceQueryService {
       : null;
     return {
       ...item,
-      siteName: siteName || null,
+      siteName: siteRow?.name || null,
+      siteManagerName: siteRow?.managerName || null,
+      inspectorName: inspectorName || null,
       taskTypeName: taskTypeName || item.taskType || null,
       orders: orders.map((order) => ({
         ...order,

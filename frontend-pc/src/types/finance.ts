@@ -17,10 +17,12 @@ export interface FinanceCase {
   status: string;
   siteId?: string | null;
   siteName?: string | null;
+  siteManagerName?: string | null;
   taskType?: string | null;
   taskTemplateId?: string | null;
   taskTypeName?: string | null;
   inspectorId?: string;
+  inspectorName?: string | null;
   finishTime?: string;
   updatedAt: string;
   caseRevenue: string;

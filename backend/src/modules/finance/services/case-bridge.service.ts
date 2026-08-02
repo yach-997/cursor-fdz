@@ -21,6 +21,7 @@ import {
 } from '../../../common/enums';
 import { ChangeLogService } from './change-log.service';
 import { FinanceScopeService } from './finance-scope.service';
+import { FinanceWorkflowService } from './finance-workflow.service';
 import {
   BatchAssignCasesToSitesDto,
   BatchCreateTasksFromCasesDto,
@@ -28,7 +29,7 @@ import {
   SetCaseTaskTypeDto,
 } from '../dto/finance.dto';
 
-/** 案例 ↔ 站点桥接（派单不依赖设备台账） */
+/** 案例 ↔ 站点桥接（派单时自动创建 AI 巡检任务） */
 @Injectable()
 export class CaseBridgeService {
   constructor(
@@ -38,16 +39,31 @@ export class CaseBridgeService {
     @InjectRepository(CaseWorkRecord) private readonly work: Repository<CaseWorkRecord>,
     @InjectRepository(InspectionTemplate)
     private readonly templates: Repository<InspectionTemplate>,
+    private readonly workflow: FinanceWorkflowService,
     private readonly scope: FinanceScopeService,
     private readonly logs: ChangeLogService,
   ) {}
 
   async setSite(caseId: string, dto: SetCaseSiteDto, user: CurrentUserContext) {
-    this.assertAdminOrManager(user);
+    if (user.role !== UserRole.SUPER_ADMIN) {
+      throw new ForbiddenException('仅管理员可分配/改派站点');
+    }
     const item = await this.getCase(caseId, user);
+    this.assertCaseSiteTransferable(item);
     const site = await this.getSite(dto.siteId);
     this.assertCanAssignSite(user, site.id);
     const prev = item.siteId;
+    const siteChanged = prev !== site.id;
+    if (!siteChanged) return item;
+
+    if (item.inspectorId || item.status !== 'pending_assign') {
+      await this.workflow.resetDispatchForSiteTransfer(item);
+      item.inspectorId = null;
+      item.assignBy = null;
+      item.assignTime = null;
+      item.status = 'pending_assign';
+    }
+
     item.siteId = site.id;
     await this.cases.save(item);
     await this.logs.write(
@@ -57,32 +73,66 @@ export class CaseBridgeService {
       prev,
       site.id,
       user.id,
-      `案例归属站点 → ${site.name}`,
+      prev
+        ? `改派站点 → ${site.name}（原派单已清空，请新站点重新派单）`
+        : `案例归属站点 → ${site.name}`,
     );
     return item;
   }
 
   async batchAssignSites(dto: BatchAssignCasesToSitesDto, user: CurrentUserContext) {
-    this.assertAdminOrManager(user);
+    if (user.role !== UserRole.SUPER_ADMIN) {
+      throw new ForbiddenException('仅管理员可分配/改派站点');
+    }
     if (!dto.caseIds?.length) throw new BadRequestException('请选择案例');
     const site = await this.getSite(dto.siteId);
     this.assertCanAssignSite(user, site.id);
     const list = await this.cases.find({ where: { id: In(dto.caseIds) } });
     if (!list.length) throw new NotFoundException('未找到案例');
+    let updated = 0;
+    const skipped: Array<{ caseId: string; reason: string }> = [];
     for (const item of list) {
-      item.siteId = site.id;
+      try {
+        this.assertCaseSiteTransferable(item);
+        if (item.siteId === site.id) {
+          updated += 1;
+          continue;
+        }
+        if (item.inspectorId || item.status !== 'pending_assign') {
+          await this.workflow.resetDispatchForSiteTransfer(item);
+          item.inspectorId = null;
+          item.assignBy = null;
+          item.assignTime = null;
+          item.status = 'pending_assign';
+        }
+        item.siteId = site.id;
+        await this.cases.save(item);
+        updated += 1;
+      } catch (err) {
+        skipped.push({
+          caseId: item.gspCaseNo || item.id,
+          reason: err instanceof Error ? err.message : '不可改派站点',
+        });
+      }
     }
-    await this.cases.save(list);
     await this.logs.write(
       'service_case',
       'batch',
       'site_id',
       null,
-      { siteId: site.id, count: list.length },
+      { siteId: site.id, count: updated },
       user.id,
-      `批量分配 ${list.length} 个案例到站点 ${site.name}`,
+      `批量分配/改派 ${updated} 个案例到站点 ${site.name}`,
     );
-    return { updated: list.length, siteId: site.id, siteName: site.name };
+    return { updated, siteId: site.id, siteName: site.name, skipped };
+  }
+
+  private assertCaseSiteTransferable(item: ServiceCase) {
+    if (
+      ['finished', 'settle_review', 'settled', 'month_locked'].includes(item.status)
+    ) {
+      throw new BadRequestException('案例已完工或进入结算，不能改派站点');
+    }
   }
 
   async setTaskType(caseId: string, dto: SetCaseTaskTypeDto, user: CurrentUserContext) {
@@ -109,8 +159,7 @@ export class CaseBridgeService {
   }
 
   /**
-   * 按案例批量派单：导入案例后的唯一作业入口。
-   * 巡检/服务作业均直接派本站工程师，不再创建依赖设备台账的巡检任务。
+   * 按案例批量派单：派工程师并创建带 AI 分析的规范巡检任务。
    */
   async batchCreateTasks(dto: BatchCreateTasksFromCasesDto, user: CurrentUserContext) {
     this.assertAdminOrManager(user);
@@ -121,6 +170,7 @@ export class CaseBridgeService {
     if (!list.length) throw new NotFoundException('未找到案例');
 
     const serviceAssigned: string[] = [];
+    const taskIds: string[] = [];
     const skipped: Array<{ caseId: string; reason: string }> = [];
 
     for (const item of list) {
@@ -145,6 +195,19 @@ export class CaseBridgeService {
       await this.cases.save(item);
       await this.ensureWorkRecord(item, dto.inspectorId);
       serviceAssigned.push(item.id);
+      try {
+        const task = await this.workflow.ensureInspectionTask(
+          item,
+          dto.inspectorId,
+          user.id,
+        );
+        taskIds.push(task.id);
+      } catch (err) {
+        skipped.push({
+          caseId: item.id,
+          reason: err instanceof Error ? `已派单但巡检任务未创建：${err.message}` : '已派单但巡检任务未创建',
+        });
+      }
       await this.logs.write(
         'service_case',
         item.id,
@@ -157,10 +220,10 @@ export class CaseBridgeService {
     }
 
     return {
-      createdTasks: 0,
+      createdTasks: taskIds.length,
       serviceAssigned: serviceAssigned.length,
       skipped,
-      taskIds: [] as string[],
+      taskIds,
     };
   }
 

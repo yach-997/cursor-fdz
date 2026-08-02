@@ -6,7 +6,11 @@ import './success.css';
 export default function SuccessPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const state = (location.state || {}) as { recordId?: string; taskName?: string };
+  const state = (location.state || {}) as {
+    recordId?: string;
+    taskName?: string;
+    serviceCaseId?: string | null;
+  };
 
   return (
     <div className="success-page">
@@ -17,11 +21,22 @@ export default function SuccessPage() {
       <p>
         {state.taskName ? `「${state.taskName}」已提交。` : ''}
         AI 正在后台分析，你可继续其他巡检，稍后再查看分析报告。
+        {state.serviceCaseId ? '费用案例还需补齐里程截图后确认完工。' : ''}
       </p>
       <div className="success-page__actions">
-        {state.recordId && (
+        {state.serviceCaseId && (
           <Button
             type="primary"
+            round
+            block
+            onClick={() => navigate(`/m/finance-cases/${state.serviceCaseId}`, { replace: true })}
+          >
+            返回案例填写里程
+          </Button>
+        )}
+        {state.recordId && (
+          <Button
+            type={state.serviceCaseId ? 'default' : 'primary'}
             round
             block
             onClick={() => navigate(`/m/report/${state.recordId}`)}

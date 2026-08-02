@@ -36,6 +36,10 @@ export interface MobileFinanceCase {
     order: number;
   }>;
   checklist?: CaseChecklistItem[];
+  /** 关联的 AI 巡检任务 */
+  inspectionTaskId?: string | null;
+  inspectionTaskStatus?: string | null;
+  inspectionDone?: boolean;
   assignTime?: string;
   finishTime?: string;
   workRecord?: CaseWorkRecord | null;

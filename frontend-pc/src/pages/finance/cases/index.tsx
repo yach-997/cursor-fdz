@@ -64,17 +64,13 @@ function hasTaskType(c: Pick<FinanceCase, 'taskTypeName' | 'taskType' | 'taskTem
   return !!(c.taskTemplateId || c.taskType);
 }
 
-/** 管理员视角：是否已分配站点；网格长视角：派单进度 */
-function roleStatus(c: FinanceCase, isAdmin: boolean) {
-  if (isAdmin) {
-    return c.siteId
-      ? { text: '已分配站点', color: 'blue' as const }
-      : { text: '未分配站点', color: 'default' as const };
-  }
-  return {
-    text: dispatchStatusLabel[c.status] || c.status,
-    color: (c.status === 'pending_assign' ? 'warning' : 'green') as 'warning' | 'green',
-  };
+/** 派单/作业进度（与「归属站点」列区分开） */
+function dispatchStatus(c: FinanceCase) {
+  const text = dispatchStatusLabel[c.status] || c.status;
+  if (c.status === 'pending_assign') return { text, color: 'warning' as const };
+  if (c.status === 'working') return { text, color: 'processing' as const };
+  if (c.status === 'assigned') return { text, color: 'blue' as const };
+  return { text, color: 'green' as const };
 }
 
 export default function FinanceCasesPage() {
@@ -189,11 +185,11 @@ export default function FinanceCasesPage() {
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message={admin ? '管理员：主责分配站点（可协助设类型/派单）' : '网格长：主责设类型与派单'}
+        message={admin ? '管理员：分配/改派站点；可协助设类型与派单' : '网格长：设类型、派单与改派工程师'}
         description={
           admin
-            ? '状态按「是否分配站点」查看。导入案例后先分配站点；设类型与派单可由网格长完成，你也可协助。'
-            : '状态按「是否派单」查看。管理员分配站点后，请设置任务类型并派单；工程师将按该类型检查条目巡检。'
+            ? '分配错站点可改派到其他网格长站点（将清空原工程师派单）。派错工程师可改派。巡检报告已提交后不可改派。'
+            : '管理员分配站点后，请设类型并派单；派错工程师可改派给本站其他工程师。巡检报告已提交后不可改派。'
         }
       />
       <div className="finance-toolbar">
@@ -280,7 +276,7 @@ export default function FinanceCasesPage() {
                 setSiteModal({ mode: 'batch' });
               }}
             >
-              批量分配站点
+              批量分配/改派站点
             </Button>
           </>
         )}
@@ -327,8 +323,28 @@ export default function FinanceCasesPage() {
           {
             title: '归属站点',
             dataIndex: 'siteName',
-            width: 140,
-            render: (v, r) => v || (r.siteId ? r.siteId.slice(0, 8) : <Tag>未分配</Tag>),
+            width: 160,
+            render: (v, r) =>
+              v ? (
+                <span>
+                  {v}
+                  {r.siteManagerName ? (
+                    <span style={{ color: '#8c8c8c', display: 'block', fontSize: 12 }}>
+                      网格长：{r.siteManagerName}
+                    </span>
+                  ) : null}
+                </span>
+              ) : r.siteId ? (
+                r.siteId.slice(0, 8)
+              ) : (
+                <Tag>未分配</Tag>
+              ),
+          },
+          {
+            title: '工程师',
+            dataIndex: 'inspectorName',
+            width: 100,
+            render: (v) => v || <span style={{ color: '#bfbfbf' }}>-</span>,
           },
           {
             title: '任务类型',
@@ -347,11 +363,11 @@ export default function FinanceCasesPage() {
             render: (v) => (v === 'yunnan' ? '云南' : '华南'),
           },
           {
-            title: admin ? '站点状态' : '派单状态',
+            title: '派单状态',
             dataIndex: 'status',
             width: 120,
             render: (_, r) => {
-              const s = roleStatus(r, admin);
+              const s = dispatchStatus(r);
               return <Tag color={s.color}>{s.text}</Tag>;
             },
           },
@@ -367,7 +383,8 @@ export default function FinanceCasesPage() {
             fixed: 'right',
             render: (_, r) => (
               <Space wrap size={0}>
-                {admin && (
+                {admin &&
+                  !['finished', 'settle_review', 'settled', 'month_locked'].includes(r.status) && (
                   <Button
                     type="link"
                     style={!r.siteId ? { fontWeight: 600 } : undefined}
@@ -376,7 +393,7 @@ export default function FinanceCasesPage() {
                       setSiteModal({ mode: 'single', case: r });
                     }}
                   >
-                    分配站点
+                    {r.siteId ? '改派站点' : '分配站点'}
                   </Button>
                 )}
                 <Button
@@ -390,22 +407,24 @@ export default function FinanceCasesPage() {
                 >
                   设类型
                 </Button>
-                {r.status === 'pending_assign' && (
+                {['pending_assign', 'assigned', 'working'].includes(r.status) && (
                   <Button
                     type="link"
                     style={
-                      isManager && r.siteId && hasTaskType(r) ? { fontWeight: 600 } : undefined
+                      isManager && r.siteId && hasTaskType(r) && r.status === 'pending_assign'
+                        ? { fontWeight: 600 }
+                        : undefined
                     }
                     icon={<UserAddOutlined />}
                     disabled={!r.siteId || !hasTaskType(r)}
                     onClick={() => {
                       setAssigning(r);
-                      setInspectorId(undefined);
+                      setInspectorId(r.inspectorId || undefined);
                       setAssignReason('');
                       void fetchFinanceInspectors(r.id).then(setInspectors);
                     }}
                   >
-                    派单
+                    {r.status === 'pending_assign' ? '派单' : '改派工程师'}
                   </Button>
                 )}
                 <Button
@@ -434,7 +453,11 @@ export default function FinanceCasesPage() {
       )}
       <Modal
         open={!!siteModal}
-        title={siteModal?.mode === 'batch' ? '批量分配到站点' : `分配站点 · ${siteModal?.case?.gspCaseNo || ''}`}
+        title={
+          siteModal?.mode === 'batch'
+            ? '批量分配/改派到站点'
+            : `${siteModal?.case?.siteId ? '改派站点' : '分配站点'} · ${siteModal?.case?.gspCaseNo || ''}`
+        }
         okText="确认"
         cancelText="取消"
         okButtonProps={{ disabled: !siteId }}
@@ -445,23 +468,57 @@ export default function FinanceCasesPage() {
             const ids = selectedRowKeys.map(String);
             const result = await batchAssignFinanceCasesToSites(ids, siteId);
             message.success(`已将 ${result.updated} 个案例分配到「${result.siteName}」`);
+            if (result.skipped?.length) {
+              Modal.info({
+                title: '部分案例未改派',
+                width: 520,
+                content: (
+                  <ul style={{ paddingLeft: 18, margin: 0 }}>
+                    {result.skipped.slice(0, 20).map((item) => (
+                      <li key={item.caseId}>
+                        {item.caseId}: {item.reason}
+                      </li>
+                    ))}
+                  </ul>
+                ),
+              });
+            }
             setSelectedRowKeys([]);
           } else if (siteModal.case) {
+            const wasAssigned = !!siteModal.case.siteId;
+            const hadDispatch = siteModal.case.status !== 'pending_assign' || !!siteModal.case.inspectorId;
             await setFinanceCaseSite(siteModal.case.id, siteId);
-            message.success('站点已更新');
+            message.success(
+              wasAssigned
+                ? hadDispatch
+                  ? '已改派站点，原工程师派单已清空，请新站点重新派单'
+                  : '已改派站点'
+                : '站点已分配',
+            );
           }
           setSiteModal(undefined);
           await load();
         }}
       >
+        {!!siteModal?.case?.siteId && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="改派到其他站点后，原工程师派单与未提交巡检将清空，需由新站点网格长重新派单。"
+          />
+        )}
         <Select
           style={{ width: '100%' }}
           showSearch
           optionFilterProp="label"
           value={siteId}
-          placeholder="选择归属站点"
+          placeholder="选择归属站点（对应网格长）"
           onChange={setSiteId}
-          options={sites.map((s) => ({ value: s.id, label: `${s.name}（${s.code}）` }))}
+          options={sites.map((s) => ({
+            value: s.id,
+            label: `${s.name}（网格长：${s.manager?.realName || '未任命'}）`,
+          }))}
         />
       </Modal>
       <Modal
@@ -559,20 +616,34 @@ export default function FinanceCasesPage() {
       </Modal>
       <Modal
         open={!!assigning}
-        title={`派本站工程师 · ${assigning?.gspCaseNo || ''}`}
-        okText="确认派单"
+        title={`${assigning && assigning.status !== 'pending_assign' ? '改派工程师' : '派本站工程师'} · ${assigning?.gspCaseNo || ''}`}
+        okText={assigning && assigning.status !== 'pending_assign' ? '确认改派' : '确认派单'}
         cancelText="取消"
         okButtonProps={{ disabled: !inspectorId }}
         onCancel={() => setAssigning(undefined)}
         onOk={async () => {
           if (!assigning || !inspectorId) return;
+          const reassign = assigning.status !== 'pending_assign';
           await assignFinanceCase(assigning.id, inspectorId, assignReason || undefined);
-          message.success('派单成功，工程师可在手机端接单作业');
+          message.success(
+            reassign
+              ? '已改派工程师，原工程师手机端将不再看到该案例'
+              : '派单成功，工程师可在手机端接单作业',
+          );
           setAssigning(undefined);
           await load();
         }}
       >
-        <p>仅显示该站点已入职工程师；同一工程师可同时负责多个案例。</p>
+        {assigning && assigning.status !== 'pending_assign' ? (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="可将案例从当前工程师转移到本站其他工程师；未提交的巡检进度会随任务一并转移。"
+          />
+        ) : (
+          <p>仅显示该站点已入职工程师；同一工程师可同时负责多个案例。</p>
+        )}
         <Select
           style={{ width: '100%' }}
           value={inspectorId}
@@ -590,7 +661,11 @@ export default function FinanceCasesPage() {
           rows={2}
           value={assignReason}
           onChange={(event) => setAssignReason(event.target.value)}
-          placeholder="派单备注（选填）"
+          placeholder={
+            assigning && assigning.status !== 'pending_assign'
+              ? '改派原因（选填）'
+              : '派单备注（选填）'
+          }
         />
       </Modal>
       <Drawer
@@ -625,7 +700,14 @@ export default function FinanceCasesPage() {
                 {
                   key: 'site',
                   label: '归属站点',
-                  children: detail.siteName || detail.siteId || '-',
+                  children: detail.siteName
+                    ? `${detail.siteName}${detail.siteManagerName ? `（网格长：${detail.siteManagerName}）` : ''}`
+                    : detail.siteId || '-',
+                },
+                {
+                  key: 'inspector',
+                  label: '工程师',
+                  children: detail.inspectorName || detail.inspectorId || '-',
                 },
                 {
                   key: 'taskType',
@@ -634,13 +716,8 @@ export default function FinanceCasesPage() {
                 },
                 {
                   key: 'status',
-                  label: admin ? '站点状态' : '派单状态',
-                  children: roleStatus(detail as FinanceCase, admin).text,
-                },
-                {
-                  key: 'pipeline',
-                  label: '作业进度',
-                  children: dispatchStatusLabel[detail.status] || detail.status,
+                  label: '派单状态',
+                  children: dispatchStatus(detail as FinanceCase).text,
                 },
               ]}
             />

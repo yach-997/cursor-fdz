@@ -325,9 +325,13 @@ export default function InspectionPage() {
         }
       }
       Toast.info('已保存，可在任务列表继续');
-      navigate('/m/tasks', { replace: true });
+      if (task?.serviceCaseId) {
+        navigate(`/m/finance-cases/${task.serviceCaseId}`, { replace: true });
+      } else {
+        navigate('/m/tasks', { replace: true });
+      }
     },
-    [navigate, record],
+    [navigate, record, task?.serviceCaseId],
   );
 
   const onClickBack = () => {
@@ -822,7 +826,11 @@ export default function InspectionPage() {
       localStorage.removeItem(`draft:${saved.id}`);
       localStorage.removeItem(`optmod:${saved.id}`);
       navigate('/m/success', {
-        state: { recordId: submitted.id, taskName: task?.taskName },
+        state: {
+          recordId: submitted.id,
+          taskName: task?.taskName,
+          serviceCaseId: task?.serviceCaseId || null,
+        },
       });
     } catch {
       /* cancel 或拦截器已提示 */

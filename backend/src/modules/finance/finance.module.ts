@@ -17,11 +17,13 @@ import {
   Site,
   Device,
   InspectionTask,
+  InspectionRecord,
   SiteMember,
   InspectionTemplate,
 } from '../../entities';
 import { UploadModule } from '../upload/upload.module';
 import { TemplateModule } from '../template/template.module';
+import { TaskModule } from '../task/task.module';
 import { FinanceImportController } from './controllers/import.controller';
 import { FinanceCaseController } from './controllers/case.controller';
 import { FinancePoController } from './controllers/po-order.controller';
@@ -46,6 +48,7 @@ import { FinanceSettlementService } from './services/finance-settlement.service'
   imports: [
     UploadModule,
     TemplateModule,
+    TaskModule,
     TypeOrmModule.forFeature([
       User,
       ServiceCase,
@@ -63,6 +66,7 @@ import { FinanceSettlementService } from './services/finance-settlement.service'
       Site,
       Device,
       InspectionTask,
+      InspectionRecord,
       SiteMember,
       InspectionTemplate,
     ]),
