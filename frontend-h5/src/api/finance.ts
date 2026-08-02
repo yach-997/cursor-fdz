@@ -13,6 +13,8 @@ export interface MobileFinanceCase {
   status: string;
   siteId?: string | null;
   taskType?: 'inspection' | 'service' | string | null;
+  taskTypeName?: string | null;
+  taskTemplateId?: string | null;
   assignTime?: string;
   finishTime?: string;
   workRecord?: CaseWorkRecord | null;

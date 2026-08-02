@@ -93,8 +93,8 @@ export class FinanceWorkflowService {
     if (!serviceCase.siteId) {
       throw new BadRequestException('请先将案例分配到站点，再派给本站工程师');
     }
-    if (!serviceCase.taskType) {
-      throw new BadRequestException('请先设置案例任务类型');
+    if (!serviceCase.taskTemplateId && !serviceCase.taskType) {
+      throw new BadRequestException('请先设置案例任务类型（任务类型设置）');
     }
     const inspector = await this.users.findOne({ where: { id: inspectorId } });
     if (!inspector || inspector.status !== CommonStatus.ACTIVE || !userHasRole(inspector, UserRole.INSPECTOR)) {
@@ -161,7 +161,28 @@ export class FinanceWorkflowService {
       ? await this.work.find({ where: { serviceCaseId: In(list.map((item) => item.id)) } })
       : [];
     const workMap = new Map(records.map((item) => [item.serviceCaseId, item]));
-    return list.map((item) => ({ ...item, workRecord: workMap.get(item.id) || null }));
+    const templateIds = [...new Set(list.map((item) => item.taskTemplateId).filter(Boolean))];
+    const nameMap = new Map<string, string>();
+    if (templateIds.length) {
+      const rows = await this.cases.manager.query(
+        `SELECT id, name FROM inspection_templates WHERE id = ANY($1::uuid[])`,
+        [templateIds],
+      );
+      for (const row of rows) nameMap.set(row.id, row.name);
+    }
+    const legacyLabel: Record<string, string> = {
+      inspection: '巡检',
+      service: '服务作业',
+    };
+    return list.map((item) => ({
+      ...item,
+      taskTypeName:
+        (item.taskTemplateId && nameMap.get(item.taskTemplateId)) ||
+        legacyLabel[String(item.taskType || '')] ||
+        item.taskType ||
+        null,
+      workRecord: workMap.get(item.id) || null,
+    }));
   }
 
   async myCase(caseId: string, user: CurrentUserContext) {

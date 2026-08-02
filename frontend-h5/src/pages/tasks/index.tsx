@@ -154,7 +154,7 @@ export default function TasksPage() {
         title: c.projectName || c.gspCaseNo,
         statusLabel: label,
         statusClass: statusClass(c.status, label),
-        meta: `${c.gspCaseNo} · ${c.taskType === 'inspection' ? '巡检案例' : '服务作业'}${c.province ? ` · ${c.province}` : ''}`,
+        meta: `${c.gspCaseNo} · ${c.taskTypeName || (c.taskType === 'inspection' ? '巡检' : c.taskType === 'service' ? '服务作业' : c.taskType || '未设类型')}${c.province ? ` · ${c.province}` : ''}`,
         financeCase: c,
       });
     }

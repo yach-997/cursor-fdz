@@ -32,7 +32,8 @@ export class FinanceCaseQueryDto extends PaginationDto {
   @IsOptional() @IsPostgresUuid() siteId?: string;
   /** unassigned=未挂站点；assigned_site=已挂站点 */
   @IsOptional() @IsIn(['unassigned', 'assigned_site']) siteBind?: 'unassigned' | 'assigned_site';
-  @IsOptional() @IsIn(['inspection', 'service']) taskType?: string;
+  /** 按任务类型模板 id 筛选；兼容旧值 inspection/service */
+  @IsOptional() @IsString() @MaxLength(64) taskType?: string;
 }
 
 export class SetCaseSiteDto {
@@ -47,7 +48,9 @@ export class BatchAssignCasesToSitesDto {
 }
 
 export class SetCaseTaskTypeDto {
-  @IsIn(['inspection', 'service']) taskType: 'inspection' | 'service';
+  /** 任务类型设置中的模板 id */
+  @IsPostgresUuid({ message: '请选择任务类型' })
+  templateId: string;
 }
 
 export class BatchCreateTasksFromCasesDto {

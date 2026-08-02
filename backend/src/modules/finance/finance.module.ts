@@ -18,6 +18,7 @@ import {
   Device,
   InspectionTask,
   SiteMember,
+  InspectionTemplate,
 } from '../../entities';
 import { UploadModule } from '../upload/upload.module';
 import { TemplateModule } from '../template/template.module';
@@ -63,6 +64,7 @@ import { FinanceSettlementService } from './services/finance-settlement.service'
       Device,
       InspectionTask,
       SiteMember,
+      InspectionTemplate,
     ]),
   ],
   controllers: [

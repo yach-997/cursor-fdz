@@ -180,7 +180,16 @@ export default function StartWizardPage() {
                   title={c.projectName || c.gspCaseNo}
                   label={`${c.gspCaseNo} · ${STATUS_TEXT[c.status] || c.status}`}
                   isLink
-                  value={<Tag type="primary">{c.taskType === 'inspection' ? '巡检' : '服务'}</Tag>}
+                  value={
+                    <Tag type="primary">
+                      {c.taskTypeName ||
+                        (c.taskType === 'inspection'
+                          ? '巡检'
+                          : c.taskType === 'service'
+                            ? '服务'
+                            : c.taskType || '未设类型')}
+                    </Tag>
+                  }
                   onClick={() => navigate(`/m/finance-cases/${c.id}`)}
                 />
               ))}

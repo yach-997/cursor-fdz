@@ -37,7 +37,7 @@ const DEVICE_TYPE_OPTIONS = (
   Object.entries(DEVICE_TYPE_LABEL) as Array<[DeviceType, string]>
 ).map(([value, label]) => ({ value, label }));
 
-/** 模板配置：统一列表 + 名称搜索，按需新建各类模板 */
+/** 任务类型设置：可新建组串/集中/储能等类型，并维护检查条目 */
 export default function TemplatesPage() {
   const currentUser = useAuthStore((s) => s.user);
   const isAdmin = currentUser?.role === 'super_admin';
@@ -129,19 +129,19 @@ export default function TemplatesPage() {
     };
     if (editing) {
       await updateTemplate(editing.id, payload);
-      message.success(`模板已更新（版本将 +1）`);
+      message.success(`任务类型已更新（版本将 +1）`);
     } else {
       await createTemplate(payload);
-      message.success('模板已创建');
+      message.success('任务类型已创建');
     }
     setModalOpen(false);
     load();
   };
 
   const columns: ColumnsType<TemplateItem> = [
-    { title: '模板名称', dataIndex: 'name' },
+    { title: '任务类型名称', dataIndex: 'name' },
     {
-      title: '设备类型',
+      title: '分类标签',
       dataIndex: 'deviceType',
       width: 140,
       render: (v: DeviceType) => DEVICE_TYPE_LABEL[v] || v,
@@ -177,7 +177,7 @@ export default function TemplatesPage() {
           >
             克隆到站点
           </Button>
-          <Popconfirm title="确认删除模板？" onConfirm={() => deleteTemplate(record.id).then(load)}>
+          <Popconfirm title="确认删除该任务类型？" onConfirm={() => deleteTemplate(record.id).then(load)}>
             <Button type="link" danger icon={<DeleteOutlined />}>
               删除
             </Button>
@@ -438,14 +438,14 @@ export default function TemplatesPage() {
       <Space wrap style={{ marginBottom: 16 }}>
         <Input.Search
           allowClear
-          placeholder="搜索模板名称"
+          placeholder="搜索任务类型名称"
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           onSearch={(v) => setSearchKeyword(v.trim())}
           style={{ width: 260 }}
         />
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          新建模板
+          新建任务类型
         </Button>
       </Space>
       <Table
@@ -458,7 +458,7 @@ export default function TemplatesPage() {
       />
 
       <Modal
-        title={editing ? `编辑模板（当前 v${editing.version}）` : '新建模板'}
+        title={editing ? `编辑任务类型（当前 v${editing.version}）` : '新建任务类型'}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         onOk={submit}
@@ -466,19 +466,20 @@ export default function TemplatesPage() {
         destroyOnClose
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="name" label="模板名称" rules={[{ required: true }]}>
-            <Input placeholder="例如：组串式逆变器巡检、分布式巡检" />
+          <Form.Item name="name" label="任务类型名称" rules={[{ required: true }]}>
+            <Input placeholder="例如：组串式逆变器、集中式逆变器、储能系统、分布式" />
           </Form.Item>
           <Form.Item
             name="deviceType"
-            label="设备类型"
-            rules={[{ required: true, message: '请选择设备类型' }]}
+            label="分类标签"
+            rules={[{ required: true, message: '请选择分类标签' }]}
+            extra="用于归类；真正给案例选用的是上方「任务类型名称」"
           >
-            <Select options={DEVICE_TYPE_OPTIONS} placeholder="选择设备类型" />
+            <Select options={DEVICE_TYPE_OPTIONS} placeholder="选择分类标签" />
           </Form.Item>
           {isAdmin && (
-            <Form.Item name="isGlobal" label="全局模板" valuePropName="checked">
-              <Checkbox>作为全局模板（所有站点可用）</Checkbox>
+            <Form.Item name="isGlobal" label="全局类型" valuePropName="checked">
+              <Checkbox>作为全局任务类型（所有站点可用）</Checkbox>
             </Form.Item>
           )}
           <Form.Item noStyle shouldUpdate={(p, c) => p.isGlobal !== c.isGlobal}>
@@ -492,7 +493,7 @@ export default function TemplatesPage() {
               ) : null
             }
           </Form.Item>
-          <Form.Item label="检查条目（可上下移动排序）" required>
+          <Form.Item label="检查条目（工程师按此作业，可上下移动排序）" required>
             {entryEditor}
           </Form.Item>
         </Form>

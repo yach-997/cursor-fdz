@@ -68,7 +68,7 @@ export default function HomePage() {
         key: `case-${c.id}`,
         kind: 'service',
         title: c.projectName || c.gspCaseNo,
-        meta: `${c.gspCaseNo} · ${c.taskType === 'inspection' ? '巡检案例' : '服务作业'}`,
+        meta: `${c.gspCaseNo} · ${c.taskTypeName || (c.taskType === 'inspection' ? '巡检' : c.taskType === 'service' ? '服务作业' : c.taskType || '未设类型')}`,
         status: c.status,
         statusLabel: STATUS_TEXT[c.status] || c.status,
         href: `/m/finance-cases/${c.id}`,

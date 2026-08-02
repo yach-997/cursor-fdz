@@ -34,6 +34,7 @@ import {
   setFinanceCaseTaskType,
 } from '../../../api/finance';
 import { fetchSiteMembers, fetchSites } from '../../../api/site';
+import { fetchTemplates, type TemplateItem } from '../../../api/template';
 import type { FinanceCase, FinanceInspectorOption } from '../../../types/finance';
 import type { SiteItem } from '../../../types';
 import { useAuthStore } from '../../../stores/auth';
@@ -50,10 +51,18 @@ const statusLabel: Record<string, string> = {
   month_locked: '已月结',
 };
 
-const taskTypeLabel: Record<string, string> = {
+const legacyTaskTypeLabel: Record<string, string> = {
   inspection: '巡检',
   service: '服务作业',
 };
+
+function displayTaskType(c: Pick<FinanceCase, 'taskTypeName' | 'taskType' | 'taskTemplateId'>) {
+  return c.taskTypeName || legacyTaskTypeLabel[String(c.taskType || '')] || c.taskType || null;
+}
+
+function hasTaskType(c: Pick<FinanceCase, 'taskTypeName' | 'taskType' | 'taskTemplateId'>) {
+  return !!(c.taskTemplateId || c.taskType);
+}
 
 export default function FinanceCasesPage() {
   const user = useAuthStore((s) => s.user);
@@ -66,12 +75,13 @@ export default function FinanceCasesPage() {
   const [status, setStatus] = useState<string>();
   const [siteBind, setSiteBind] = useState<'unassigned' | 'assigned_site'>();
   const [filterSiteId, setFilterSiteId] = useState<string>();
-  const [filterTaskType, setFilterTaskType] = useState<'inspection' | 'service'>();
+  const [filterTaskType, setFilterTaskType] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<Record<string, any>>();
   const [sites, setSites] = useState<SiteItem[]>([]);
+  const [taskTypes, setTaskTypes] = useState<TemplateItem[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [assigning, setAssigning] = useState<FinanceCase>();
   const [inspectors, setInspectors] = useState<FinanceInspectorOption[]>([]);
@@ -80,7 +90,7 @@ export default function FinanceCasesPage() {
   const [siteModal, setSiteModal] = useState<{ mode: 'single' | 'batch'; case?: FinanceCase }>();
   const [siteId, setSiteId] = useState<string>();
   const [typeModal, setTypeModal] = useState<FinanceCase>();
-  const [taskType, setTaskType] = useState<'inspection' | 'service'>();
+  const [taskTemplateId, setTaskTemplateId] = useState<string>();
   const [batchTaskOpen, setBatchTaskOpen] = useState(false);
   const [siteMembers, setSiteMembers] = useState<
     Array<{ userId: string; user: { realName: string; phone: string } | null }>
@@ -117,6 +127,7 @@ export default function FinanceCasesPage() {
 
   useEffect(() => {
     void fetchSites({ limit: 100 }).then((r) => setSites(r.list));
+    void fetchTemplates().then(setTaskTypes).catch(() => setTaskTypes([]));
   }, []);
 
   const onClear = async () => {
@@ -147,8 +158,8 @@ export default function FinanceCasesPage() {
       message.warning('批量派单要求所选案例已归属同一站点');
       return;
     }
-    if (selectedCases.some((c) => !c.taskType)) {
-      message.warning('请先为所选案例设置任务类型');
+    if (selectedCases.some((c) => !hasTaskType(c))) {
+      message.warning('请先为所选案例设置任务类型（在「任务类型设置」中维护）');
       return;
     }
     const sid = siteIds[0] as string;
@@ -165,7 +176,7 @@ export default function FinanceCasesPage() {
         showIcon
         style={{ marginBottom: 12 }}
         message="案例主流程"
-        description="① 导入案例模板建案例 → ② 分配站点/设类型 → ③ 派工程师现场作业 → ④ 完工后导入钉钉 PO 表补价格 → ⑤ 工程师可查看收入。全程按案例派单，不使用设备台账。"
+        description="① 导入案例建案例 → ② 分配站点 → ③ 在「任务类型设置」维护类型后「设类型」→ ④ 派工程师现场作业 → ⑤ 完工后导入钉钉 PO 表补价格 → ⑥ 工程师可查看收入。"
       />
       <div className="finance-toolbar">
         <Input.Search
@@ -213,16 +224,15 @@ export default function FinanceCasesPage() {
         />
         <Select
           allowClear
+          showSearch
+          optionFilterProp="label"
           placeholder="任务类型"
           value={filterTaskType}
           onChange={(v) => {
             setPage(1);
             setFilterTaskType(v);
           }}
-          options={[
-            { value: 'inspection', label: '巡检' },
-            { value: 'service', label: '服务作业' },
-          ]}
+          options={taskTypes.map((t) => ({ value: t.id, label: t.name }))}
         />
         <Button
           icon={<DownloadOutlined />}
@@ -286,9 +296,13 @@ export default function FinanceCasesPage() {
           },
           {
             title: '任务类型',
-            dataIndex: 'taskType',
-            width: 100,
-            render: (v) => (v ? <Tag color="blue">{taskTypeLabel[v] || v}</Tag> : <Tag>未设置</Tag>),
+            dataIndex: 'taskTypeName',
+            width: 140,
+            ellipsis: true,
+            render: (_, r) => {
+              const label = displayTaskType(r);
+              return label ? <Tag color="blue">{label}</Tag> : <Tag>未设置</Tag>;
+            },
           },
           {
             title: '区域',
@@ -327,7 +341,7 @@ export default function FinanceCasesPage() {
                   type="link"
                   disabled={!r.siteId}
                   onClick={() => {
-                    setTaskType(r.taskType || undefined);
+                    setTaskTemplateId(r.taskTemplateId || undefined);
                     setTypeModal(r);
                   }}
                 >
@@ -337,7 +351,7 @@ export default function FinanceCasesPage() {
                   <Button
                     type="link"
                     icon={<UserAddOutlined />}
-                    disabled={!r.siteId || !r.taskType}
+                    disabled={!r.siteId || !hasTaskType(r)}
                     onClick={() => {
                       setAssigning(r);
                       setInspectorId(undefined);
@@ -407,26 +421,30 @@ export default function FinanceCasesPage() {
         title={`设置任务类型 · ${typeModal?.gspCaseNo || ''}`}
         okText="确认"
         cancelText="取消"
-        okButtonProps={{ disabled: !taskType }}
+        okButtonProps={{ disabled: !taskTemplateId }}
         onCancel={() => setTypeModal(undefined)}
         onOk={async () => {
-          if (!typeModal || !taskType) return;
-          await setFinanceCaseTaskType(typeModal.id, taskType);
+          if (!typeModal || !taskTemplateId) return;
+          await setFinanceCaseTaskType(typeModal.id, taskTemplateId);
           message.success('任务类型已设置');
           setTypeModal(undefined);
           await load();
         }}
       >
-        <p>任务类型仅作业务分类标记。派单后工程师均在「费用案例」中接单、登记工作量并完工，不依赖设备台账。</p>
+        <p style={{ marginBottom: 12 }}>
+          从「任务类型设置」中选择类型（如组串、集中、储能等，可自行新建）。工程师按该类型对应的检查条目开展作业。
+        </p>
         <Select
           style={{ width: '100%' }}
-          value={taskType}
-          placeholder="选择任务类型"
-          onChange={setTaskType}
-          options={[
-            { value: 'inspection', label: '巡检（案例派单）' },
-            { value: 'service', label: '服务作业（案例派单）' },
-          ]}
+          showSearch
+          optionFilterProp="label"
+          value={taskTemplateId}
+          placeholder={taskTypes.length ? '选择任务类型' : '请先在「任务类型设置」新建类型'}
+          onChange={setTaskTemplateId}
+          options={taskTypes.map((t) => ({
+            value: t.id,
+            label: `${t.name}（${t.entries?.length || 0} 项）`,
+          }))}
         />
       </Modal>
       <Modal
@@ -563,7 +581,7 @@ export default function FinanceCasesPage() {
                 {
                   key: 'taskType',
                   label: '任务类型',
-                  children: detail.taskType ? taskTypeLabel[detail.taskType] || detail.taskType : '-',
+                  children: displayTaskType(detail) || '-',
                 },
                 {
                   key: 'status',

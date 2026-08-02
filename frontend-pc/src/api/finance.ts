@@ -115,12 +115,9 @@ export async function batchAssignFinanceCasesToSites(caseIds: string[], siteId: 
     >('/cases/assign-sites', { caseIds, siteId }),
   );
 }
-export async function setFinanceCaseTaskType(
-  caseId: string,
-  taskType: 'inspection' | 'service',
-) {
+export async function setFinanceCaseTaskType(caseId: string, templateId: string) {
   return unwrap(
-    await request.put<ApiResponse<FinanceCase>>(`/cases/${caseId}/task-type`, { taskType }),
+    await request.put<ApiResponse<FinanceCase>>(`/cases/${caseId}/task-type`, { templateId }),
   );
 }
 export async function batchCreateTasksFromCases(payload: {

@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Repository } from 'typeorm';
 import {
   CaseWorkRecord,
+  InspectionTemplate,
   ServiceCase,
   Site,
   SiteMember,
@@ -35,6 +36,8 @@ export class CaseBridgeService {
     @InjectRepository(Site) private readonly sites: Repository<Site>,
     @InjectRepository(SiteMember) private readonly members: Repository<SiteMember>,
     @InjectRepository(CaseWorkRecord) private readonly work: Repository<CaseWorkRecord>,
+    @InjectRepository(InspectionTemplate)
+    private readonly templates: Repository<InspectionTemplate>,
     private readonly scope: FinanceScopeService,
     private readonly logs: ChangeLogService,
   ) {}
@@ -87,17 +90,20 @@ export class CaseBridgeService {
     const item = await this.getCase(caseId, user);
     if (!item.siteId) throw new BadRequestException('请先将案例分配到站点');
     this.assertSiteManage(user, item.siteId);
-    const prev = item.taskType;
-    item.taskType = dto.taskType;
+    const template = await this.templates.findOne({ where: { id: dto.templateId } });
+    if (!template) throw new NotFoundException('任务类型不存在，请先在「任务类型设置」中创建');
+    const prev = { taskType: item.taskType, taskTemplateId: item.taskTemplateId };
+    item.taskTemplateId = template.id;
+    item.taskType = String(template.name || '').slice(0, 128) || template.id;
     await this.cases.save(item);
     await this.logs.write(
       'service_case',
       caseId,
       'task_type',
       prev,
-      dto.taskType,
+      { taskType: item.taskType, taskTemplateId: item.taskTemplateId },
       user.id,
-      `设置任务类型 → ${dto.taskType}`,
+      `设置任务类型 → ${item.taskType}`,
     );
     return item;
   }
@@ -123,7 +129,7 @@ export class CaseBridgeService {
         continue;
       }
       this.assertSiteManage(user, item.siteId);
-      if (!item.taskType) {
+      if (!item.taskTemplateId && !item.taskType) {
         skipped.push({ caseId: item.id, reason: '未设置任务类型' });
         continue;
       }

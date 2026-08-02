@@ -73,6 +73,7 @@ export class FinanceQueryService {
       .createQueryBuilder('c')
       .leftJoin(CasePerformance, 'p', 'p.service_case_id = c.id')
       .leftJoin('sites', 's', 's.id = c.site_id')
+      .leftJoin('inspection_templates', 'tpl', 'tpl.id = c.task_template_id')
       .select([
         'c.id AS id',
         'c.gsp_case_no AS "gspCaseNo"',
@@ -87,6 +88,8 @@ export class FinanceQueryService {
         'c.site_id AS "siteId"',
         's.name AS "siteName"',
         'c.task_type AS "taskType"',
+        'c.task_template_id AS "taskTemplateId"',
+        'tpl.name AS "taskTypeName"',
         'c.inspector_id AS "inspectorId"',
         'c.finish_time AS "finishTime"',
         'c.updated_at AS "updatedAt"',
@@ -118,7 +121,19 @@ export class FinanceQueryService {
     }
     if (query.region) qb.andWhere('c.region = :filterRegion', { filterRegion: query.region });
     if (query.status) qb.andWhere('c.status = :status', { status: query.status });
-    if (query.taskType) qb.andWhere('c.task_type = :taskType', { taskType: query.taskType });
+    if (query.taskType) {
+      const uuidLike =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          query.taskType,
+        );
+      if (uuidLike) {
+        qb.andWhere('c.task_template_id = :taskTemplateId', { taskTemplateId: query.taskType });
+      } else {
+        qb.andWhere('(c.task_type = :taskType OR tpl.name = :taskType)', {
+          taskType: query.taskType,
+        });
+      }
+    }
     if (query.month)
       qb.andWhere("to_char(COALESCE(c.finish_time,c.created_at),'YYYY-MM') = :month", {
         month: query.month,
@@ -167,9 +182,18 @@ export class FinanceQueryService {
           ])
         )[0]?.name
       : null;
+    const taskTypeName = item.taskTemplateId
+      ? (
+          await this.cases.manager.query(
+            `SELECT name FROM inspection_templates WHERE id = $1 LIMIT 1`,
+            [item.taskTemplateId],
+          )
+        )[0]?.name
+      : null;
     return {
       ...item,
       siteName: siteName || null,
+      taskTypeName: taskTypeName || item.taskType || null,
       orders: orders.map((order) => ({
         ...order,
         items: visibleItems.filter((entry) => entry.poId === order.id),
