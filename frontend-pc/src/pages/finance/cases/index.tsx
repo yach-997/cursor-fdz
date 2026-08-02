@@ -159,7 +159,7 @@ export default function FinanceCasesPage() {
       return;
     }
     if (selectedCases.some((c) => !hasTaskType(c))) {
-      message.warning('请先为所选案例设置任务类型（在「任务类型设置」中维护）');
+      message.warning('请先为所选案例设置任务类型（在「任务类型」中维护）');
       return;
     }
     const sid = siteIds[0] as string;
@@ -176,7 +176,7 @@ export default function FinanceCasesPage() {
         showIcon
         style={{ marginBottom: 12 }}
         message="案例主流程"
-        description="① 导入案例建案例 → ② 分配站点 → ③ 在「任务类型设置」维护类型后「设类型」→ ④ 派工程师现场作业 → ⑤ 完工后导入钉钉 PO 表补价格 → ⑥ 工程师可查看收入。"
+        description="① 导入案例建案例 → ② 分配站点 → ③ 在「任务类型」维护类型后「设类型」→ ④ 派工程师现场作业 → ⑤ 完工后导入钉钉 PO 表补价格 → ⑥ 工程师可查看收入。"
       />
       <div className="finance-toolbar">
         <Input.Search
@@ -432,14 +432,14 @@ export default function FinanceCasesPage() {
         }}
       >
         <p style={{ marginBottom: 12 }}>
-          从「任务类型设置」中选择类型（如组串、集中、储能等，可自行新建）。工程师按该类型对应的检查条目开展作业。
+          从「任务类型」中选择类型（如组串、集中、储能等，可自行新建）。工程师按该类型对应的检查条目开展作业。
         </p>
         <Select
           style={{ width: '100%' }}
           showSearch
           optionFilterProp="label"
           value={taskTemplateId}
-          placeholder={taskTypes.length ? '选择任务类型' : '请先在「任务类型设置」新建类型'}
+          placeholder={taskTypes.length ? '选择任务类型' : '请先在「任务类型」新建类型'}
           onChange={setTaskTemplateId}
           options={taskTypes.map((t) => ({
             value: t.id,
@@ -524,16 +524,17 @@ export default function FinanceCasesPage() {
           await load();
         }}
       >
-        <p>仅显示该站点已入职工程师。</p>
+        <p>仅显示该站点已入职工程师；同一工程师可同时负责多个案例。</p>
         <Select
           style={{ width: '100%' }}
           value={inspectorId}
-          placeholder="选择空闲工程师"
+          placeholder="选择工程师"
           onChange={setInspectorId}
           options={inspectors.map((item) => ({
             value: item.id,
-            disabled: !item.available,
-            label: `${item.realName}（${item.phone}）${item.available ? '' : ' · 作业中'}`,
+            label: `${item.realName}（${item.phone}）${
+              item.activeCaseCount ? ` · 在办 ${item.activeCaseCount} 单` : ''
+            }`,
           }))}
         />
         <Input.TextArea

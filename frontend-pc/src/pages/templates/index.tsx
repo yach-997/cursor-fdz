@@ -37,7 +37,7 @@ const DEVICE_TYPE_OPTIONS = (
   Object.entries(DEVICE_TYPE_LABEL) as Array<[DeviceType, string]>
 ).map(([value, label]) => ({ value, label }));
 
-/** 任务类型设置：可新建组串/集中/储能等类型，并维护检查条目 */
+/** 任务类型：可新建组串/集中/储能等类型，并维护检查条目 */
 export default function TemplatesPage() {
   const currentUser = useAuthStore((s) => s.user);
   const isAdmin = currentUser?.role === 'super_admin';

@@ -51,16 +51,18 @@ export class FinanceWorkflowService {
       where: { status: CommonStatus.ACTIVE },
       order: { realName: 'ASC' },
     });
-    const busyIds = new Set(
-      (
-        await this.cases.find({
-          where: { status: In([...ACTIVE_CASE_STATUSES]) },
-          select: { inspectorId: true },
-        })
-      )
-        .map((item) => item.inspectorId)
-        .filter(Boolean) as string[],
-    );
+    const activeCountByInspector = new Map<string, number>();
+    const activeRows = await this.cases.find({
+      where: { status: In([...ACTIVE_CASE_STATUSES]) },
+      select: { inspectorId: true },
+    });
+    for (const row of activeRows) {
+      if (!row.inspectorId) continue;
+      activeCountByInspector.set(
+        row.inspectorId,
+        (activeCountByInspector.get(row.inspectorId) || 0) + 1,
+      );
+    }
     let siteMemberIds: Set<string> | null = null;
     if (serviceCase.siteId) {
       const members = await this.members.find({
@@ -72,7 +74,7 @@ export class FinanceWorkflowService {
       });
       siteMemberIds = new Set(members.map((m) => m.userId));
     }
-    // 派单只看「本站已入职工程师」，不按人员归属区域过滤（可跨地管人）
+    // 派单只看「本站已入职工程师」；允许一人多案，available 恒为 true
     return inspectors
       .filter((item) => userHasRole(item, UserRole.INSPECTOR))
       .filter((item) => !siteMemberIds || siteMemberIds.has(item.id))
@@ -81,7 +83,8 @@ export class FinanceWorkflowService {
         realName: item.realName,
         phone: item.phone,
         region: item.region,
-        available: !busyIds.has(item.id),
+        available: true,
+        activeCaseCount: activeCountByInspector.get(item.id) || 0,
       }));
   }
 
@@ -94,7 +97,7 @@ export class FinanceWorkflowService {
       throw new BadRequestException('请先将案例分配到站点，再派给本站工程师');
     }
     if (!serviceCase.taskTemplateId && !serviceCase.taskType) {
-      throw new BadRequestException('请先设置案例任务类型（任务类型设置）');
+      throw new BadRequestException('请先设置案例任务类型');
     }
     const inspector = await this.users.findOne({ where: { id: inspectorId } });
     if (!inspector || inspector.status !== CommonStatus.ACTIVE || !userHasRole(inspector, UserRole.INSPECTOR)) {
@@ -111,10 +114,7 @@ export class FinanceWorkflowService {
     if (!member) {
       throw new BadRequestException('只能派给该站点已入职的工程师');
     }
-    const busy = await this.cases.findOne({
-      where: { inspectorId, status: In([...ACTIVE_CASE_STATUSES]) },
-    });
-    if (busy) throw new BadRequestException(`该工程师正在处理案例 ${busy.gspCaseNo}`);
+    // 允许同一工程师同时负责多个案例（并行作业）
 
     const before = { status: serviceCase.status, inspectorId: serviceCase.inspectorId };
     serviceCase.status = 'assigned';

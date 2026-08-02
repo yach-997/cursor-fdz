@@ -29,7 +29,7 @@ export const menuConfig: MenuConfig[] = [
   {
     key: 'templates',
     path: '/templates',
-    label: '任务类型设置',
+    label: '任务类型',
     icon: 'FileTextOutlined',
     roles: ['super_admin', 'site_manager'],
   },

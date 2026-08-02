@@ -163,6 +163,8 @@ export interface FinanceInspectorOption {
   phone: string;
   region: string;
   available: boolean;
+  /** 当前在办案例数（允许多人多案后仅作提示） */
+  activeCaseCount?: number;
 }
 export interface FinanceReviewItem {
   id: string;
