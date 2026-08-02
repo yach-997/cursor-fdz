@@ -4,9 +4,7 @@ import { Dialog, Loading, Toast } from 'react-vant';
 import {
   fetchMyFinanceCase,
   finishFinanceCase,
-  saveFinanceCaseWork,
   startFinanceCase,
-  uploadFinanceWorkPhoto,
   type MobileFinanceCase,
 } from '../../api/finance';
 import './finance.css';
@@ -14,8 +12,8 @@ import './finance.css';
 const TASK_STATUS_LABEL: Record<string, string> = {
   pending: '未开始',
   in_progress: '巡检中',
-  submitted: '已提交待审',
-  approved: '巡检已通过',
+  submitted: '已提交',
+  approved: '已通过',
   rejected: '已驳回·需返工',
 };
 
@@ -24,20 +22,10 @@ export default function FinanceCaseDetailPage() {
   const navigate = useNavigate();
   const [item, setItem] = useState<MobileFinanceCase>();
   const [busy, setBusy] = useState(false);
-  const [mileage, setMileage] = useState('0');
-  const [expenses, setExpenses] = useState('0');
-  const [workload, setWorkload] = useState('');
-  const [note, setNote] = useState('');
-  const [photos, setPhotos] = useState<string[]>([]);
 
   const load = async () => {
     const result = await fetchMyFinanceCase(id);
     setItem(result);
-    setMileage(result.workRecord?.mileage || '0');
-    setExpenses(result.workRecord?.expenses || '0');
-    setWorkload(result.workRecord?.workload?.description || '');
-    setNote(result.workRecord?.workNote || '');
-    setPhotos(result.workRecord?.mileageScreenshotUrls || []);
   };
 
   useEffect(() => {
@@ -75,23 +63,12 @@ export default function FinanceCaseDetailPage() {
     }
   };
 
-  const save = async () => {
-    await saveFinanceCaseWork(id, {
-      workload: {
-        description: workload,
-        templateName: item.taskTypeName || undefined,
-      },
-      mileage: Number(mileage || 0),
-      expenses: Number(expenses || 0),
-      workNote: note,
-      mileageScreenshotUrls: photos,
-    });
-    Toast.success('已保存');
-  };
-
   const canInspect = ['assigned', 'working'].includes(item.status) && !item.inspectionDone;
-  const showSettleForm =
-    item.status === 'working' && (item.inspectionDone || item.inspectionTaskStatus === 'submitted' || item.inspectionTaskStatus === 'approved');
+  const canFinish =
+    item.status === 'working' &&
+    (item.inspectionDone ||
+      item.inspectionTaskStatus === 'submitted' ||
+      item.inspectionTaskStatus === 'approved');
 
   return (
     <div className="mobile-finance-page">
@@ -146,7 +123,7 @@ export default function FinanceCaseDetailPage() {
           </button>
         )}
 
-        {item.status === 'working' && item.inspectionTaskId && item.inspectionDone && (
+        {item.inspectionTaskId && item.inspectionDone && (
           <button
             className="mobile-finance-secondary"
             style={{ width: '100%', marginTop: 12 }}
@@ -157,71 +134,35 @@ export default function FinanceCaseDetailPage() {
         )}
       </section>
 
-      {showSettleForm && (
-        <section className="mobile-finance-card mobile-finance-form">
-          <h3>里程与费用</h3>
-          <p className="mobile-finance-muted">巡检报告已提交，请补齐里程截图后确认完工。</p>
-          <label>工作量说明</label>
-          <textarea
-            rows={3}
-            value={workload}
-            onChange={(e) => setWorkload(e.target.value)}
-            placeholder="补充现场工作说明"
-          />
-          <label>行驶里程（公里）</label>
-          <input type="number" min="0" step="0.1" value={mileage} onChange={(e) => setMileage(e.target.value)} />
-          <label>现场费用（元）</label>
-          <input type="number" min="0" step="0.01" value={expenses} onChange={(e) => setExpenses(e.target.value)} />
-          <label>作业备注</label>
-          <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="可填写现场情况" />
-          <label>里程截图（必传）</label>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={async (event) => {
-              const file = event.target.files?.[0];
-              if (!file) return;
+      {canFinish && (
+        <section className="mobile-finance-card">
+          <h3>巡检已提交</h3>
+          <p className="mobile-finance-muted">现场巡检报告已提交，确认后本单完工进入后续结算。</p>
+          <button
+            className="mobile-finance-primary"
+            style={{ width: '100%', marginTop: 12 }}
+            disabled={busy}
+            onClick={async () => {
+              try {
+                await Dialog.confirm({
+                  title: '确认完工',
+                  message: '确认本单巡检已完成？确认后进入结算流程。',
+                });
+              } catch {
+                return;
+              }
               setBusy(true);
               try {
-                const result = await uploadFinanceWorkPhoto(id, file);
-                setPhotos((old) => [...old, result.url]);
-                Toast.success('截图上传成功');
-              } finally {
-                setBusy(false);
-                event.target.value = '';
-              }
-            }}
-          />
-          {busy && <p className="mobile-finance-muted">正在上传...</p>}
-          <div>
-            {photos.map((url, index) => (
-              <img className="mobile-finance-photo" src={url} key={`${url}-${index}`} alt="里程截图" />
-            ))}
-          </div>
-          <div className="mobile-finance-actions">
-            <button className="mobile-finance-secondary" onClick={() => void save()}>
-              保存记录
-            </button>
-            <button
-              className="mobile-finance-primary"
-              onClick={async () => {
-                await save();
-                try {
-                  await Dialog.confirm({
-                    title: '确认完工',
-                    message: '请确认巡检报告已提交、里程截图已齐全，完工后进入结算流程。',
-                  });
-                } catch {
-                  return;
-                }
                 await finishFinanceCase(id);
                 Toast.success('案例已完工');
                 navigate('/m/finance-cases', { replace: true });
-              }}
-            >
-              确认完工
-            </button>
-          </div>
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            确认完工
+          </button>
         </section>
       )}
 
@@ -236,7 +177,7 @@ export default function FinanceCaseDetailPage() {
 
       {!['assigned', 'working'].includes(item.status) && (
         <section className="mobile-finance-card">
-          <h3>作业已提交</h3>
+          <h3>作业已完工</h3>
           <p className="mobile-finance-muted">可在「我的收入」查看核算与审核状态。</p>
           {item.inspectionTaskId && (
             <button

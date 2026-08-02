@@ -480,7 +480,7 @@ export class FinanceWorkflowService {
         }
       }
     }
-    if (!record.mileageScreenshotUrls?.length) throw new BadRequestException('请上传里程截图后再完工');
+    // 里程/费用报销暂不强制，工程师自行报销；闭环以巡检报告提交为准
     const hasPo = (await this.orders.count({ where: { serviceCaseId: caseId } })) > 0;
     serviceCase.status = hasPo ? 'settle_review' : 'finished';
     serviceCase.finishTime = new Date();
