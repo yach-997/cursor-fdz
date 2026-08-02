@@ -91,7 +91,7 @@ export class DatabaseSeedService implements OnModuleInit {
   private async seedTemplates() {
     const defs: Array<{ name: string; deviceType: DeviceType; entries: EntryDef[] }> = [
       {
-        name: '组串式逆变器巡检',
+        name: '组串式逆变器',
         deviceType: DeviceType.STRING_INVERTER,
         entries: [
           {
@@ -127,7 +127,7 @@ export class DatabaseSeedService implements OnModuleInit {
         ],
       },
       {
-        name: '集中式逆变器巡检',
+        name: '集中式逆变器',
         deviceType: DeviceType.CENTRAL_INVERTER,
         entries: [
           {
@@ -166,7 +166,7 @@ export class DatabaseSeedService implements OnModuleInit {
         ],
       },
       {
-        name: '储能系统巡检',
+        name: '储能系统',
         deviceType: DeviceType.ENERGY_STORAGE,
         entries: [
           {
