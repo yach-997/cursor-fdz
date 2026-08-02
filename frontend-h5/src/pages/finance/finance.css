@@ -9,6 +9,11 @@
 .mobile-finance-list-item { width: 100%; border: 0; text-align: left; }
 .mobile-finance-list-item + .mobile-finance-list-item { margin-top: 12px; }
 .mobile-finance-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.mobile-finance-meta { margin: 14px 0 0; display: grid; gap: 10px; }
+.mobile-finance-meta > div { display: grid; grid-template-columns: 72px 1fr; gap: 8px; font-size: 14px; }
+.mobile-finance-meta dt { margin: 0; color: #82918c; }
+.mobile-finance-meta dd { margin: 0; color: #163c33; font-weight: 560; }
+.mobile-finance-tip h3 { font-size: 15px; }
 .mobile-finance-form label { display: block; margin: 14px 0 7px; font-weight: 600; }
 .mobile-finance-form input, .mobile-finance-form textarea { box-sizing: border-box; width: 100%; padding: 13px; border: 1px solid #dce8e3; border-radius: 12px; background: #fbfdfc; font: inherit; }
 .mobile-finance-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }

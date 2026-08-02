@@ -202,6 +202,10 @@
   grid-template-columns: repeat(3, 1fr);
 }
 
+.home-stats--2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
 .home-stats > div {
   display: flex;
   flex-direction: column;
@@ -367,9 +371,16 @@
   box-shadow: 0 0 0 5px rgba(130, 150, 141, 0.08);
 }
 
-.home-task__dot.is-in_progress {
+.home-task__dot.is-in_progress,
+.home-task__dot.is-working {
   background: var(--h5-green-bright);
   box-shadow: 0 0 0 5px rgba(26, 154, 110, 0.12);
+}
+
+.home-task__dot.is-assigned,
+.home-task__dot.is-pending {
+  background: #e0a14a;
+  box-shadow: 0 0 0 5px rgba(224, 161, 74, 0.14);
 }
 
 .home-task__dot.is-submitted,

@@ -10,7 +10,7 @@ export default function ForbiddenPage() {
       title="403"
       subTitle="抱歉，您没有权限访问此页面"
       extra={
-        <Button type="primary" onClick={() => navigate('/dashboard')}>
+        <Button type="primary" onClick={() => navigate('/finance/cases')}>
           返回首页
         </Button>
       }

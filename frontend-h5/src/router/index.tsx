@@ -15,10 +15,8 @@ const InspectionPage = lazy(() => import('../pages/inspection'));
 const SuccessPage = lazy(() => import('../pages/success'));
 const ReportPage = lazy(() => import('../pages/report'));
 const MyPage = lazy(() => import('../pages/my'));
-const HistoryPage = lazy(() => import('../pages/history'));
 const SettingsPage = lazy(() => import('../pages/settings'));
 const PhotoPreviewPage = lazy(() => import('../pages/photo'));
-const FinanceCasesPage = lazy(() => import('../pages/finance/cases'));
 const FinanceCaseDetailPage = lazy(() => import('../pages/finance/case-detail'));
 const MyIncomePage = lazy(() => import('../pages/finance/income'));
 
@@ -44,8 +42,13 @@ export const router = createBrowserRouter([
     errorElement: <RouteErrorPage />,
     children: [
   {
+    // 列表已与「作业」Tab 合并，保留详情路由
     path: '/m/finance-cases',
-    element: <AuthGuard><Lazy><FinanceCasesPage /></Lazy></AuthGuard>,
+    element: (
+      <AuthGuard>
+        <Navigate to="/m/tasks" replace />
+      </AuthGuard>
+    ),
   },
   {
     path: '/m/finance-cases/:id',
@@ -87,7 +90,7 @@ export const router = createBrowserRouter([
     path: '/m/tasks/create',
     element: (
       <AuthGuard>
-        <Navigate to="/m/finance-cases" replace />
+        <Navigate to="/m/tasks" replace />
       </AuthGuard>
     ),
   },
@@ -132,12 +135,11 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    // 历史已并入「作业 → 已完成」
     path: '/m/history',
     element: (
       <AuthGuard>
-        <Lazy>
-          <HistoryPage />
-        </Lazy>
+        <Navigate to="/m/tasks" replace />
       </AuthGuard>
     ),
   },

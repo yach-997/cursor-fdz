@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Dialog, Loading, Toast } from 'react-vant';
+import { Loading, Toast } from 'react-vant';
 import {
   fetchMyFinanceCase,
   finishFinanceCase,
@@ -17,27 +17,32 @@ const TASK_STATUS_LABEL: Record<string, string> = {
   rejected: '已驳回·需返工',
 };
 
+const CASE_STATUS_LABEL: Record<string, string> = {
+  assigned: '待接单',
+  working: '作业中',
+  finished: '已完工',
+  settle_review: '结算审核中',
+  settled: '已结算',
+  month_locked: '已月结',
+};
+
 export default function FinanceCaseDetailPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const [item, setItem] = useState<MobileFinanceCase>();
   const [busy, setBusy] = useState(false);
 
-  const load = async () => {
-    const result = await fetchMyFinanceCase(id);
-    setItem(result);
-  };
-
   useEffect(() => {
-    void load();
+    void fetchMyFinanceCase(id).then(setItem);
   }, [id]);
 
-  if (!item)
+  if (!item) {
     return (
       <div className="mobile-finance-page">
         <Loading vertical>加载案例...</Loading>
       </div>
     );
+  }
 
   const enterInspection = async (autoStart: boolean) => {
     setBusy(true);
@@ -64,67 +69,77 @@ export default function FinanceCaseDetailPage() {
   };
 
   const canInspect = ['assigned', 'working'].includes(item.status) && !item.inspectionDone;
-  const canFinish =
+  const needsManualFinish =
     item.status === 'working' &&
     (item.inspectionDone ||
       item.inspectionTaskStatus === 'submitted' ||
       item.inspectionTaskStatus === 'approved');
+  const finished = !['assigned', 'working'].includes(item.status);
+
+  const primaryLabel =
+    item.status === 'assigned'
+      ? '接单并开始巡检'
+      : item.inspectionTaskStatus === 'rejected'
+        ? '继续返工巡检'
+        : item.inspectionTaskStatus === 'in_progress'
+          ? '继续巡检'
+          : '开始巡检';
 
   return (
     <div className="mobile-finance-page">
       <header className="mobile-finance-head">
-        <button onClick={() => navigate('/m/finance-cases')}>← 返回</button>
-        <h1>案例巡检</h1>
+        <button type="button" onClick={() => navigate('/m/tasks')}>
+          ← 返回
+        </button>
+        <h1>作业详情</h1>
       </header>
 
       <section className="mobile-finance-card">
         <div className="mobile-finance-row">
-          <h2>{item.projectName}</h2>
+          <h2>{item.projectName || item.gspCaseNo}</h2>
           <span className="mobile-finance-status">
-            {item.status === 'assigned' ? '待开始' : item.status === 'working' ? '作业中' : '已完工'}
+            {CASE_STATUS_LABEL[item.status] || item.status}
           </span>
         </div>
-        <p className="mobile-finance-muted">{item.gspCaseNo}</p>
-        <p>
-          {item.province || '-'} · {item.city || '-'}
-        </p>
-        <p style={{ marginTop: 8 }}>
-          任务类型：<b>{item.taskTypeName || item.taskType || '未设置'}</b>
-        </p>
-        {item.inspectionTaskStatus && (
-          <p className="mobile-finance-muted" style={{ marginTop: 6 }}>
-            巡检进度：{TASK_STATUS_LABEL[item.inspectionTaskStatus] || item.inspectionTaskStatus}
-          </p>
-        )}
+        <dl className="mobile-finance-meta">
+          <div>
+            <dt>案例号</dt>
+            <dd>{item.gspCaseNo}</dd>
+          </div>
+          <div>
+            <dt>地区</dt>
+            <dd>
+              {item.province || '-'}
+              {item.city ? ` · ${item.city}` : ''}
+            </dd>
+          </div>
+          <div>
+            <dt>任务类型</dt>
+            <dd>{item.taskTypeName || item.taskType || '未设置'}</dd>
+          </div>
+          {item.inspectionTaskStatus && (
+            <div>
+              <dt>巡检进度</dt>
+              <dd>{TASK_STATUS_LABEL[item.inspectionTaskStatus] || item.inspectionTaskStatus}</dd>
+            </div>
+          )}
+        </dl>
 
-        {item.status === 'assigned' && (
+        {canInspect && (
           <button
+            type="button"
             className="mobile-finance-primary"
-            style={{ width: '100%', marginTop: 12 }}
+            style={{ width: '100%', marginTop: 16 }}
             disabled={busy}
-            onClick={() => void enterInspection(true)}
+            onClick={() => void enterInspection(item.status === 'assigned')}
           >
-            接单并开始巡检
+            {primaryLabel}
           </button>
         )}
 
-        {item.status === 'working' && canInspect && (
+        {(item.inspectionDone || finished) && item.inspectionTaskId && (
           <button
-            className="mobile-finance-primary"
-            style={{ width: '100%', marginTop: 12 }}
-            disabled={busy}
-            onClick={() => void enterInspection(false)}
-          >
-            {item.inspectionTaskStatus === 'rejected'
-              ? '继续返工巡检'
-              : item.inspectionTaskStatus === 'in_progress'
-                ? '继续巡检'
-                : '开始巡检'}
-          </button>
-        )}
-
-        {item.inspectionTaskId && item.inspectionDone && (
-          <button
+            type="button"
             className="mobile-finance-secondary"
             style={{ width: '100%', marginTop: 12 }}
             onClick={() => navigate(`/m/tasks/${item.inspectionTaskId}`)}
@@ -134,28 +149,32 @@ export default function FinanceCaseDetailPage() {
         )}
       </section>
 
-      {canFinish && (
+      {canInspect && (
+        <section className="mobile-finance-card mobile-finance-tip">
+          <h3>现场说明</h3>
+          <p className="mobile-finance-muted">
+            按检查条目现场拍照完成巡检；提交后系统辅助分析生成报告，分析结果仅供参考。提交成功后本单会自动完工。
+          </p>
+        </section>
+      )}
+
+      {needsManualFinish && (
         <section className="mobile-finance-card">
           <h3>巡检已提交</h3>
-          <p className="mobile-finance-muted">现场巡检报告已提交，确认后本单完工进入后续结算。</p>
+          <p className="mobile-finance-muted">
+            报告已提交。若未自动完工，可点下方确认。
+          </p>
           <button
-            className="mobile-finance-primary"
+            type="button"
+            className="mobile-finance-secondary"
             style={{ width: '100%', marginTop: 12 }}
             disabled={busy}
             onClick={async () => {
-              try {
-                await Dialog.confirm({
-                  title: '确认完工',
-                  message: '确认本单巡检已完成？确认后进入结算流程。',
-                });
-              } catch {
-                return;
-              }
               setBusy(true);
               try {
                 await finishFinanceCase(id);
                 Toast.success('案例已完工');
-                navigate('/m/finance-cases', { replace: true });
+                navigate('/m/tasks', { replace: true });
               } finally {
                 setBusy(false);
               }
@@ -166,28 +185,10 @@ export default function FinanceCaseDetailPage() {
         </section>
       )}
 
-      {item.status === 'working' && !item.inspectionDone && (
-        <section className="mobile-finance-card">
-          <h3>现场巡检说明</h3>
-          <p className="mobile-finance-muted">
-            由工程师按检查条目现场拍照完成巡检；提交后系统辅助分析并生成报告，分析结果仅供参考。
-          </p>
-        </section>
-      )}
-
-      {!['assigned', 'working'].includes(item.status) && (
-        <section className="mobile-finance-card">
-          <h3>作业已完工</h3>
-          <p className="mobile-finance-muted">可在「我的收入」查看核算与审核状态。</p>
-          {item.inspectionTaskId && (
-            <button
-              className="mobile-finance-secondary"
-              style={{ width: '100%', marginTop: 12 }}
-              onClick={() => navigate(`/m/tasks/${item.inspectionTaskId}`)}
-            >
-              查看巡检报告
-            </button>
-          )}
+      {finished && (
+        <section className="mobile-finance-card mobile-finance-tip">
+          <h3>本单已完工</h3>
+          <p className="mobile-finance-muted">可在「我的 → 我的收入」查看核算与审核状态。</p>
         </section>
       )}
     </div>

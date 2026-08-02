@@ -27,7 +27,6 @@ export default function SuccessPage() {
           Toast.success('案例已完工');
         }
       } catch {
-        /* 可能已完工或网络失败，仍可手动回案例确认 */
         if (!cancelled) setCaseFinished(false);
       } finally {
         if (!cancelled) setCaseFinishing(false);
@@ -38,23 +37,21 @@ export default function SuccessPage() {
     };
   }, [state.serviceCaseId]);
 
+  const subtitle = (() => {
+    const name = state.taskName ? `「${state.taskName}」` : '报告';
+    if (!state.serviceCaseId) return `${name}已提交，可稍后查看分析结果。`;
+    if (caseFinishing) return `${name}已提交，正在完结本单…`;
+    if (caseFinished) return `${name}已提交，本单已完工。`;
+    return `${name}已提交。若未自动完工，请返回案例确认。`;
+  })();
+
   return (
     <div className="success-page">
       <div className="success-page__mark" aria-hidden>
         ✓
       </div>
-      <h2>报告已提交</h2>
-      <p>
-        {state.taskName ? `「${state.taskName}」已提交。` : ''}
-        系统正在辅助分析，可稍后查看报告。
-        {state.serviceCaseId
-          ? caseFinishing
-            ? '正在完结本单案例…'
-            : caseFinished
-              ? '本单案例已完工。'
-              : '若案例未自动完工，可返回案例页确认完工。'
-          : ''}
-      </p>
+      <h2>提交成功</h2>
+      <p>{subtitle}</p>
       <div className="success-page__actions">
         {state.recordId && (
           <Button type="primary" round block onClick={() => navigate(`/m/report/${state.recordId}`)}>
@@ -65,16 +62,14 @@ export default function SuccessPage() {
           <Button
             round
             block
+            type="primary"
             onClick={() => navigate(`/m/finance-cases/${state.serviceCaseId}`, { replace: true })}
           >
             返回案例确认完工
           </Button>
         )}
-        <Button round block onClick={() => navigate('/m/tasks')}>
-          继续其他巡检
-        </Button>
-        <Button round block onClick={() => navigate('/m')}>
-          回到首页
+        <Button round block onClick={() => navigate('/m/tasks', { replace: true })}>
+          返回作业列表
         </Button>
       </div>
     </div>

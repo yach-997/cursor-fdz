@@ -76,8 +76,14 @@ export default function BasicLayout() {
 
   useEffect(() => {
     if (!user) return;
-    // 工程师默认不进仪表盘
-    if (user.role === 'inspector' && location.pathname === '/dashboard') {
+    // 工程师默认只进系统设置
+    if (
+      user.role === 'inspector' &&
+      (location.pathname.startsWith('/finance') ||
+        location.pathname === '/dashboard' ||
+        location.pathname === '/sites' ||
+        location.pathname === '/users')
+    ) {
       navigate('/settings', { replace: true });
     }
   }, [user, location.pathname, navigate]);

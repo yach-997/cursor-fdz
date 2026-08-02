@@ -70,7 +70,7 @@ export default function TabLayout() {
             首页
           </Tabbar.Item>
           <Tabbar.Item name="/m/tasks" icon={<TasksIcon />}>
-            任务
+            作业
           </Tabbar.Item>
           <Tabbar.Item name="/m/my" icon={<UserIcon />}>
             我的

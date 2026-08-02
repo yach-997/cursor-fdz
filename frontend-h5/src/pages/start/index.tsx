@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NavBar, Cell, Empty, Button, Toast, Tag } from 'react-vant';
 import { useAuthStore } from '../../stores/auth';
@@ -7,14 +7,14 @@ import { fetchMyFinanceCases, type MobileFinanceCase } from '../../api/finance';
 type Step = 'region' | 'project' | 'task';
 
 const STATUS_TEXT: Record<string, string> = {
-  assigned: '待开始',
+  assigned: '待接单',
   working: '作业中',
 };
 
-/** 开检向导：地区 → 站点 → 已派案例（不走设备台账） */
+/** 开检向导：地区 → 站点 → 已派案例（单站点时自动跳过前两步） */
 export default function StartWizardPage() {
   const navigate = useNavigate();
-  const { user, setCurrentSite } = useAuthStore();
+  const { user, currentSite, setCurrentSite } = useAuthStore();
   const [step, setStep] = useState<Step>('region');
   const [region, setRegion] = useState('');
   const [projectId, setProjectId] = useState('');
@@ -30,7 +30,6 @@ export default function StartWizardPage() {
   );
 
   const regions = useMemo(() => {
-    // 仅按入职站点的省市区汇总，不要混入账号业务区域字段（如 yunnan/south_china）
     const set = new Set<string>();
     for (const s of sites) {
       const r = [s.province, s.city].filter(Boolean).join('') || '未分区';
@@ -51,9 +50,7 @@ export default function StartWizardPage() {
     try {
       const list = await fetchMyFinanceCases();
       const filtered = list.filter(
-        (c) =>
-          c.siteId === siteId &&
-          ['assigned', 'working'].includes(c.status),
+        (c) => c.siteId === siteId && ['assigned', 'working'].includes(c.status),
       );
       setCases(filtered);
       setStep('task');
@@ -66,6 +63,26 @@ export default function StartWizardPage() {
       setLoading(false);
     }
   };
+
+  // 已选站点或仅一个站点：直接进入案例列表
+  useEffect(() => {
+    if (currentSite?.id) {
+      setProjectId(currentSite.id);
+      const r = [currentSite.province, currentSite.city].filter(Boolean).join('') || '未分区';
+      setRegion(r);
+      void loadCases(currentSite.id);
+      return;
+    }
+    if (sites.length === 1) {
+      const s = sites[0];
+      setCurrentSite(s);
+      setProjectId(s.id);
+      const r = [s.province, s.city].filter(Boolean).join('') || '未分区';
+      setRegion(r);
+      void loadCases(s.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSite?.id, sites.length]);
 
   const onPickRegion = (r: string) => {
     setRegion(r);
@@ -82,14 +99,17 @@ export default function StartWizardPage() {
   };
 
   const onBack = () => {
+    if (step === 'task' && (sites.length > 1 || regions.length > 1)) {
+      setStep(sites.length === 1 ? 'region' : 'project');
+      return;
+    }
     if (step === 'project') setStep('region');
-    else if (step === 'task') setStep('project');
     else navigate(-1);
   };
 
   return (
     <div style={{ minHeight: '100vh', background: '#f2f5f3', paddingBottom: 24 }}>
-      <NavBar title="执行已派案例" leftText="返回" onClickLeft={onBack} />
+      <NavBar title="选择已派案例" leftText="返回" onClickLeft={onBack} />
 
       <div
         style={{
@@ -102,14 +122,15 @@ export default function StartWizardPage() {
           lineHeight: 1.65,
         }}
       >
-        作业均由网格长导入案例后派单。请选择地区与站点，进入已派给你的案例接单作业。
+        作业由网格长导入案例后派单。选择站点后进入已派给你的工单。
       </div>
 
-      <div style={{ padding: '12px 16px', fontSize: 13, color: '#666' }}>
-        {step === 'region' && '第 1 步：选择所在地区'}
-        {step === 'project' && `第 2 步：选择站点（${region}）`}
-        {step === 'task' && '第 3 步：选择已派案例'}
-      </div>
+      {step !== 'task' && (
+        <div style={{ padding: '12px 16px', fontSize: 13, color: '#666' }}>
+          {step === 'region' && '第 1 步：选择所在地区'}
+          {step === 'project' && `第 2 步：选择站点（${region}）`}
+        </div>
+      )}
 
       {step === 'region' && (
         <>
@@ -128,13 +149,13 @@ export default function StartWizardPage() {
               ))}
             </Cell.Group>
           )}
-          {!user?.realName || !user?.phone ? (
+          {(!user?.realName || !user?.phone) && (
             <div style={{ margin: 16 }}>
               <Button block round plain type="primary" onClick={() => navigate('/m/settings')}>
                 完善个人信息
               </Button>
             </div>
-          ) : null}
+          )}
         </>
       )}
 
@@ -160,16 +181,17 @@ export default function StartWizardPage() {
 
       {step === 'task' && (
         <>
-          <div style={{ padding: '0 16px 8px', fontSize: 13, color: '#888' }}>
-            {region} / {projects.find((p) => p.id === projectId)?.name}
+          <div style={{ padding: '12px 16px 8px', fontSize: 13, color: '#888' }}>
+            {region}
+            {projectId ? ` / ${projects.find((p) => p.id === projectId)?.name || currentSite?.name || ''}` : ''}
           </div>
           {loading ? (
             <Empty description="加载案例中..." />
           ) : cases.length === 0 ? (
             <div style={{ padding: 16 }}>
               <Empty description="暂无已派案例" />
-              <Button block round style={{ marginTop: 12 }} onClick={() => setStep('project')}>
-                重选站点
+              <Button block round style={{ marginTop: 12 }} onClick={() => navigate('/m/tasks')}>
+                返回作业列表
               </Button>
             </div>
           ) : (
@@ -181,14 +203,7 @@ export default function StartWizardPage() {
                   label={`${c.gspCaseNo} · ${STATUS_TEXT[c.status] || c.status}`}
                   isLink
                   value={
-                    <Tag type="primary">
-                      {c.taskTypeName ||
-                        (c.taskType === 'inspection'
-                          ? '巡检'
-                          : c.taskType === 'service'
-                            ? '服务'
-                            : c.taskType || '未设类型')}
-                    </Tag>
+                    <Tag type="primary">{c.taskTypeName || c.taskType || '未设类型'}</Tag>
                   }
                   onClick={() => navigate(`/m/finance-cases/${c.id}`)}
                 />

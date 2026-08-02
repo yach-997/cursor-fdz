@@ -1,15 +1,16 @@
 import type { MenuConfig, UserRole } from '../types';
 
 /**
- * 按角色动态菜单配置
- * super_admin / site_manager 可见对应菜单；inspector 主要使用 H5
+ * 侧栏菜单（主流程：费用案例派工 → 巡检 → 结算）
+ * 已下线入口不出现在菜单：旧仪表盘 / 任务管理 / 数据分析 / 预警 / 运维监控
+ * （路由仍保留或重定向，避免书签 404）
  */
 export const menuConfig: MenuConfig[] = [
   {
-    key: 'dashboard',
-    path: '/dashboard',
-    label: '仪表盘',
-    icon: 'DashboardOutlined',
+    key: 'finance',
+    path: '/finance',
+    label: '费用结算中心',
+    icon: 'AccountBookOutlined',
     roles: ['super_admin', 'site_manager'],
   },
   {
@@ -34,13 +35,6 @@ export const menuConfig: MenuConfig[] = [
     roles: ['super_admin', 'site_manager'],
   },
   {
-    key: 'tasks',
-    path: '/tasks',
-    label: '任务管理',
-    icon: 'ScheduleOutlined',
-    roles: ['super_admin', 'site_manager'],
-  },
-  {
     key: 'records',
     path: '/records',
     label: '历史查询',
@@ -55,39 +49,11 @@ export const menuConfig: MenuConfig[] = [
     roles: ['super_admin', 'site_manager'],
   },
   {
-    key: 'analysis',
-    path: '/analysis',
-    label: '数据分析',
-    icon: 'BarChartOutlined',
-    roles: ['super_admin', 'site_manager'],
-  },
-  {
-    key: 'alerts',
-    path: '/alerts',
-    label: '预警中心',
-    icon: 'AlertOutlined',
-    roles: ['super_admin', 'site_manager'],
-  },
-  {
-    key: 'monitoring',
-    path: '/monitoring',
-    label: '运维监控',
-    icon: 'SafetyCertificateOutlined',
-    roles: ['super_admin', 'site_manager'],
-  },
-  {
     key: 'settings',
     path: '/settings',
     label: '系统设置',
     icon: 'SettingOutlined',
     roles: ['super_admin', 'site_manager', 'inspector'],
-  },
-  {
-    key: 'finance',
-    path: '/finance',
-    label: '费用结算中心',
-    icon: 'AccountBookOutlined',
-    roles: ['super_admin', 'site_manager'],
   },
 ];
 
@@ -101,5 +67,5 @@ export function getHomePathByRole(role: UserRole): string {
   if (role === 'inspector') {
     return '/settings';
   }
-  return '/dashboard';
+  return '/finance/cases';
 }

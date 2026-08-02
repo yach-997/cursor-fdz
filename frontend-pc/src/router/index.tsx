@@ -6,16 +6,11 @@ import BasicLayout from '../layouts/BasicLayout';
 
 const PortalPage = lazy(() => import('../pages/portal'));
 const LoginPage = lazy(() => import('../pages/login'));
-const DashboardPage = lazy(() => import('../pages/dashboard'));
 const SitesPage = lazy(() => import('../pages/sites'));
 const UsersPage = lazy(() => import('../pages/users'));
 const TemplatesPage = lazy(() => import('../pages/templates'));
-const TasksPage = lazy(() => import('../pages/tasks'));
 const RecordsPage = lazy(() => import('../pages/records'));
 const AuditPage = lazy(() => import('../pages/audit'));
-const AnalysisPage = lazy(() => import('../pages/analysis'));
-const AlertsPage = lazy(() => import('../pages/alerts'));
-const MonitoringPage = lazy(() => import('../pages/monitoring'));
 const SettingsPage = lazy(() => import('../pages/settings'));
 const ForbiddenPage = lazy(() => import('../pages/forbidden'));
 const FinanceLayout = lazy(() => import('../pages/finance/FinanceLayout'));
@@ -74,14 +69,9 @@ export const router = createBrowserRouter([
     ),
     children: [
       {
+        // 旧巡检仪表盘与费用经营看板重复，统一进费用中心
         path: 'dashboard',
-        element: (
-          <AuthGuard roles={['super_admin', 'site_manager']}>
-            <Lazy>
-              <DashboardPage />
-            </Lazy>
-          </AuthGuard>
-        ),
+        element: <Navigate to="/finance/dashboard" replace />,
       },
       {
         path: 'sites',
@@ -119,14 +109,9 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        // 旧「按设备建任务」与案例派单双轨，统一进案例管理
         path: 'tasks',
-        element: (
-          <AuthGuard roles={['super_admin', 'site_manager']}>
-            <Lazy>
-              <TasksPage />
-            </Lazy>
-          </AuthGuard>
-        ),
+        element: <Navigate to="/finance/cases" replace />,
       },
       {
         path: 'records',
@@ -150,33 +135,15 @@ export const router = createBrowserRouter([
       },
       {
         path: 'analysis',
-        element: (
-          <AuthGuard roles={['super_admin', 'site_manager']}>
-            <Lazy>
-              <AnalysisPage />
-            </Lazy>
-          </AuthGuard>
-        ),
+        element: <Navigate to="/finance/dashboard" replace />,
       },
       {
         path: 'alerts',
-        element: (
-          <AuthGuard roles={['super_admin', 'site_manager']}>
-            <Lazy>
-              <AlertsPage />
-            </Lazy>
-          </AuthGuard>
-        ),
+        element: <Navigate to="/finance/dashboard" replace />,
       },
       {
         path: 'monitoring',
-        element: (
-          <AuthGuard roles={['super_admin', 'site_manager']}>
-            <Lazy>
-              <MonitoringPage />
-            </Lazy>
-          </AuthGuard>
-        ),
+        element: <Navigate to="/settings" replace />,
       },
       {
         path: 'settings',
