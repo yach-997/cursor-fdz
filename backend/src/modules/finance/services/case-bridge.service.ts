@@ -29,7 +29,7 @@ import {
   SetCaseTaskTypeDto,
 } from '../dto/finance.dto';
 
-/** 案例 ↔ 站点桥接（派单时自动创建 AI 巡检任务） */
+/** 案例 ↔ 站点桥接（派单时自动创建巡检任务） */
 @Injectable()
 export class CaseBridgeService {
   constructor(

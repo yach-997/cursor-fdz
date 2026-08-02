@@ -127,7 +127,7 @@ export default function FinanceCaseDetailPage() {
             disabled={busy}
             onClick={() => void enterInspection(true)}
           >
-            接单并开始 AI 巡检
+            接单并开始巡检
           </button>
         )}
 
@@ -138,7 +138,11 @@ export default function FinanceCaseDetailPage() {
             disabled={busy}
             onClick={() => void enterInspection(false)}
           >
-            {item.inspectionTaskStatus === 'rejected' ? '继续返工巡检' : '进入 AI 巡检'}
+            {item.inspectionTaskStatus === 'rejected'
+              ? '继续返工巡检'
+              : item.inspectionTaskStatus === 'in_progress'
+                ? '继续巡检'
+                : '开始巡检'}
           </button>
         )}
 
@@ -205,7 +209,7 @@ export default function FinanceCaseDetailPage() {
                 try {
                   await Dialog.confirm({
                     title: '确认完工',
-                    message: '请确认 AI 巡检已提交、里程截图已齐全，完工后进入结算流程。',
+                    message: '请确认巡检报告已提交、里程截图已齐全，完工后进入结算流程。',
                   });
                 } catch {
                   return;
@@ -223,9 +227,9 @@ export default function FinanceCaseDetailPage() {
 
       {item.status === 'working' && !item.inspectionDone && (
         <section className="mobile-finance-card">
-          <h3>规范巡检流程</h3>
+          <h3>现场巡检说明</h3>
           <p className="mobile-finance-muted">
-            点击上方按钮进入与临时巡检相同的规范流程：对照样本图拍照，系统异步 AI 分析合格/不合格。
+            由工程师按检查条目现场拍照完成巡检；提交后系统辅助分析并生成报告，分析结果仅供参考。
           </p>
         </section>
       )}

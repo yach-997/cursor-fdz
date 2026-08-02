@@ -36,7 +36,7 @@ export interface MobileFinanceCase {
     order: number;
   }>;
   checklist?: CaseChecklistItem[];
-  /** 关联的 AI 巡检任务 */
+  /** 关联的巡检任务（派单后自动创建） */
   inspectionTaskId?: string | null;
   inspectionTaskStatus?: string | null;
   inspectionDone?: boolean;

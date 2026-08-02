@@ -462,7 +462,7 @@ export class FinanceWorkflowService {
           inspectionTask.status as TaskStatus,
         )
       ) {
-        throw new BadRequestException('请先完成并提交 AI 巡检报告后再确认完工');
+        throw new BadRequestException('请先完成并提交巡检报告后再确认完工');
       }
     } else {
       const checklist = this.readChecklist(record) || [];

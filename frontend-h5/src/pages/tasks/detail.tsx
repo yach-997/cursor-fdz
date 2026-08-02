@@ -253,7 +253,7 @@ export default function TaskDetailPage() {
                   style={{ height: 48 }}
                   onClick={() => navigate(`/m/report/${task.record!.id}`)}
                 >
-                  查看 AI 分析报告
+                  查看巡检报告
                 </Button>
               )}
             <Button
