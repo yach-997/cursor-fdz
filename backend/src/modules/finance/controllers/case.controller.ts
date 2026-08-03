@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -44,6 +55,12 @@ export class FinanceCaseController {
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.service.clearCases(user, query.confirm);
+  }
+  @Delete('clear-test-data') @Roles(UserRole.SUPER_ADMIN) clearTestData(
+    @Query() query: ClearConfirmQueryDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.service.clearTestData(user, query.confirm);
   }
   @Post('assign-sites') @Roles(UserRole.SUPER_ADMIN) assignSites(
     @Body() dto: BatchAssignCasesToSitesDto,
@@ -108,7 +125,9 @@ export class FinanceCaseController {
   }
   @Post(':id/work-photo')
   @Roles(UserRole.INSPECTOR)
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } }),
+  )
   async workPhoto(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,

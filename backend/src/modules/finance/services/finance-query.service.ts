@@ -52,6 +52,66 @@ export class FinanceQueryService {
     return { deleted: total };
   }
 
+  /**
+   * 从零复测：仅清空业务过程数据，保留账号、站点、设备、模板、标准图和价格配置。
+   * 仅 Preview/测试环境的超级管理员可执行，并复用危险操作确认保护。
+   */
+  async clearTestData(user: CurrentUserContext, confirm?: string) {
+    if (user.role !== UserRole.SUPER_ADMIN) {
+      throw new ForbiddenException('仅管理员可重置测试数据');
+    }
+    assertFinanceClearAllowed(confirm);
+
+    const counts = await this.cases.manager.transaction(async (em) => {
+      const tables = [
+        'inspection_records',
+        'inspection_tasks',
+        'case_work_record',
+        'case_performance',
+        'po_item',
+        'po_order',
+        'service_case',
+        'assessment_event',
+        'monthly_settlement',
+        'assessment',
+        'import_batch',
+      ] as const;
+      const before: Record<string, number> = {};
+      for (const table of tables) {
+        const rows = (await em.query(`SELECT COUNT(*)::int AS count FROM ${table}`)) as Array<{
+          count: number;
+        }>;
+        before[table] = Number(rows[0]?.count || 0);
+      }
+
+      await em.query('DELETE FROM inspection_records');
+      await em.query('DELETE FROM inspection_tasks');
+      await em.query(`DELETE FROM devices WHERE serial_number LIKE 'CASE-%'`);
+      await em.query('DELETE FROM case_work_record');
+      await em.query('DELETE FROM case_performance');
+      await em.query('DELETE FROM po_item');
+      await em.query('DELETE FROM po_order');
+      await em.query('DELETE FROM service_case');
+      await em.query('DELETE FROM assessment_event');
+      await em.query('DELETE FROM monthly_settlement');
+      await em.query('DELETE FROM assessment');
+      await em.query('DELETE FROM import_batch');
+
+      return before;
+    });
+
+    await this.logs.write(
+      'system_test_data',
+      'all',
+      'test_data_clear',
+      counts,
+      { preserved: ['users', 'sites', 'devices', 'inspection_templates', 'price_library'] },
+      user.id,
+      '清空测试业务数据，保留账号、站点、设备、模板、标准图和价格配置',
+    );
+    return { cleared: counts };
+  }
+
   async clearPoOrders(user: CurrentUserContext, confirm?: string) {
     if (user.role !== UserRole.SUPER_ADMIN) {
       throw new ForbiddenException('仅管理员可清空 PO');
@@ -184,10 +244,14 @@ export class FinanceQueryService {
         siteIds: user.managedSiteIds,
       });
     }
-    const rows = await qb.distinct(true).orderBy('c.province', 'ASC').addOrderBy('c.city', 'ASC').getRawMany<{
-      province: string;
-      city: string | null;
-    }>();
+    const rows = await qb
+      .distinct(true)
+      .orderBy('c.province', 'ASC')
+      .addOrderBy('c.city', 'ASC')
+      .getRawMany<{
+        province: string;
+        city: string | null;
+      }>();
     const provinces = [
       ...new Set(rows.map((row) => String(row.province || '').trim()).filter(Boolean)),
     ];
@@ -513,7 +577,10 @@ export class FinanceQueryService {
       .addSelect("COUNT(item.id) FILTER (WHERE item.price_status='pending_price')", 'pendingPrice')
       .addSelect("COUNT(item.id) FILTER (WHERE item.price_status='ignored')", 'ignoredCount')
       .addSelect("COUNT(item.id) FILTER (WHERE item.price_status='ok')", 'okCount')
-      .addSelect("COALESCE(SUM(CASE WHEN item.item_category='general' THEN item.item_revenue ELSE 0 END),0)", 'otherCost')
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN item.item_category='general' THEN item.item_revenue ELSE 0 END),0)",
+        'otherCost',
+      )
       .addSelect('COALESCE(p.perf_final,0)', 'perfFinal')
       .groupBy('po.id')
       .addGroupBy('c.id')
@@ -556,16 +623,18 @@ export class FinanceQueryService {
       if (!row.caseId) continue;
       cases.set(row.caseId, Number(row.caseRevenue || 0));
       const month = row.month || '未知月份';
-      monthlyIncome.set(
-        month,
-        (monthlyIncome.get(month) || 0) + Number(row.pricedRevenue || 0),
-      );
+      monthlyIncome.set(month, (monthlyIncome.get(month) || 0) + Number(row.pricedRevenue || 0));
     }
     const income = [...cases.values()].reduce((sum, value) => sum + value, 0);
     const poTotalAmount = rows.reduce((sum, row) => sum + Number(row.poTotalAmount || 0), 0);
     const performanceByCase = new Map<string, number>();
-    rows.forEach((row) => row.caseId && performanceByCase.set(row.caseId, Number(row.perfFinal || 0)));
-    const performanceExpense = [...performanceByCase.values()].reduce((sum, value) => sum + value, 0);
+    rows.forEach(
+      (row) => row.caseId && performanceByCase.set(row.caseId, Number(row.perfFinal || 0)),
+    );
+    const performanceExpense = [...performanceByCase.values()].reduce(
+      (sum, value) => sum + value,
+      0,
+    );
     const otherCost = rows.reduce((sum, row) => sum + Number(row.otherCost || 0), 0);
     const ignoredCount = rows.reduce((sum, row) => sum + Number(row.ignoredCount || 0), 0);
     const okCount = rows.reduce((sum, row) => sum + Number(row.okCount || 0), 0);
@@ -595,11 +664,16 @@ export class FinanceQueryService {
     if (query.province) ignoredQb.andWhere('po.province=:province', { province: query.province });
     if (query.demandType)
       ignoredQb.andWhere('po.demand_type=:demandType', { demandType: query.demandType });
-    const ignoredRows = await ignoredQb.getRawMany<{ itemCode: string; count: string; qty: string }>();
+    const ignoredRows = await ignoredQb.getRawMany<{
+      itemCode: string;
+      count: string;
+      qty: string;
+    }>();
 
-    const adminOnly = user.role === UserRole.SUPER_ADMIN
-      ? { performanceExpense, otherCost, grossProfit: income - performanceExpense - otherCost }
-      : {};
+    const adminOnly =
+      user.role === UserRole.SUPER_ADMIN
+        ? { performanceExpense, otherCost, grossProfit: income - performanceExpense - otherCost }
+        : {};
     return {
       summary: {
         income,
