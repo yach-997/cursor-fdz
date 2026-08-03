@@ -112,7 +112,7 @@ export class DatabaseSeedService implements OnModuleInit {
           {
             name: '直流侧安装检查',
             description:
-              '必检硬性项。检查直流接线、端子与标识；未使用的端子必须有防护盖，裸露未盖不合格；请对照合格样本防护状态。',
+              '必检硬性项。已插线端子正常即可；未插线空闲孔须盖蓝色/红色/橙色防护盖，无盖呈黑洞裸露不合格。',
           },
           {
             name: '交流侧安装检查',
