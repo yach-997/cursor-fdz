@@ -233,11 +233,7 @@ export class VisionService {
                 ? '【合格样本-历史故障页版式】'
                 : `【合格样本 ${i + 1}】`
             : grounding
-              ? i === 0
-                ? '【合格标准图·箱内主PE】应看到铜芯线/铜编织带压接到PE端子'
-                : i === 1
-                  ? '【合格标准图·箱外机壳接地】应看到黄绿线连接到机壳/支架接地点'
-                  : `【合格标准图·接地 ${i + 1}】`
+              ? `【合格标准图·接地视角 ${i + 1}】请根据图像内容自行判断是箱内主PE还是箱外机壳接地，禁止按序号猜测`
               : sungrowShot
                 ? `【合格样本-阳光云完整截图 ${i + 1}】请对照：现场截图是否同样完整`
                 : dcSide
@@ -317,7 +313,7 @@ export class VisionService {
           original: enforced,
         });
       }
-      if (grounding && enforced.status === CheckResult.PASS) {
+      if (grounding) {
         enforced = await this.auditGroundingConnections({
           apiKey,
           baseUrl,
@@ -1194,14 +1190,19 @@ export class VisionService {
     sampleInputs: string[];
     original: Omit<VisionCompareResult, 'provider'>;
   }): Promise<Omit<VisionCompareResult, 'provider'>> {
+    const [fieldCrops, sampleCrops] = await Promise.all([
+      this.createGroundingEvidenceCrops(args.photoInputs),
+      this.createGroundingEvidenceCrops(args.sampleInputs),
+    ]);
     const content: Array<Record<string, unknown>> = [
       {
         type: 'text',
         text: [
-          '你是接地安全复核员。请忽略上一轮结论，对每张现场照片单独检查，禁止跨照片拼接证据。',
+          '你是接地安全复核员。请忽略上一轮结论，对每张现场照片单独检查，禁止跨照片拼接证据。无论上一轮合格或不合格，都必须重新独立判定。',
           '必须同时满足：①箱内主电缆的铜芯接地线/裸铜编织带实际压接到PE端子；②箱外黄绿接地线实际连接机壳或支架接地点。',
           '某张箱内照片中即使有PE字样，只要PE端子为空、无铜芯线/铜编织带，就必须 internalMainPeConnected=false。',
           '另一张照片的黄绿线只能证明箱外接地，绝不能弥补箱内主PE缺失。任一连接点不合格，总结论必须fail。',
+          '标准图没有固定顺序：先根据每张标准图的画面内容识别其属于箱内主PE或箱外机壳接地，再与现场图配对；禁止假设标准图1一定是哪一类。',
           '只输出与下面格式完全一致的JSON：',
           '{"status":"pass"|"fail","confidence":0~1,"reason":"逐张说明","evidence":{"photoTypes":["internal_main_pe"|"external_chassis_ground"|"other"],"photoChecks":[{"photoIndex":1,"type":"internal_main_pe|external_chassis_ground|other","internalMainPeConnected":true|false,"externalGroundConnected":true|false,"wireAndTerminalVisibleInSamePhoto":true|false,"reason":"本张独立结论"}],"hasInternalMainPePhoto":true|false,"internalMainPeConnected":true|false,"hasExternalGroundPhoto":true|false,"externalGroundConnected":true|false,"matchesSampleViews":true|false}}',
         ].join('\n'),
@@ -1210,18 +1211,27 @@ export class VisionService {
     args.photoInputs.forEach((dataUrl, index) => {
       content.push({ type: 'text', text: `【现场照片 ${index + 1}】只判断本张连接是否真实存在` });
       content.push({ type: 'image_url', image_url: { url: dataUrl } });
+      if (fieldCrops[index]) {
+        content.push({
+          type: 'text',
+          text: `【现场照片 ${index + 1} · PE连接区域自动放大】重点看导体是否真正压接到端子`,
+        });
+        content.push({ type: 'image_url', image_url: { url: fieldCrops[index] } });
+      }
     });
     args.sampleInputs.forEach((dataUrl, index) => {
       content.push({
         type: 'text',
-        text:
-          index === 0
-            ? '【标准图1·箱内主PE合格连接】'
-            : index === 1
-              ? '【标准图2·箱外机壳接地合格连接】'
-              : `【标准图${index + 1}】`,
+        text: `【接地合格标准图 ${index + 1}】请按图像内容识别视角，不要按序号猜测`,
       });
       content.push({ type: 'image_url', image_url: { url: dataUrl } });
+      if (sampleCrops[index]) {
+        content.push({
+          type: 'text',
+          text: `【标准图 ${index + 1} · 接地连接区域自动放大】`,
+        });
+        content.push({ type: 'image_url', image_url: { url: sampleCrops[index] } });
+      }
     });
 
     try {
@@ -1258,12 +1268,7 @@ export class VisionService {
         args.photoInputs.length,
         args.sampleInputs.length,
       );
-      if (checked.status !== CheckResult.PASS) return checked;
-      return {
-        ...args.original,
-        confidence: Math.min(args.original.confidence, checked.confidence, 0.95),
-        reason: checked.reason || args.original.reason,
-      };
+      return checked;
     } catch (error) {
       this.logger.warn(`Grounding safety audit failed: ${(error as Error).message}`);
       return {
@@ -1272,6 +1277,34 @@ export class VisionService {
         reason: '接地双连接点安全复核未完成，已转人工判断',
       };
     }
+  }
+
+  private async createGroundingEvidenceCrops(inputs: string[]): Promise<Array<string | null>> {
+    return Promise.all(
+      inputs.map(async (input, index) => {
+        try {
+          const encoded = input.split(',', 2)[1];
+          if (!encoded) return null;
+          const source = Buffer.from(encoded, 'base64');
+          const metadata = await sharp(source).metadata();
+          const width = metadata.width || 0;
+          const height = metadata.height || 0;
+          if (width < 200 || height < 200) return null;
+          const left = Math.round(width * 0.25);
+          const output = await sharp(source)
+            .extract({ left, top: 0, width: width - left, height })
+            .resize({ width: 1100, withoutEnlargement: false })
+            .jpeg({ quality: 88 })
+            .toBuffer();
+          return `data:image/jpeg;base64,${output.toString('base64')}`;
+        } catch (error) {
+          this.logger.warn(
+            `Grounding crop failed for image ${index + 1}: ${(error as Error).message}`,
+          );
+          return null;
+        }
+      }),
+    );
   }
 
   private async matchExactSampleSet(
