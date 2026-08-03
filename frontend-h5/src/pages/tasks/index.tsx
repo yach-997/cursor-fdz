@@ -24,7 +24,6 @@ interface UnifiedItem {
   meta: string;
   rejectReason?: string;
   financeCase?: MobileFinanceCase;
-  siteId?: string | null;
 }
 
 function statusClass(status: string, label?: string) {
@@ -69,7 +68,7 @@ function financeMatchesTab(status: string, tab: (typeof FILTERS)[number]['key'])
   return true;
 }
 
-/** 作业列表：跨站点展示已派案例 */
+/** 作业列表：当前站作业 + 其他站有单提示 */
 export default function TasksPage() {
   const navigate = useNavigate();
   const currentSite = useAuthStore((s) => s.currentSite);
@@ -78,14 +77,6 @@ export default function TasksPage() {
   const [tab, setTab] = useState<(typeof FILTERS)[number]['key']>('all');
   const [keyword, setKeyword] = useState('');
   const [appliedKeyword, setAppliedKeyword] = useState('');
-
-  const siteNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const m of user?.siteMemberships || []) {
-      if (m.site?.id) map.set(m.site.id, m.site.name);
-    }
-    return map;
-  }, [user?.siteMemberships]);
 
   const siteBriefById = useMemo(() => {
     const map = new Map<string, SiteBrief>();
@@ -102,18 +93,23 @@ export default function TasksPage() {
         limit: 50,
         statusGroup: tab === 'all' ? undefined : tab,
         keyword: appliedKeyword || undefined,
+        siteId: currentSite?.id,
       }),
       fetchMyFinanceCases().catch(() => [] as MobileFinanceCase[]),
     ]);
     return { tasks: taskPage.list, financeCases };
-  }, [tab, appliedKeyword]);
+  }, [tab, appliedKeyword, currentSite?.id]);
 
   const { data, loading, error, reload } = useCachedResource(
-    mobileCacheKeys.taskList(user?.id, 'all-sites', `jobs|${tab}|${appliedKeyword}`),
+    mobileCacheKeys.taskList(
+      user?.id,
+      currentSite?.id,
+      `site-jobs|${tab}|${appliedKeyword}`,
+    ),
     loader,
   );
 
-  const list: UnifiedItem[] = useMemo(() => {
+  const { list, otherTips } = useMemo(() => {
     const allTasks = (data?.tasks || []).filter((t) => t.status !== 'archived');
     const taskByCaseId = new Map(
       allTasks
@@ -121,9 +117,19 @@ export default function TasksPage() {
         .map((t) => [String(t.serviceCaseId), t] as const),
     );
     const items: UnifiedItem[] = [];
+    const otherCount = new Map<string, number>();
     const kw = appliedKeyword.toLowerCase();
 
     for (const c of data?.financeCases || []) {
+      if (currentSite?.id && c.siteId && c.siteId !== currentSite.id) {
+        if (['assigned', 'working'].includes(c.status)) {
+          otherCount.set(c.siteId, (otherCount.get(c.siteId) || 0) + 1);
+        }
+        continue;
+      }
+      if (currentSite?.id && c.siteId && c.siteId !== currentSite.id) continue;
+      if (currentSite?.id && !c.siteId) continue;
+
       const linked = taskByCaseId.get(String(c.id));
       const tabStatus = linked
         ? linked.status === 'pending'
@@ -137,16 +143,12 @@ export default function TasksPage() {
       const label = linked ? inspectionStatusText(linked) : financeStatusText(c.status);
       const statusForClass = linked?.status || c.status;
       const reject = linked?.record?.rejectReason?.reason;
-      const siteName =
-        (c.siteId && siteNameById.get(c.siteId)) ||
-        [c.province, c.city].filter(Boolean).join('') ||
-        '未分站点';
       items.push({
         key: `case-${c.id}`,
         title: c.projectName || c.gspCaseNo,
         statusLabel: label,
         statusClass: statusClass(statusForClass, label),
-        meta: `${siteName} · ${c.gspCaseNo} · ${c.taskTypeName || '未设类型'}`,
+        meta: `${c.gspCaseNo} · ${c.taskTypeName || '未设类型'}`,
         rejectReason: reject
           ? `驳回：${reject}${
               linked?.record?.rejectReason?.entryIds?.length
@@ -155,27 +157,47 @@ export default function TasksPage() {
             }`
           : undefined,
         financeCase: c,
-        siteId: c.siteId,
       });
     }
-    return items;
-  }, [data, tab, appliedKeyword, siteNameById]);
 
-  const openItem = (item: UnifiedItem) => {
-    if (!item.financeCase) return;
-    if (item.siteId) {
-      const brief = siteBriefById.get(item.siteId);
-      if (brief && brief.id !== currentSite?.id) setCurrentSite(brief);
-    }
-    navigate(`/m/finance-cases/${item.financeCase.id}`);
-  };
+    const tips = [...otherCount.entries()]
+      .map(([siteId, count]) => {
+        const site = siteBriefById.get(siteId);
+        return site ? { site, count } : null;
+      })
+      .filter((x): x is { site: SiteBrief; count: number } => !!x);
+
+    return { list: items, otherTips: tips };
+  }, [data, tab, appliedKeyword, currentSite?.id, siteBriefById]);
 
   return (
     <div className="tasks-page">
       <header className="tasks-page__header">
         <h1 className="tasks-page__title">作业</h1>
-        <p className="tasks-page__sub">已汇总你负责的全部站点待办与进度</p>
+        <p className="tasks-page__sub">
+          {currentSite?.name
+            ? `当前站点 · ${currentSite.name}`
+            : '未选择站点，请先在首页切换站点'}
+        </p>
       </header>
+
+      {otherTips.length > 0 && (
+        <div className="tasks-page__other">
+          {otherTips.map(({ site, count }) => (
+            <button
+              key={site.id}
+              type="button"
+              className="tasks-page__other-item"
+              onClick={() => setCurrentSite(site)}
+            >
+              <span>
+                <b>{site.name}</b> 有 {count} 单待办
+              </span>
+              <i>切换 ›</i>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="tasks-page__search">
         <span aria-hidden style={{ color: '#9aaba2', fontSize: 16 }}>
@@ -228,7 +250,13 @@ export default function TasksPage() {
             </button>
           ) : list.length === 0 ? (
             <div className="tasks-page__empty">
-              <Empty description="暂无作业，请等待网格长派单" />
+              <Empty
+                description={
+                  otherTips.length
+                    ? '本站暂无作业，可切换到上方有待办的站点'
+                    : '暂无作业，请等待网格长派单'
+                }
+              />
             </div>
           ) : (
             list.map((item) => (
@@ -237,9 +265,13 @@ export default function TasksPage() {
                 className="tasks-item"
                 role="button"
                 tabIndex={0}
-                onClick={() => openItem(item)}
+                onClick={() =>
+                  item.financeCase && navigate(`/m/finance-cases/${item.financeCase.id}`)
+                }
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') openItem(item);
+                  if (e.key === 'Enter' && item.financeCase) {
+                    navigate(`/m/finance-cases/${item.financeCase.id}`);
+                  }
                 }}
               >
                 <div className="tasks-item__top">

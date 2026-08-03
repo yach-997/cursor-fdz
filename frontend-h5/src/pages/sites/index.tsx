@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { NavBar, Cell, Empty, Toast, Button } from 'react-vant';
+import { NavBar, Cell, Empty, Toast, Button, Tag } from 'react-vant';
 import { useAuthStore } from '../../stores/auth';
+import { fetchMyFinanceCases } from '../../api/finance';
 
-/** 站点选择页：多站时选择并缓存到 localStorage */
+/** 站点选择页：展示各站待办数，方便切到有单的站 */
 export default function SitesPage() {
   const navigate = useNavigate();
   const { user, setCurrentSite, currentSite, fetchMe, logout } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
+  const [pendingBySite, setPendingBySite] = useState<Record<string, number>>({});
 
   const sites = useMemo(() => {
     return (user?.siteMemberships || [])
@@ -15,21 +17,37 @@ export default function SitesPage() {
       .map((m) => m.site!);
   }, [user]);
 
+  const loadPending = useCallback(async () => {
+    try {
+      const list = await fetchMyFinanceCases();
+      const map: Record<string, number> = {};
+      for (const c of list) {
+        if (!c.siteId || !['assigned', 'working'].includes(c.status)) continue;
+        map[c.siteId] = (map[c.siteId] || 0) + 1;
+      }
+      setPendingBySite(map);
+    } catch {
+      setPendingBySite({});
+    }
+  }, []);
+
   const reload = useCallback(async () => {
     setRefreshing(true);
     try {
       await fetchMe();
+      await loadPending();
       Toast.success('已刷新站点列表');
     } catch {
       // 拦截器已提示
     } finally {
       setRefreshing(false);
     }
-  }, [fetchMe]);
+  }, [fetchMe, loadPending]);
 
   useEffect(() => {
     void fetchMe().catch(() => undefined);
-  }, [fetchMe]);
+    void loadPending();
+  }, [fetchMe, loadPending]);
 
   const onSelect = (siteId: string) => {
     const site = sites.find((s) => s.id === siteId);
@@ -96,16 +114,39 @@ export default function SitesPage() {
         </div>
       ) : (
         <div style={{ marginTop: 12 }}>
-          {sites.map((site) => (
-            <Cell
-              key={site.id}
-              title={site.name}
-              label={`${site.province || ''}${site.city || ''} · ${site.code}`}
-              isLink
-              value={currentSite?.id === site.id ? '当前' : ''}
-              onClick={() => onSelect(site.id)}
-            />
-          ))}
+          <div
+            style={{
+              margin: '0 16px 10px',
+              color: '#82918c',
+              fontSize: 12,
+              lineHeight: 1.5,
+            }}
+          >
+            作业按站点查看；有待办的站点会显示数量，点选后进入该站列表。
+          </div>
+          {sites.map((site) => {
+            const pending = pendingBySite[site.id] || 0;
+            return (
+              <Cell
+                key={site.id}
+                title={site.name}
+                label={`${site.province || ''}${site.city || ''} · ${site.code}`}
+                isLink
+                value={
+                  pending > 0 ? (
+                    <Tag type="danger" plain>
+                      {pending} 单待办
+                    </Tag>
+                  ) : currentSite?.id === site.id ? (
+                    '当前'
+                  ) : (
+                    ''
+                  )
+                }
+                onClick={() => onSelect(site.id)}
+              />
+            );
+          })}
         </div>
       )}
     </div>

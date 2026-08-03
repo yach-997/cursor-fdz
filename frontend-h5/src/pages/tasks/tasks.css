@@ -30,17 +30,37 @@
   line-height: 1.45;
 }
 
-.tasks-page__search {
-  margin: 14px 16px 0;
+.tasks-page__other {
+  margin: 10px 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tasks-page__other-item {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  height: 46px;
-  padding: 0 14px;
-  border-radius: 13px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid var(--line);
-  box-shadow: var(--h5-shadow-soft);
+  border: 1px solid rgba(196, 138, 46, 0.18);
+  border-radius: 12px;
+  background: #fff8ee;
+  color: #8a641f;
+  font-family: inherit;
+  text-align: left;
+}
+
+.tasks-page__other-item b {
+  color: #6f4e12;
+}
+
+.tasks-page__other-item i {
+  font-style: normal;
+  font-weight: 700;
+  color: #c48a2e;
 }
 
 .tasks-page__search input {

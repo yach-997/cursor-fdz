@@ -29,15 +29,18 @@ type HomeItem = {
   status: string;
   statusLabel: string;
   href: string;
-  siteId?: string | null;
-  siteName?: string;
+};
+
+type OtherSiteTip = {
+  siteId: string;
+  siteName: string;
+  count: number;
+  site: SiteBrief;
 };
 
 function primaryAction(item?: HomeItem) {
-  if (!item) return { title: '查看全部作业', hint: '暂无待办，下拉刷新或等待派单' };
-  if (item.status === 'rejected') {
-    return { title: '去返工', hint: item.title };
-  }
+  if (!item) return { title: '查看全部作业', hint: '本站暂无待办，可切换站点或等待派单' };
+  if (item.status === 'rejected') return { title: '去返工', hint: item.title };
   if (item.status === 'assigned' || item.status === 'pending') {
     return { title: '去接单', hint: item.title };
   }
@@ -47,19 +50,11 @@ function primaryAction(item?: HomeItem) {
   return { title: '查看作业', hint: item.title };
 }
 
-/** 首页：跨站点待办汇总（站点仅作定位参考，不再挡住看单） */
+/** 首页：只看当前站待办；其他站有单时提示并一键切换 */
 export default function HomePage() {
   const navigate = useNavigate();
   const { currentSite, user, setCurrentSite } = useAuthStore();
   const profileIncomplete = !user?.realName?.trim() || !user?.phone?.trim();
-
-  const siteNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const m of user?.siteMemberships || []) {
-      if (m.site?.id) map.set(m.site.id, m.site.name);
-    }
-    return map;
-  }, [user?.siteMemberships]);
 
   const siteBriefById = useMemo(() => {
     const map = new Map<string, SiteBrief>();
@@ -71,67 +66,78 @@ export default function HomePage() {
 
   const loader = useCallback(async () => {
     const [taskPage, financeCases] = await Promise.all([
-      fetchTasks({ page: 1, limit: 50 }),
+      fetchTasks({
+        page: 1,
+        limit: 50,
+        siteId: currentSite?.id,
+      }),
+      // 全量案例仅用于「其他站有单」提示，列表仍按当前站过滤
       fetchMyFinanceCases().catch(() => [] as MobileFinanceCase[]),
     ]);
     return { tasks: taskPage.list as TaskItem[], financeCases };
-  }, []);
+  }, [currentSite?.id]);
 
   const { data, loading, error, reload } = useCachedResource(
-    mobileCacheKeys.homeTasks(user?.id, 'all-sites') + ':v3',
+    mobileCacheKeys.homeTasks(user?.id, currentSite?.id) + ':site-scoped-v1',
     loader,
   );
 
-  const items: HomeItem[] = useMemo(() => {
+  const { items, otherSiteTips } = useMemo(() => {
     const allTasks = data?.tasks || [];
     const taskByCaseId = new Map(
       allTasks
         .filter((t) => t.serviceCaseId)
         .map((t) => [String(t.serviceCaseId), t] as const),
     );
+
     const list: HomeItem[] = [];
+    const otherCount = new Map<string, number>();
 
     for (const c of data?.financeCases || []) {
       if (!['assigned', 'working'].includes(c.status)) continue;
-      const linked = taskByCaseId.get(String(c.id));
-      const status = linked?.status || c.status;
-      const statusLabel = linked
-        ? linked.statusLabel && linked.statusLabel !== '草稿'
-          ? linked.statusLabel
-          : STATUS_TEXT[linked.status] || '进行中'
-        : STATUS_TEXT[c.status] || c.status;
-      const siteName =
-        (c.siteId && siteNameById.get(c.siteId)) ||
-        [c.province, c.city].filter(Boolean).join('') ||
-        '未分站点';
-      list.push({
-        key: `case-${c.id}`,
-        title: c.projectName || c.gspCaseNo,
-        meta: `${siteName} · ${c.gspCaseNo} · ${c.taskTypeName || '未设类型'}`,
-        status,
-        statusLabel,
-        href: `/m/finance-cases/${c.id}`,
-        siteId: c.siteId,
-        siteName,
-      });
+      if (!c.siteId) continue;
+
+      if (currentSite?.id && c.siteId === currentSite.id) {
+        const linked = taskByCaseId.get(String(c.id));
+        const status = linked?.status || c.status;
+        const statusLabel = linked
+          ? linked.statusLabel && linked.statusLabel !== '草稿'
+            ? linked.statusLabel
+            : STATUS_TEXT[linked.status] || '进行中'
+          : STATUS_TEXT[c.status] || c.status;
+        list.push({
+          key: `case-${c.id}`,
+          title: c.projectName || c.gspCaseNo,
+          meta: `${c.gspCaseNo} · ${c.taskTypeName || '未设类型'}`,
+          status,
+          statusLabel,
+          href: `/m/finance-cases/${c.id}`,
+        });
+        continue;
+      }
+
+      if (!currentSite?.id || c.siteId !== currentSite.id) {
+        otherCount.set(c.siteId, (otherCount.get(c.siteId) || 0) + 1);
+      }
     }
 
     list.sort((a, b) => {
       const rank = (s: string) =>
-        s === 'in_progress' || s === 'working' || s === 'rejected'
-          ? 0
-          : s === 'assigned' || s === 'pending'
-            ? 1
-            : 2;
-      const byStatus = rank(a.status) - rank(b.status);
-      if (byStatus !== 0) return byStatus;
-      // 当前定位站的单优先，方便现场作业
-      const aHere = currentSite?.id && a.siteId === currentSite.id ? 0 : 1;
-      const bHere = currentSite?.id && b.siteId === currentSite.id ? 0 : 1;
-      return aHere - bHere;
+        s === 'in_progress' || s === 'working' || s === 'rejected' ? 0 : 1;
+      return rank(a.status) - rank(b.status);
     });
-    return list;
-  }, [data, siteNameById, currentSite?.id]);
+
+    const tips: OtherSiteTip[] = [...otherCount.entries()]
+      .map(([siteId, count]) => {
+        const site = siteBriefById.get(siteId);
+        if (!site) return null;
+        return { siteId, siteName: site.name, count, site };
+      })
+      .filter((x): x is OtherSiteTip => !!x)
+      .sort((a, b) => b.count - a.count);
+
+    return { items: list, otherSiteTips: tips };
+  }, [data, currentSite?.id, siteBriefById]);
 
   const stats = useMemo(
     () => ({
@@ -139,21 +145,17 @@ export default function HomePage() {
       inProgress: items.filter((t) =>
         ['in_progress', 'working', 'rejected'].includes(t.status),
       ).length,
-      otherSites: items.filter((t) => currentSite?.id && t.siteId && t.siteId !== currentSite.id)
-        .length,
     }),
-    [items, currentSite?.id],
+    [items],
   );
 
-  const openItem = (item: HomeItem) => {
-    if (item.siteId) {
-      const brief = siteBriefById.get(item.siteId);
-      if (brief && brief.id !== currentSite?.id) setCurrentSite(brief);
-    }
-    navigate(item.href);
-  };
-
   const action = primaryAction(items[0]);
+  const otherTotal = otherSiteTips.reduce((sum, t) => sum + t.count, 0);
+
+  const switchToSite = (site: SiteBrief) => {
+    setCurrentSite(site);
+    // 换站后缓存 key 会变，首页会自动重拉
+  };
 
   return (
     <div className="page-home">
@@ -165,16 +167,16 @@ export default function HomePage() {
               <b>现场作业台</b>
             </div>
             <button type="button" className="home-site-switch" onClick={() => navigate('/m/sites')}>
-              定位站点 ›
+              切换站点 ›
             </button>
           </div>
           <div className="home-hero__site">
-            <small>定位参考（不影响看待办）</small>
-            <h1>{currentSite?.name || '未设置定位站点'}</h1>
+            <small>当前站点</small>
+            <h1>{currentSite?.name || '尚未选择站点'}</h1>
             <p>
               {currentSite
                 ? `${currentSite.province || ''}${currentSite.city || ''} · ${currentSite.code}`
-                : '下方已汇总你名下全部站点待办'}
+                : '请先选择今日要作业的站点'}
             </p>
           </div>
         </header>
@@ -189,10 +191,29 @@ export default function HomePage() {
             </button>
           )}
 
-          {stats.otherSites > 0 && (
-            <div className="home-cross-site-tip">
-              另有 <b>{stats.otherSites}</b> 单在其他站点，列表已一并展示
-            </div>
+          {otherSiteTips.length > 0 && (
+            <section className="home-other-sites" aria-label="其他站点待办提醒">
+              <div className="home-other-sites__head">
+                <b>其他站点有待办</b>
+                <span>共 {otherTotal} 单，点站点即可切换查看</span>
+              </div>
+              <div className="home-other-sites__list">
+                {otherSiteTips.map((tip) => (
+                  <button
+                    key={tip.siteId}
+                    type="button"
+                    className="home-other-sites__item"
+                    onClick={() => switchToSite(tip.site)}
+                  >
+                    <span>
+                      <b>{tip.siteName}</b>
+                      <small>{tip.count} 单待办</small>
+                    </span>
+                    <i>切换 ›</i>
+                  </button>
+                ))}
+              </div>
+            </section>
           )}
 
           <section className="home-overview">
@@ -234,14 +255,18 @@ export default function HomePage() {
               type="button"
               className="home-start"
               onClick={() => {
-                if (items[0]) openItem(items[0]);
+                if (!currentSite) {
+                  navigate('/m/sites');
+                  return;
+                }
+                if (items[0]) navigate(items[0].href);
                 else navigate('/m/tasks');
               }}
             >
               <span className="home-start__icon">→</span>
               <span>
-                <b>{action.title}</b>
-                <small>{action.hint}</small>
+                <b>{!currentSite ? '先选择站点' : action.title}</b>
+                <small>{!currentSite ? '选择站点后查看本站已派工单' : action.hint}</small>
               </span>
               <i>›</i>
             </button>
@@ -249,8 +274,8 @@ export default function HomePage() {
 
           <div className="home-section-title">
             <div>
-              <h3>待办作业</h3>
-              <span>已汇总你负责的全部站点</span>
+              <h3>本站待办</h3>
+              <span>{currentSite ? `仅显示 ${currentSite.name}` : '请先选择站点'}</span>
             </div>
             <button type="button" onClick={() => navigate('/m/tasks')}>
               全部 ›
@@ -267,9 +292,19 @@ export default function HomePage() {
             <button type="button" className="mobile-load-error" onClick={() => void reload()}>
               数据暂时没有加载成功，点击重试
             </button>
+          ) : !currentSite ? (
+            <div className="home-empty">
+              <Empty description="请先选择站点" />
+            </div>
           ) : items.length === 0 ? (
             <div className="home-empty">
-              <Empty description="暂无待办作业，等待网格长派单" />
+              <Empty
+                description={
+                  otherSiteTips.length
+                    ? '本站暂无待办，可点上方提示切换到有单的站点'
+                    : '本站暂无待办，等待网格长派单'
+                }
+              />
             </div>
           ) : (
             <div className="home-task-list">
@@ -278,7 +313,7 @@ export default function HomePage() {
                   type="button"
                   className="home-task"
                   key={t.key}
-                  onClick={() => openItem(t)}
+                  onClick={() => navigate(t.href)}
                 >
                   <span className={`home-task__dot is-${t.status}`} />
                   <span className="home-task__main">
