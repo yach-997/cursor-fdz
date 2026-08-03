@@ -40,11 +40,9 @@ export class VisionService {
     }
 
     const baseUrl = (
-      this.config.get<string>('VISION_BASE_URL') ||
-      'https://api.siliconflow.cn/v1'
+      this.config.get<string>('VISION_BASE_URL') || 'https://api.siliconflow.cn/v1'
     ).replace(/\/$/, '');
-    const model =
-      this.config.get<string>('VISION_MODEL') || 'Qwen/Qwen3-VL-8B-Instruct';
+    const model = this.config.get<string>('VISION_MODEL') || 'Qwen/Qwen3-VL-8B-Instruct';
 
     const fieldPhotos = (Array.isArray(photoUrlsInput) ? photoUrlsInput : [photoUrlsInput])
       .map((url) => String(url || '').trim())
@@ -105,8 +103,17 @@ export class VisionService {
       const mountFix = this.isMountFixCheck(criteria);
       const dcSide = this.isDcSideCheck(criteria);
       const acSide = this.isAcSideCheck(criteria);
-      const hardItem =
-        grounding || faultRecord || sungrowShot || mountFix || dcSide || acSide;
+      const hardItem = grounding || faultRecord || sungrowShot || mountFix || dcSide || acSide;
+
+      // 关键检查项配置了标准图但读取失败时，禁止绕过标准继续自动判定。
+      if (hardItem && samples.length > 0 && sampleInputs.length !== samples.length) {
+        return {
+          status: CheckResult.ERROR,
+          confidence: 0,
+          reason: '合格标准图读取不完整，已转人工判断，请稍后重新分析',
+          provider: 'siliconflow',
+        };
+      }
 
       // 故障记录：未凑齐至少 2 张就不调用模型，直接不合格
       if (faultRecord && photoInputs.length < 2) {
@@ -371,16 +378,16 @@ export class VisionService {
       return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"photoTypes":["realtime"|"historical"|"other"],"hasRealtimeFaultShot":true|false,"hasHistoricalFaultShot":true|false,"realtimeHasActiveAlarm":true|false}}';
     }
     if (flags.sungrowShot) {
-      return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"screenshotComplete":true|false,"serialNumberVisible":true|false,"matchesSampleLayout":true|false}}';
+      return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明，必须写明缺失区域","evidence":{"screenshotComplete":true|false,"serialNumberVisible":true|false,"topSectionVisible":true|false,"bottomContentVisible":true|false,"requiredSectionsCovered":true|false,"croppedOrPartial":true|false,"matchesSampleLayout":true|false,"photoFindings":["第1张：实际可见区域"]}}';
     }
     if (flags.mountFix) {
       return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"multiAngleCoverage":true|false,"mountPointsVisible":true|false,"noObviousLooseness":true|false}}';
     }
     if (flags.dcSide) {
-      return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"connectorsIntact":true|false,"unusedPortsCapped":true|false,"matchesSampleProtection":true|false}}';
+      return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明，必须写明照片序号和端口位置","evidence":{"connectorsIntact":true|false,"unusedPortsCapped":true|false,"allPortsIndividuallyAccountedFor":true|false,"visibleUnusedPortCount":0,"uncappedUnusedPortCount":0,"matchesSampleProtection":true|false,"photoFindings":["第1张：空闲孔及封盖情况"]}}';
     }
     if (flags.acSide) {
-      return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"phaseWiresOk":true|false,"peWireConnected":true|false,"terminalsCoveredOrProtected":true|false}}';
+      return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明，必须写明PE线及接入点所在照片","evidence":{"phaseWiresOk":true|false,"peConductorVisible":true|false,"peTerminationVisible":true|false,"peWireConnected":true|false,"terminalsCoveredOrProtected":true|false,"photoFindings":["第1张：PE线颜色和实际接入位置"]}}';
     }
     return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明"}';
   }
@@ -432,14 +439,18 @@ export class VisionService {
       'screenshotComplete=true 的最低要求（现场照片像素内须同时具备）：',
       '1) 顶部设备信息区：机型/设备名、运行状态，且能读到序列号（S/N、序列号等）；',
       '2) 中部关键运行数据区；',
-      '3) 能看出是完整 App 页面结构（如顶栏或底栏导航），不是从屏幕中间抠出来的局部卡片。',
+      '3) 页面下部内容区也已覆盖；底部导航栏只能证明是整屏截图，不能证明长页面内容已截全。',
+      '4) 若页面可上下滚动，必须由多张连续截图或长截图覆盖样本要求的全部区域；只拍顶部和部分 MPPT 表格仍是半截。',
       'screenshotComplete=false（必须 fail）典型情况：',
       '- 只有功率/电量四宫格数字，看不到序列号与设备头图；',
       '- 明显半截、左右或上下被裁切，与样本完整手机截图差很多；',
       '- 画面像局部放大/二次裁剪，缺少样本中同级的页面元素。',
+      '- 虽有手机顶栏和底部导航，但中间长页面只展示到一半、后续表格/信息未覆盖。',
       'serialNumberVisible：序列号必须在现场图中清晰可读，禁止根据样本或想象补全；看不见 → false。',
+      'topSectionVisible、bottomContentVisible、requiredSectionsCovered 必须逐项根据现场图确认；任一不可见/拿不准 → false。',
+      'croppedOrPartial：只覆盖长页面的一部分、关键表格被截断、缺少样本中的下半部分 → true。',
       'matchesSampleLayout：有合格样本时，现场完整度须与样本同级；样本是整屏而现场是半截/局部 → false。',
-      '仅当 screenshotComplete、serialNumberVisible 均为 true，且（无样本或 matchesSampleLayout=true）才允许 pass。',
+      '仅当 screenshotComplete、serialNumberVisible、topSectionVisible、bottomContentVisible、requiredSectionsCovered 均为 true，croppedOrPartial=false，且（无样本或 matchesSampleLayout=true）才允许 pass。',
     ].join('\n');
   }
 
@@ -470,20 +481,18 @@ export class VisionService {
       '3) 空闲孔位置是红色/橙色旋钮盖、DC SWITCH 旋盖且处于盖合状态；',
       '4) 画面中可见直流口全部插满在用，没有空闲孔。',
       '',
-      '【空闲端口不合格】unusedPortsCapped=false，必须同时满足：',
-      '1) 能清楚看到未插线的空闲圆孔；',
-      '2) 该孔呈黑色空洞或金属触点外露；',
-      '3) 该孔上没有蓝色、也没有红色/橙色盖子。',
+      '【空闲端口不合格】只要看到未插线圆孔且没有蓝/红/橙防护盖，就必须 unusedPortsCapped=false；黑色孔口、空心插座或可见金属触点均属于未封盖。',
       '',
       '【严禁误判】',
       '- 蓝盖、红盖、橙盖本身 = 合格证据，禁止因“看见盖子颜色”而判 fail。',
       '- 黑色 MC4 塑料外壳、已插接头尾端、线缆护套 ≠ 裸露端子。',
-      '- 禁止使用含混话术如「防护盖裸露」；若要判 fail，必须写清「某空闲孔无蓝/红/橙盖、呈黑洞外露」。',
+      '- 必须逐张、从左到右清点可见空闲孔，写入 visibleUnusedPortCount、uncappedUnusedPortCount 和 photoFindings。',
+      '- 任一端口被遮挡、过暗或无法区分“已插线/已封盖”时，allPortsIndividuallyAccountedFor=false，按证据不足 fail，禁止猜测合格。',
       '- 合格样本中未插线孔均有盖；现场若同样有蓝/红/橙盖，应判 pass。',
       '',
       'connectorsIntact：可见已插接头插接到位、无破损烧蚀进水 → true。',
       'matchesSampleProtection：有合格样本时，空闲孔防护方式与样本同级（有盖）→ true；无样本则忽略。',
-      '拿不准时：connectorsIntact=true 且未见明确「无盖黑洞」→ unusedPortsCapped=true，判 pass。',
+      '拿不准时：unusedPortsCapped=false、allPortsIndividuallyAccountedFor=false，判 fail；禁止“未看清缺陷就当作没有缺陷”。',
     ].join('\n');
   }
 
@@ -491,10 +500,12 @@ export class VisionService {
     return [
       '【交流侧安装检查·硬性否决】',
       '交流侧除相线外，必须看到 PE 接地线已可靠接入（黄绿双色线接到 PE 端子，或铜编织带接到 PE）。',
+      '必须同时看清 PE 导体本体和它实际压接/紧固到 PE 端子的连接点；只看到 PE 字样、端子或相线，不算已连接。',
       'peWireConnected=false 的典型情况：只见 L1/L2/L3（黄/绿/红相线色环）而 PE 端子空着、无黄绿线/无接地编织带。',
       '未接 PE 属于明显安全缺陷，即使相线看起来整齐也必须 fail。',
       'terminalsCoveredOrProtected：可触及的带电端子应有透明罩/防护；严重裸露且无防护可 fail。',
-      '仅当 phaseWiresOk 与 peWireConnected 均为 true 才允许 pass。',
+      'peConductorVisible、peTerminationVisible、peWireConnected 必须同时为 true；任一看不清或拿不准都必须 fail。',
+      'reason 与 photoFindings 必须写明 PE 位于第几张照片及具体位置，无法定位不得宣称已接地。',
     ].join('\n');
   }
 
@@ -517,14 +528,14 @@ export class VisionService {
     return {
       status: CheckResult.PASS,
       confidence: Math.max(parsed.confidence, 0.88),
-      reason:
-        parsed.status === CheckResult.PASS && parsed.reason
-          ? parsed.reason
-          : passReason,
+      reason: parsed.status === CheckResult.PASS && parsed.reason ? parsed.reason : passReason,
     };
   }
 
-  private parseBoolEvidence(raw: string, keys: string[]): {
+  private parseBoolEvidence(
+    raw: string,
+    keys: string[],
+  ): {
     values: Record<string, boolean>;
     reported: boolean;
   } {
@@ -536,8 +547,7 @@ export class VisionService {
       const obj = JSON.parse(match[0]) as { evidence?: Record<string, unknown> };
       const ev = obj.evidence;
       if (!ev || typeof ev !== 'object') return { values, reported: false };
-      const asBool = (v: unknown) =>
-        v === true || v === 'true' || v === 1 || v === '1';
+      const asBool = (v: unknown) => v === true || v === 'true' || v === 1 || v === '1';
       for (const k of keys) values[k] = asBool(ev[k]);
       return { values, reported: true };
     } catch {
@@ -553,6 +563,10 @@ export class VisionService {
     const { values, reported } = this.parseBoolEvidence(raw, [
       'screenshotComplete',
       'serialNumberVisible',
+      'topSectionVisible',
+      'bottomContentVisible',
+      'requiredSectionsCovered',
+      'croppedOrPartial',
       'matchesSampleLayout',
     ]);
     const text = `${parsed.reason || ''} ${raw}`;
@@ -568,6 +582,10 @@ export class VisionService {
       missing.push('完整阳光云页面（不可半截/局部裁切）');
     }
     if (!values.serialNumberVisible) missing.push('清晰可读的设备序列号');
+    if (!values.topSectionVisible) missing.push('页面顶部设备信息区');
+    if (!values.bottomContentVisible) missing.push('页面下部完整内容（底部导航栏不能代替）');
+    if (!values.requiredSectionsCovered) missing.push('标准要求的全部页面区域');
+    if (values.croppedOrPartial) missing.push('截图不得只覆盖长页面的一部分');
     if (sampleCount > 0 && !values.matchesSampleLayout) {
       missing.push('与合格样本同级的完整版式');
     }
@@ -598,8 +616,7 @@ export class VisionService {
       'noObviousLooseness',
     ]);
     const text = `${parsed.reason || ''} ${raw}`;
-    const sameAngle =
-      /构图相同|同一角度|几乎一样|重复拍摄|角度相同|连拍同侧/.test(text);
+    const sameAngle = /构图相同|同一角度|几乎一样|重复拍摄|角度相同|连拍同侧/.test(text);
     const affirmsMount =
       /抱箍|横担|螺栓|螺母|支架|固定点|抱杆/.test(text) &&
       !/未见.*(?:抱箍|螺栓|支架|固定)|缺少.*(?:抱箍|螺栓|支架|固定)/.test(text);
@@ -613,12 +630,7 @@ export class VisionService {
       values.mountPointsVisible = true;
     }
     // 2 张且固定点清晰时，不过度苛求“展览级多角度”
-    if (
-      photoCount >= 2 &&
-      values.mountPointsVisible &&
-      !sameAngle &&
-      !values.multiAngleCoverage
-    ) {
+    if (photoCount >= 2 && values.mountPointsVisible && !sameAngle && !values.multiAngleCoverage) {
       values.multiAngleCoverage = true;
     }
 
@@ -653,59 +665,26 @@ export class VisionService {
     const { values, reported } = this.parseBoolEvidence(raw, [
       'connectorsIntact',
       'unusedPortsCapped',
+      'allPortsIndividuallyAccountedFor',
       'matchesSampleProtection',
     ]);
-    const reason = parsed.reason || '';
+    const reason = `${parsed.reason || ''} ${raw}`;
     const explicitOpenHole =
       /无盖|未盖|缺盖|没有盖|未加盖|未加防护|黑洞|空洞|金属触点裸|空闲孔.*裸|裸露无盖|未使用端子.*无/.test(
         reason,
       );
-    // 「防护盖裸露」等含混话术多为误杀（常把有盖/在用接头说成不合格）
-    const ambiguousCapFail =
-      /防护盖裸露|防尘盖裸露|端子防护盖裸露/.test(reason) && !explicitOpenHole;
-
-    // 模型未给出结构化证据时，不因默认 false 硬否决
-    if (!reported) {
-      if (parsed.status === CheckResult.FAIL) {
-        if (
-          ambiguousCapFail ||
-          (/防护盖|防尘盖|裸露/.test(reason) && !explicitOpenHole)
-        ) {
-          return {
-            status: CheckResult.PASS,
-            confidence: Math.max(parsed.confidence, 0.82),
-            reason:
-              '未确认存在「空闲孔无蓝/红/橙盖」的明确证据；已插接头与有盖空闲孔按合格处理。',
-          };
-        }
-      }
-      return parsed;
-    }
-
     const missing: string[] = [];
-    const unusedCappedFalse = /unusedPortsCapped"\s*:\s*false/.test(raw);
-    // 仅当明确指出无盖黑洞时才因 unusedPortsCapped=false 否决
-    if (unusedCappedFalse && explicitOpenHole) {
-      missing.push('空闲未用端子须盖蓝/红/橙防护盖（存在无盖裸露孔）');
-    } else if (unusedCappedFalse && !explicitOpenHole) {
-      // 模型给了 false，但理由含混或像误把有盖判成裸露 → 不强制否决
-      if (values.connectorsIntact !== false && !/connectorsIntact"\s*:\s*false/.test(raw)) {
-        return {
-          status: CheckResult.PASS,
-          confidence: Math.max(parsed.confidence, 0.85),
-          reason:
-            parsed.status === CheckResult.PASS && reason
-              ? reason
-              : '空闲孔未见明确无盖裸露；蓝/红/橙盖或已插接头视为合格。',
-        };
-      }
+    const uncappedMatch = raw.match(/uncappedUnusedPortCount"\s*:\s*(\d+)/);
+    const uncappedCount = uncappedMatch ? Number(uncappedMatch[1]) : null;
+    if (!reported) missing.push('逐端口结构化检查结果');
+    if (!values.connectorsIntact) missing.push('直流接头完好插接到位');
+    if (!values.allPortsIndividuallyAccountedFor) missing.push('逐一清点全部可见端口');
+    if (!values.unusedPortsCapped || explicitOpenHole || (uncappedCount ?? 0) > 0) {
+      missing.push('所有空闲端口均须有蓝/红/橙防护盖，不得存在无盖孔');
     }
-    if (reported && /connectorsIntact"\s*:\s*false/.test(raw)) {
-      missing.push('直流接头完好插接到位');
+    if (sampleCount > 0 && !values.matchesSampleProtection) {
+      missing.push('空闲端口防护状态须与合格样本一致');
     }
-    // 样本仅作参考：空闲孔有盖即与样本防护一致；不再因 matchesSampleProtection=false 单独否决
-    void sampleCount;
-    void values;
 
     return this.enforceEvidencePass(
       parsed,
@@ -721,11 +700,15 @@ export class VisionService {
   ): Omit<VisionCompareResult, 'provider'> {
     const { values, reported } = this.parseBoolEvidence(raw, [
       'phaseWiresOk',
+      'peConductorVisible',
+      'peTerminationVisible',
       'peWireConnected',
       'terminalsCoveredOrProtected',
     ]);
     const missing: string[] = [];
-    if (!values.peWireConnected) missing.push('PE 接地线已接入');
+    if (!values.peConductorVisible) missing.push('清晰可见的黄绿 PE 线或接地编织带');
+    if (!values.peTerminationVisible) missing.push('PE 线实际压接/紧固到端子的连接点');
+    if (!values.peWireConnected) missing.push('PE 接地线已可靠接入');
     if (!values.phaseWiresOk) missing.push('相线接线正常');
     return this.enforceEvidencePass(
       parsed,
@@ -777,9 +760,7 @@ export class VisionService {
     if (missing.length > 0) {
       const detail = evidence.reported
         ? `现场未见：${missing.join('、')}${
-            evidence.photoTypes.length
-              ? `（各图判定：${evidence.photoTypes.join('、')}）`
-              : ''
+            evidence.photoTypes.length ? `（各图判定：${evidence.photoTypes.join('、')}）` : ''
           }`
         : `模型未逐项确认双页截图（视为缺失：${missing.join('、')}）`;
       return {
@@ -809,7 +790,10 @@ export class VisionService {
     };
   }
 
-  private parseFaultRecordEvidence(raw: string, reason = ''): {
+  private parseFaultRecordEvidence(
+    raw: string,
+    reason = '',
+  ): {
     hasRealtimeFaultShot: boolean;
     hasHistoricalFaultShot: boolean;
     realtimeHasActiveAlarm: boolean;
@@ -831,8 +815,7 @@ export class VisionService {
       };
       const ev = obj.evidence;
       if (!ev || typeof ev !== 'object') return empty;
-      const asBool = (v: unknown) =>
-        v === true || v === 'true' || v === 1 || v === '1';
+      const asBool = (v: unknown) => v === true || v === 'true' || v === 1 || v === '1';
 
       const candidateTypes = ev.photoTypes ?? ev.imageTypes ?? ev.types ?? ev.photos;
       const rawTypes = Array.isArray(candidateTypes) ? candidateTypes : [];
@@ -913,10 +896,9 @@ export class VisionService {
     if (!evidence.groundLabel) missing.push('接地标识');
 
     if (missing.length > 0) {
-      const detail =
-        evidence.reported
-          ? `现场未见：${missing.join('、')}`
-          : `模型未逐项确认接地证据（视为缺失：${missing.join('、')}）`;
+      const detail = evidence.reported
+        ? `现场未见：${missing.join('、')}`
+        : `模型未逐项确认接地证据（视为缺失：${missing.join('、')}）`;
       return {
         status: CheckResult.FAIL,
         confidence: Math.min(parsed.confidence, 0.92),
@@ -969,14 +951,13 @@ export class VisionService {
       if (!ev || typeof ev !== 'object') return empty;
       const asBool = (v: unknown) => v === true || v === 'true' || v === 1 || v === '1';
       let yellowGreenWire = asBool(ev.yellowGreenWire ?? ev.黄绿双色接地线);
-      let groundBarOrTerminal = asBool(
-        ev.groundBarOrTerminal ?? ev.接地排 ?? ev.接地端子,
-      );
+      let groundBarOrTerminal = asBool(ev.groundBarOrTerminal ?? ev.接地排 ?? ev.接地端子);
       let groundLabel = asBool(ev.groundLabel ?? ev.接地标识);
 
       const text = `${obj.reason || ''} ${reason} ${raw}`;
-      const deniesYellowGreen =
-        /缺少黄绿|未见黄绿|无黄绿双色|没有黄绿|黄绿双色接地线缺失/.test(text);
+      const deniesYellowGreen = /缺少黄绿|未见黄绿|无黄绿双色|没有黄绿|黄绿双色接地线缺失/.test(
+        text,
+      );
       const affirmsYellowGreen =
         /黄绿双色|黄绿相间|黄绿(?:色)?(?:接地)?线/.test(text) &&
         /可见|有|存在|清晰|已确认|已看到/.test(text);
@@ -989,9 +970,7 @@ export class VisionService {
       // 模型口头承认见到 PE/接地标识，但 evidence 漏标时纠偏
       if (
         !groundLabel &&
-        /(?:可见|有|存在|标有|丝印|打印)?\s*PE\b|接地标识|接地符号|GND|EARTH/.test(
-          text,
-        ) &&
+        /(?:可见|有|存在|标有|丝印|打印)?\s*PE\b|接地标识|接地符号|GND|EARTH/.test(text) &&
         !/PE\s*缺失|无\s*PE|未见\s*PE|没有\s*PE|标识缺失|未见接地标识/.test(text)
       ) {
         if (/\bPE\b|接地标识|接地符号|GND|EARTH/.test(text)) {
@@ -1000,9 +979,7 @@ export class VisionService {
       }
       if (
         /标识缺失|未见接地标识/.test(text) &&
-        /(?:可见|清晰|有)\s*PE|\bPE\b.*(?:标识|丝印|字样)|PE\s*(?:标识|丝印|字样)/.test(
-          text,
-        )
+        /(?:可见|清晰|有)\s*PE|\bPE\b.*(?:标识|丝印|字样)|PE\s*(?:标识|丝印|字样)/.test(text)
       ) {
         groundLabel = true;
       }
@@ -1053,9 +1030,7 @@ export class VisionService {
         });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
-        const contentType = (resp.headers.get('content-type') || 'image/jpeg')
-          .split(';')[0]
-          .trim();
+        const contentType = (resp.headers.get('content-type') || 'image/jpeg').split(';')[0].trim();
         if (!contentType.startsWith('image/')) {
           throw new Error(`响应不是图片: ${contentType}`);
         }
@@ -1093,10 +1068,7 @@ export class VisionService {
             ? CheckResult.FAIL
             : null;
       if (!status) return null;
-      const confidence = Math.max(
-        0,
-        Math.min(1, Number(obj.confidence ?? 0.7) || 0.7),
-      );
+      const confidence = Math.max(0, Math.min(1, Number(obj.confidence ?? 0.7) || 0.7));
       return {
         status,
         confidence: Number(confidence.toFixed(2)),

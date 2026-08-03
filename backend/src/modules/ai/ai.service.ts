@@ -92,24 +92,19 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
 
     const snapshotEntry = (task.templateSnapshot || []).find(
       (item: { id?: string }) => item.id === dto.templateEntryId,
-    ) as { name?: string; description?: string } | undefined;
+    ) as { name?: string; description?: string; samplePhotos?: string[] } | undefined;
     const checkCriteria = [snapshotEntry?.name, snapshotEntry?.description]
       .filter(Boolean)
       .join('\n')
       .slice(0, 800);
 
-    if (
-      /上传故障|故障记录|实时故障|历史故障/.test(checkCriteria) &&
-      photoUrls.length < 2
-    ) {
+    if (/上传故障|故障记录|实时故障|历史故障/.test(checkCriteria) && photoUrls.length < 2) {
       throw new BadRequestException(
         '「上传故障记录」须同时上传实时故障与历史故障两类截图（至少 2 张）后再分析',
       );
     }
     if (/安装固定|支架|墙挂固定/.test(checkCriteria) && photoUrls.length < 2) {
-      throw new BadRequestException(
-        '「安装固定检查」须至少上传 2 张不同角度照片后再分析',
-      );
+      throw new BadRequestException('「安装固定检查」须至少上传 2 张不同角度照片后再分析');
     }
 
     // 标记 pending
@@ -131,11 +126,16 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
     }
     this.memoryResults.delete(resultKey);
 
+    const snapshotSamplePhotoUrls = uniqueUrls(snapshotEntry?.samplePhotos || []);
     const job: AiJob = {
       recordId: dto.recordId,
       templateEntryId: dto.templateEntryId,
       photoUrls,
-      samplePhotoUrls: dto.samplePhotoUrls || [],
+      // 标准图以任务创建时冻结的模板快照为准，避免前端漏传或传错样本。
+      // 仅兼容没有模板快照的旧任务时，才回退使用客户端传入值。
+      samplePhotoUrls: snapshotSamplePhotoUrls.length
+        ? snapshotSamplePhotoUrls
+        : uniqueUrls(dto.samplePhotoUrls || []),
       checkCriteria: checkCriteria || undefined,
       remark: entry.remark || undefined,
       enqueuedAt: new Date().toISOString(),
@@ -254,11 +254,7 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
     let applied = false;
     for (let attempt = 1; attempt <= 3 && !applied; attempt += 1) {
       try {
-        await this.recordService.applyAiResult(
-          job.recordId,
-          job.templateEntryId,
-          aiResult,
-        );
+        await this.recordService.applyAiResult(job.recordId, job.templateEntryId, aiResult);
         applied = true;
       } catch (err) {
         this.logger.warn(`回写 AI 结果失败（${attempt}/3）: ${(err as Error).message}`);
