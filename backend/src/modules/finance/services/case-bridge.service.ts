@@ -135,11 +135,20 @@ export class CaseBridgeService {
     }
   }
 
+  private assertCaseTaskTypeEditable(item: ServiceCase) {
+    if (['working', 'finished', 'settle_review', 'settled', 'month_locked'].includes(item.status)) {
+      throw new BadRequestException(
+        '案例已开始作业或进入结算，不能再修改任务类型（避免与已建巡检模板不一致）',
+      );
+    }
+  }
+
   async setTaskType(caseId: string, dto: SetCaseTaskTypeDto, user: CurrentUserContext) {
     this.assertAdminOrManager(user);
     const item = await this.getCase(caseId, user);
     if (!item.siteId) throw new BadRequestException('请先将案例分配到站点');
     this.assertSiteManage(user, item.siteId);
+    this.assertCaseTaskTypeEditable(item);
     const template = await this.templates.findOne({ where: { id: dto.templateId } });
     if (!template) throw new NotFoundException('任务类型不存在，请先在「任务类型」中创建');
     const prev = { taskType: item.taskType, taskTemplateId: item.taskTemplateId };

@@ -461,17 +461,19 @@ export default function FinanceCasesPage() {
                     {r.siteId ? '改派站点' : '分配站点'}
                   </Button>
                 )}
-                <Button
-                  type="link"
-                  style={isManager && r.siteId && !hasTaskType(r) ? { fontWeight: 600 } : undefined}
-                  disabled={!r.siteId}
-                  onClick={() => {
-                    setTaskTemplateId(r.taskTemplateId || undefined);
-                    setTypeModal(r);
-                  }}
-                >
-                  设类型
-                </Button>
+                {['pending_assign', 'assigned'].includes(r.status) && (
+                  <Button
+                    type="link"
+                    style={isManager && r.siteId && !hasTaskType(r) ? { fontWeight: 600 } : undefined}
+                    disabled={!r.siteId}
+                    onClick={() => {
+                      setTaskTemplateId(r.taskTemplateId || undefined);
+                      setTypeModal(r);
+                    }}
+                  >
+                    设类型
+                  </Button>
+                )}
                 {['pending_assign', 'assigned', 'working'].includes(r.status) && (
                   <Button
                     type="link"
