@@ -73,6 +73,30 @@ function aiResultColor(status?: string) {
   return 'processing';
 }
 
+function withEntryAnalyzing(record: RecordItem, templateEntryId: string): RecordItem {
+  const entries = record.entries.map((entry) =>
+    entry.templateEntryId === templateEntryId
+      ? {
+          ...entry,
+          aiResult: { status: 'pending', confidence: 0, reason: '重新分析中…' },
+          finalResult: null,
+        }
+      : entry,
+  );
+  const aiSummary = entries.reduce(
+    (summary, entry) => {
+      const status = entry.aiResult?.status || 'pending';
+      if (status === 'pass') summary.pass += 1;
+      else if (status === 'fail') summary.fail += 1;
+      else if (status === 'error') summary.error += 1;
+      else summary.pending += 1;
+      return summary;
+    },
+    { pass: 0, fail: 0, pending: 0, error: 0 },
+  );
+  return { ...record, entries, aiSummary };
+}
+
 /** 历史查询：所有已提交报告（AI 合格/不合格）+ 操作追溯 */
 export default function RecordsPage() {
   const [searchParams] = useSearchParams();
@@ -206,6 +230,10 @@ export default function RecordsPage() {
       return;
     }
     setRetryingEntryId(entry.templateEntryId);
+    const analyzing = withEntryAnalyzing(detail, entry.templateEntryId);
+    setDetail(analyzing);
+    setData((rows) => rows.map((row) => (row.id === analyzing.id ? analyzing : row)));
+    message.info('已开始重新分析，结果会自动刷新');
     try {
       const template = detail.task?.templateSnapshot?.find(
         (item) => item.id === entry.templateEntryId,
@@ -219,9 +247,25 @@ export default function RecordsPage() {
       const fresh = await fetchRecord(detail.id);
       setDetail(fresh);
       setData((rows) => rows.map((row) => (row.id === fresh.id ? fresh : row)));
-      message.success('已重新提交分析，结果会自动刷新');
+      message.success('重新分析已完成');
     } catch {
-      message.error('重新分析提交失败，请稍后重试');
+      try {
+        const fresh = await fetchRecord(detail.id);
+        setDetail(fresh);
+        setData((rows) => rows.map((row) => (row.id === fresh.id ? fresh : row)));
+        const current = fresh.entries.find(
+          (item) => item.templateEntryId === entry.templateEntryId,
+        );
+        if (current?.aiResult?.status === 'pending') {
+          message.warning('请求等待超时，后台仍在分析，页面会继续自动刷新');
+        } else if (current?.aiResult?.status !== entry.aiResult?.status) {
+          message.success('重新分析已完成');
+        } else {
+          message.error('重新分析未能启动，请稍后重试');
+        }
+      } catch {
+        message.warning('网络暂时不可用，页面恢复连接后会继续查询分析结果');
+      }
     } finally {
       setRetryingEntryId(undefined);
     }

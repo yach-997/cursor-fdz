@@ -1,4 +1,4 @@
-import request from '../utils/request';
+import request, { type AppAxiosRequestConfig } from '../utils/request';
 import type { ApiResponse } from '../types';
 
 export interface Paginated<T> {
@@ -82,7 +82,10 @@ export async function analyzeAi(payload: {
 }) {
   const { data } = await request.post<
     ApiResponse<{ queued: boolean; completed?: boolean }>
-  >('/ai/analyze', payload);
+  >('/ai/analyze', payload, {
+    timeout: 120_000,
+    skipErrorToast: true,
+  } as AppAxiosRequestConfig);
   return data.data;
 }
 
