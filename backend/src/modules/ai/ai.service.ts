@@ -119,6 +119,9 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
       reason: photoUrls.length > 1 ? `分析中（共 ${photoUrls.length} 张）...` : '分析中...',
       startedAt: new Date().toISOString(),
     };
+    if (!entry.manualResult || entry.manualResult === CheckResult.PENDING) {
+      entry.finalResult = null;
+    }
     await this.recordRepo.save(record);
 
     // 重新分析时清掉上一轮缓存，否则轮询会立即读到旧的失败结果。

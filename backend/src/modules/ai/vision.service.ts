@@ -143,7 +143,9 @@ export class VisionService {
               ? '3) 【本项硬性否决】拿不准、画面不全、关键点不可见必须 fail，禁止“看起来大概合格就 pass”。'
               : '3) 仅当现场照片本身关键缺陷明确、或关键要求明显缺失时才判 fail；拿不准时优先 pass，并在 reason 说明存疑点；',
             '4) 证据越充分（多角度、完整画面）越应提高 confidence；证据不足时降低 confidence 并倾向 fail（硬性项）。',
-            faultRecord ? this.faultRecordHardRules() : this.faultRecordSoftHint(),
+            faultRecord
+              ? this.faultRecordHardRules(photoInputs.length)
+              : this.faultRecordSoftHint(),
             grounding ? this.groundingHardRules() : '',
             sungrowShot ? this.sungrowShotHardRules() : '',
             mountFix ? this.mountFixHardRules() : '',
@@ -733,9 +735,13 @@ export class VisionService {
     );
   }
 
-  private faultRecordHardRules() {
+  private faultRecordHardRules(photoCount: number) {
     return [
       '【上传故障记录·硬性否决 — 覆盖通用“拿不准优先 pass”】',
+      `本次共有 ${photoCount} 张现场故障截图（不包含后面的合格样本图）。`,
+      photoCount >= 2
+        ? '现场截图数量已经满足至少 2 张，禁止再输出“张数不足”；只需判断实时页与历史页是否各有一张。'
+        : '当前现场截图确实少于 2 张，应判定张数不足。',
       '必须对每张现场照片单独分类，写入 evidence.photoTypes（与照片顺序一一对应）。',
       'A) realtime：实时故障/实时告警页。识别要点：标题或页签含「实时故障」「实时告警」「当前告警」；空列表、「暂无数据」「暂无故障」也算实时页（仍然合格证据）。',
       'B) historical：历史故障/历史告警页。识别要点：标题含「历史故障」「历史告警」「历史记录」；常见为带日期的告警列表。',
@@ -763,7 +769,7 @@ export class VisionService {
       };
     }
 
-    const evidence = this.parseFaultRecordEvidence(raw);
+    const evidence = this.parseFaultRecordEvidence(raw, parsed.reason);
     const missing: string[] = [];
     if (!evidence.hasRealtimeFaultShot) missing.push('实时故障截图');
     if (!evidence.hasHistoricalFaultShot) missing.push('历史故障截图');
@@ -803,7 +809,7 @@ export class VisionService {
     };
   }
 
-  private parseFaultRecordEvidence(raw: string): {
+  private parseFaultRecordEvidence(raw: string, reason = ''): {
     hasRealtimeFaultShot: boolean;
     hasHistoricalFaultShot: boolean;
     realtimeHasActiveAlarm: boolean;
@@ -828,9 +834,17 @@ export class VisionService {
       const asBool = (v: unknown) =>
         v === true || v === 'true' || v === 1 || v === '1';
 
-      const rawTypes = Array.isArray(ev.photoTypes) ? ev.photoTypes : [];
+      const candidateTypes = ev.photoTypes ?? ev.imageTypes ?? ev.types ?? ev.photos;
+      const rawTypes = Array.isArray(candidateTypes) ? candidateTypes : [];
       const photoTypes = rawTypes.map((t) => {
-        const s = String(t || '').toLowerCase();
+        const value =
+          t && typeof t === 'object'
+            ? ((t as Record<string, unknown>).type ??
+              (t as Record<string, unknown>).photoType ??
+              (t as Record<string, unknown>).category ??
+              '')
+            : t;
+        const s = String(value || '').toLowerCase();
         if (/real|实时/.test(s)) return 'realtime';
         if (/hist|历史/.test(s)) return 'historical';
         return 'other';
@@ -842,6 +856,20 @@ export class VisionService {
       let hasHistoricalFaultShot =
         asBool(ev.hasHistoricalFaultShot ?? ev.历史故障 ?? ev.历史故障截图) ||
         photoTypes.includes('historical');
+
+      // 模型偶尔会在 reason 中明确逐图分类，却漏填 evidence；只接受明确的肯定句，
+      // “需要/缺少实时与历史截图”之类要求性文案不能作为已上传证据。
+      const affirmativePair =
+        /(?:已|同时).{0,12}(?:上传|提供|识别|包含|看到).{0,20}(?:实时故障|实时告警|realtime).{0,30}(?:历史故障|历史告警|historical)/i.test(
+          reason,
+        ) ||
+        /(?:第一张|图1|照片1).{0,20}(?:实时故障|实时告警|realtime).{0,40}(?:第二张|图2|照片2).{0,20}(?:历史故障|历史告警|historical)/i.test(
+          reason,
+        );
+      if (affirmativePair && !/缺少|未见|未上传|未提供|未识别|不足/.test(reason)) {
+        hasRealtimeFaultShot = true;
+        hasHistoricalFaultShot = true;
+      }
 
       return {
         hasRealtimeFaultShot,

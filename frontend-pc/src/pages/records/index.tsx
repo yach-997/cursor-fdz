@@ -506,7 +506,8 @@ export default function RecordsPage() {
                     const final = finalResultView(entry);
                     return <Tag color={final.color}>最终结论：{final.label}</Tag>;
                   })()}
-                  {detail.status === 'submitted' && entry.aiResult?.status === 'error' ? (
+                  {detail.status === 'submitted' &&
+                  ['error', 'fail'].includes(entry.aiResult?.status || '') ? (
                     <Button
                       size="small"
                       loading={retryingEntryId === entry.templateEntryId}
