@@ -15,7 +15,7 @@ import { ExcelParserService, ParsedPoOrder } from './excel-parser.service';
 import { isIgnoredItem, modelMatches, pickMappedPrice } from './item-matcher';
 
 const money = (value: number) => (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2);
-const PO_CHUNK = 40;
+const PO_CHUNK = 60;
 const PRICE_CHUNK = 200;
 
 @Injectable()
@@ -268,18 +268,10 @@ export class FinanceImportService {
         });
       }
     }
-    // 逐条保存：单条超长/唯一约束冲突时跳过，不让整批 500
-    for (const entity of toSave) {
-      try {
-        await this.prices.save(entity);
-        success += 1;
-      } catch (error) {
-        failures.push({
-          row: 0,
-          reason: `${entity.itemCode}: ${error instanceof Error ? error.message : '写入失败'}`,
-        });
-      }
-    }
+    // 批量写入：冲突时再对该批逐条回退，避免整批失败也避免全程逐条过慢
+    const saveResult = await this.savePriceEntities(toSave);
+    success += saveResult.success;
+    failures.push(...saveResult.failures);
     const prevFailures = Array.isArray(batch.failDetail) ? batch.failDetail : [];
     const mergedFailures = [...(offset === 0 ? [] : prevFailures), ...failures].slice(-500);
     const totalSuccess = Number(batch.successRows || 0) + success;
@@ -396,17 +388,9 @@ export class FinanceImportService {
         });
       }
     }
-    for (const entity of toSave) {
-      try {
-        await this.prices.save(entity);
-        success += 1;
-      } catch (error) {
-        failures.push({
-          row: 0,
-          reason: `${entity.itemCode}: ${error instanceof Error ? error.message : '写入失败'}`,
-        });
-      }
-    }
+    const saveResult = await this.savePriceEntities(toSave);
+    success += saveResult.success;
+    failures.push(...saveResult.failures);
     const prevFailures = Array.isArray(batch.failDetail) ? batch.failDetail : [];
     const mergedFailures = [...(offset === 0 ? [] : prevFailures), ...failures].slice(-500);
     const totalSuccess = Number(batch.successRows || 0) + success;
@@ -426,6 +410,32 @@ export class FinanceImportService {
       chunkSuccess: success,
       refreshedItems,
     };
+  }
+
+  /** 价格批量入库；单批失败时回退逐条，隔离坏行 */
+  private async savePriceEntities(entities: PriceLibrary[]) {
+    let success = 0;
+    const failures: Array<{ row: number; reason: string }> = [];
+    for (let i = 0; i < entities.length; i += PRICE_CHUNK) {
+      const chunk = entities.slice(i, i + PRICE_CHUNK);
+      try {
+        await this.prices.save(chunk);
+        success += chunk.length;
+      } catch {
+        for (const entity of chunk) {
+          try {
+            await this.prices.save(entity);
+            success += 1;
+          } catch (error) {
+            failures.push({
+              row: 0,
+              reason: `${entity.itemCode}: ${error instanceof Error ? error.message : '写入失败'}`,
+            });
+          }
+        }
+      }
+    }
+    return { success, failures };
   }
 
   /** 导入绩效价后，按最新库刷新 PO 明细上的绩效单价 */
