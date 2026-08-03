@@ -15,11 +15,17 @@ import { ExcelParserService, ParsedPoOrder } from './excel-parser.service';
 import { isIgnoredItem, modelMatches, pickMappedPrice } from './item-matcher';
 
 const money = (value: number) => (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2);
-const PO_CHUNK = 60;
+const PO_CHUNK = 40;
 const PRICE_CHUNK = 200;
+const PARSE_CACHE_TTL_MS = 15 * 60 * 1000;
+
+type ParseCacheEntry = { expires: number; data: unknown };
 
 @Injectable()
 export class FinanceImportService {
+  /** 同一文件分片入库时复用解析结果，避免每片重传后重复解析 Excel */
+  private readonly parseCache = new Map<string, ParseCacheEntry>();
+
   constructor(
     private readonly parser: ExcelParserService,
     private readonly dataSource: DataSource,
@@ -94,7 +100,18 @@ export class FinanceImportService {
     options: { offset?: number; limit?: number; batchId?: string } = {},
   ) {
     this.assertExcel(file);
-    const parsed = await this.parser.parsePo(file.buffer);
+    const cacheKey = this.fileCacheKey('po', file);
+    let parsed = preview ? null : this.getCached<{
+      orders: ParsedPoOrder[];
+      sourceItemRows: number;
+      normalizedItemCount: number;
+      failures: Array<{ row: number; reason: string }>;
+    }>(cacheKey);
+    if (!parsed) {
+      parsed = await this.parser.parsePo(file.buffer);
+      if (!preview) this.setCached(cacheKey, parsed);
+    }
+    if (!parsed) throw new BadRequestException('PO 文件解析失败');
     if (preview)
       return {
         preview: parsed.orders.slice(0, 20),
@@ -182,23 +199,51 @@ export class FinanceImportService {
     options: { offset?: number; limit?: number; batchId?: string } = {},
   ) {
     this.assertExcel(file);
-    const flat = await this.parser.isFlatPriceTemplate(file.buffer);
-    const parsed = flat
-      ? await this.parser.parsePerfPrices(file.buffer).then((result) => ({
-          prices: result.prices.map((price) => ({
-            sourceRow: price.sourceRow,
-            itemCode: price.itemCode,
-            itemName: price.itemName,
-            itemDesc: price.itemDesc,
-            unit: price.unit,
-            productModel: price.productModel,
-            scene: price.scene,
-            workHours: price.workHours,
-            unitPrice: price.unitPrice,
-          })),
-          failures: result.failures,
-        }))
-      : await this.parser.parseSettlePrices(file.buffer);
+    const cacheKey = this.fileCacheKey('settle', file);
+    type SettleParsed = {
+      prices: Array<{
+        sourceRow: number;
+        itemCode: string;
+        itemName: string;
+        itemDesc: string | null;
+        unit: string | null;
+        productModel: string | null;
+        scene: string | null;
+        workHours: number | null;
+        unitPrice: number;
+      }>;
+      failures: Array<{ row: number; reason: string }>;
+      flat?: boolean;
+    };
+    let parsed = preview ? null : this.getCached<SettleParsed>(cacheKey);
+    let flat = false;
+    if (!parsed) {
+      flat = await this.parser.isFlatPriceTemplate(file.buffer);
+      parsed = flat
+        ? await this.parser.parsePerfPrices(file.buffer).then((result) => ({
+            prices: result.prices.map((price) => ({
+              sourceRow: price.sourceRow,
+              itemCode: price.itemCode,
+              itemName: price.itemName,
+              itemDesc: price.itemDesc,
+              unit: price.unit,
+              productModel: price.productModel,
+              scene: price.scene,
+              workHours: price.workHours,
+              unitPrice: price.unitPrice,
+            })),
+            failures: result.failures,
+            flat: true,
+          }))
+        : {
+            ...(await this.parser.parseSettlePrices(file.buffer)),
+            flat: false,
+          };
+      if (!preview) this.setCached(cacheKey, parsed);
+    } else {
+      flat = !!parsed.flat;
+    }
+    if (!parsed) throw new BadRequestException('价格文件解析失败');
     if (preview)
       return {
         preview: parsed.prices.slice(0, 20),
@@ -268,10 +313,10 @@ export class FinanceImportService {
         });
       }
     }
-    // 批量写入：冲突时再对该批逐条回退，避免整批失败也避免全程逐条过慢
-    const saveResult = await this.savePriceEntities(toSave);
-    success += saveResult.success;
-    failures.push(...saveResult.failures);
+    // 批量写入；冲突时再回退逐条，避免整批失败
+    const saved = await this.savePriceEntities(toSave);
+    success += saved.success;
+    failures.push(...saved.failures);
     const prevFailures = Array.isArray(batch.failDetail) ? batch.failDetail : [];
     const mergedFailures = [...(offset === 0 ? [] : prevFailures), ...failures].slice(-500);
     const totalSuccess = Number(batch.successRows || 0) + success;
@@ -295,7 +340,15 @@ export class FinanceImportService {
     options: { offset?: number; limit?: number; batchId?: string } = {},
   ) {
     this.assertExcel(file);
-    const parsed = await this.parser.parsePerfPrices(file.buffer);
+    const cacheKey = this.fileCacheKey('perf', file);
+    let parsed = preview
+      ? null
+      : this.getCached<Awaited<ReturnType<ExcelParserService['parsePerfPrices']>>>(cacheKey);
+    if (!parsed) {
+      parsed = await this.parser.parsePerfPrices(file.buffer);
+      if (!preview) this.setCached(cacheKey, parsed);
+    }
+    if (!parsed) throw new BadRequestException('绩效价文件解析失败');
     if (preview)
       return {
         preview: parsed.prices.slice(0, 20),
@@ -388,9 +441,9 @@ export class FinanceImportService {
         });
       }
     }
-    const saveResult = await this.savePriceEntities(toSave);
-    success += saveResult.success;
-    failures.push(...saveResult.failures);
+    const saved = await this.savePriceEntities(toSave);
+    success += saved.success;
+    failures.push(...saved.failures);
     const prevFailures = Array.isArray(batch.failDetail) ? batch.failDetail : [];
     const mergedFailures = [...(offset === 0 ? [] : prevFailures), ...failures].slice(-500);
     const totalSuccess = Number(batch.successRows || 0) + success;
@@ -410,32 +463,6 @@ export class FinanceImportService {
       chunkSuccess: success,
       refreshedItems,
     };
-  }
-
-  /** 价格批量入库；单批失败时回退逐条，隔离坏行 */
-  private async savePriceEntities(entities: PriceLibrary[]) {
-    let success = 0;
-    const failures: Array<{ row: number; reason: string }> = [];
-    for (let i = 0; i < entities.length; i += PRICE_CHUNK) {
-      const chunk = entities.slice(i, i + PRICE_CHUNK);
-      try {
-        await this.prices.save(chunk);
-        success += chunk.length;
-      } catch {
-        for (const entity of chunk) {
-          try {
-            await this.prices.save(entity);
-            success += 1;
-          } catch (error) {
-            failures.push({
-              row: 0,
-              reason: `${entity.itemCode}: ${error instanceof Error ? error.message : '写入失败'}`,
-            });
-          }
-        }
-      }
-    }
-    return { success, failures };
   }
 
   /** 导入绩效价后，按最新库刷新 PO 明细上的绩效单价 */
@@ -720,6 +747,54 @@ export class FinanceImportService {
           b.effectiveDate.localeCompare(a.effectiveDate),
       )[0];
   }
+  private fileCacheKey(kind: string, file: Express.Multer.File) {
+    return `${kind}|${file.originalname}|${file.size}|${file.buffer.length}`;
+  }
+
+  private getCached<T>(key: string): T | null {
+    const hit = this.parseCache.get(key);
+    if (!hit) return null;
+    if (hit.expires < Date.now()) {
+      this.parseCache.delete(key);
+      return null;
+    }
+    return hit.data as T;
+  }
+
+  private setCached(key: string, data: unknown) {
+    if (this.parseCache.size >= 24) {
+      const oldest = this.parseCache.keys().next().value;
+      if (oldest) this.parseCache.delete(oldest);
+    }
+    this.parseCache.set(key, { expires: Date.now() + PARSE_CACHE_TTL_MS, data });
+  }
+
+  /** 优先批量写入；整批失败时回退逐条，跳过冲突行 */
+  private async savePriceEntities(toSave: PriceLibrary[]) {
+    let success = 0;
+    const failures: Array<{ row: number; reason: string }> = [];
+    for (let i = 0; i < toSave.length; i += PRICE_CHUNK) {
+      const chunk = toSave.slice(i, i + PRICE_CHUNK);
+      try {
+        await this.prices.save(chunk);
+        success += chunk.length;
+      } catch {
+        for (const entity of chunk) {
+          try {
+            await this.prices.save(entity);
+            success += 1;
+          } catch (error) {
+            failures.push({
+              row: 0,
+              reason: `${entity.itemCode}: ${error instanceof Error ? error.message : '写入失败'}`,
+            });
+          }
+        }
+      }
+    }
+    return { success, failures };
+  }
+
   private assertExcel(file?: Express.Multer.File) {
     if (!file?.buffer) throw new BadRequestException('请选择Excel文件');
     if (!file.originalname.toLowerCase().endsWith('.xlsx'))

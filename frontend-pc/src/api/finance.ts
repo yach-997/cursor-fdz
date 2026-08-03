@@ -270,7 +270,7 @@ export async function uploadFinanceExcel(
         ...(chunk?.batchId ? { batchId: chunk.batchId } : {}),
       },
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 180000,
+      timeout: 300000,
     }),
   );
 }

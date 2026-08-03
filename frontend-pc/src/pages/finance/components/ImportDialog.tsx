@@ -4,9 +4,9 @@ import { DownloadOutlined, InboxOutlined } from '@ant-design/icons';
 import { downloadFinanceImportTemplate, uploadFinanceExcel } from '../../../api/finance';
 import type { ImportResult } from '../../../types/finance';
 
-const IMPORT_CHUNK = 50;
-/** 价格库：偏大分块，减少「整表重传+重解析」次数（600 条约 2～3 次请求） */
-const PRICE_IMPORT_CHUNK = 250;
+const IMPORT_CHUNK_PO = 80;
+/** 价格库一次尽量写完，减少反复上传/解析同一文件 */
+const IMPORT_CHUNK_PRICE = 1000;
 
 const templateKindMap: Record<
   'gsp' | 'po' | 'price' | 'perf-price',
@@ -97,7 +97,9 @@ export default function ImportDialog({
         : undefined;
       let last: ImportResult | undefined;
       const chunkSize =
-        kind === 'price' || kind === 'perf-price' ? PRICE_IMPORT_CHUNK : IMPORT_CHUNK;
+        kind === 'price' || kind === 'perf-price'
+          ? Math.max(IMPORT_CHUNK_PRICE, totalHint || 0)
+          : IMPORT_CHUNK_PO;
       setProgress({ current: offset, total: totalHint || 1 });
 
       while (true) {
@@ -199,7 +201,7 @@ export default function ImportDialog({
           <InboxOutlined style={{ fontSize: 32, color: '#15936b' }} />
         </p>
         <p>点击或拖入 Excel 文件</p>
-        <p className="ant-upload-hint">先解析预览校验，确认后再分批写入数据库</p>
+        <p className="ant-upload-hint">先解析前 20 行并校验，确认后才写入数据库</p>
       </Upload.Dragger>
       {kind === 'gsp' && (
         <Alert
