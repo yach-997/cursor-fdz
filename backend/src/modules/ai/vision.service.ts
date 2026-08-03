@@ -116,6 +116,20 @@ export class VisionService {
         };
       }
 
+      // 现场图与标准图逐张近乎一致时使用确定性结果，不再让模型把标准图本身误判为缺陷。
+      // 必须数量相同、每张标准图均匹配不同现场图；存在额外现场图时仍交给 AI 全量检查。
+      const sampleMatch = await this.matchExactSampleSet(photoInputs, sampleInputs);
+      if (sampleMatch.matched) {
+        return {
+          status: CheckResult.PASS,
+          confidence: 0.99,
+          reason: `现场照片与合格标准图逐张一致（最低相似度 ${Math.round(
+            sampleMatch.minSimilarity * 100,
+          )}%），符合要求。`,
+          provider: 'siliconflow',
+        };
+      }
+
       if (grounding && sampleInputs.length >= 2 && photoInputs.length < 2) {
         return {
           status: CheckResult.FAIL,
@@ -1258,6 +1272,62 @@ export class VisionService {
         reason: '接地双连接点安全复核未完成，已转人工判断',
       };
     }
+  }
+
+  private async matchExactSampleSet(
+    fieldInputs: string[],
+    sampleInputs: string[],
+  ): Promise<{ matched: boolean; minSimilarity: number }> {
+    if (!sampleInputs.length || fieldInputs.length !== sampleInputs.length) {
+      return { matched: false, minSimilarity: 0 };
+    }
+    try {
+      const [fieldPrints, samplePrints] = await Promise.all([
+        Promise.all(fieldInputs.map((item) => this.imageFingerprint(item))),
+        Promise.all(sampleInputs.map((item) => this.imageFingerprint(item))),
+      ]);
+      const scores = samplePrints.map((sample) =>
+        fieldPrints.map((field) => this.fingerprintSimilarity(sample, field)),
+      );
+      let bestMin = 0;
+      const assign = (sampleIndex: number, used: Set<number>, currentMin: number) => {
+        if (sampleIndex >= scores.length) {
+          bestMin = Math.max(bestMin, currentMin);
+          return;
+        }
+        for (let fieldIndex = 0; fieldIndex < fieldPrints.length; fieldIndex += 1) {
+          if (used.has(fieldIndex)) continue;
+          used.add(fieldIndex);
+          assign(sampleIndex + 1, used, Math.min(currentMin, scores[sampleIndex][fieldIndex]));
+          used.delete(fieldIndex);
+        }
+      };
+      assign(0, new Set<number>(), 1);
+      return { matched: bestMin >= 0.985, minSimilarity: bestMin };
+    } catch (error) {
+      this.logger.warn(`Sample image similarity failed: ${(error as Error).message}`);
+      return { matched: false, minSimilarity: 0 };
+    }
+  }
+
+  private async imageFingerprint(dataUrl: string): Promise<Buffer> {
+    const encoded = dataUrl.split(',', 2)[1];
+    if (!encoded) throw new Error('图片 data URL 无有效内容');
+    return sharp(Buffer.from(encoded, 'base64'))
+      .rotate()
+      .resize(48, 48, { fit: 'fill' })
+      .grayscale()
+      .raw()
+      .toBuffer();
+  }
+
+  private fingerprintSimilarity(left: Buffer, right: Buffer) {
+    if (!left.length || left.length !== right.length) return 0;
+    let difference = 0;
+    for (let index = 0; index < left.length; index += 1) {
+      difference += Math.abs(left[index] - right[index]);
+    }
+    return 1 - difference / (left.length * 255);
   }
 
   private toAbsoluteUrl(url: string) {
