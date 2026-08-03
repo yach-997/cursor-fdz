@@ -5,8 +5,8 @@ import { downloadFinanceImportTemplate, uploadFinanceExcel } from '../../../api/
 import type { ImportResult } from '../../../types/finance';
 
 const IMPORT_CHUNK_PO = 80;
-/** 价格库一次尽量写完，减少反复上传/解析同一文件 */
-const IMPORT_CHUNK_PRICE = 1000;
+/** 价格库每批写入条数（需 ≤ 后端 ImportPreviewQueryDto.limit 上限） */
+const IMPORT_CHUNK_PRICE = 200;
 
 const templateKindMap: Record<
   'gsp' | 'po' | 'price' | 'perf-price',
@@ -97,9 +97,7 @@ export default function ImportDialog({
         : undefined;
       let last: ImportResult | undefined;
       const chunkSize =
-        kind === 'price' || kind === 'perf-price'
-          ? Math.max(IMPORT_CHUNK_PRICE, totalHint || 0)
-          : IMPORT_CHUNK_PO;
+        kind === 'price' || kind === 'perf-price' ? IMPORT_CHUNK_PRICE : IMPORT_CHUNK_PO;
       setProgress({ current: offset, total: totalHint || 1 });
 
       while (true) {
