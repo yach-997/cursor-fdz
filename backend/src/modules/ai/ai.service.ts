@@ -241,14 +241,12 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
       job.checkCriteria,
       { remark: job.remark },
     );
-    let reason = compared.reason;
-    if (compared.status !== CheckResult.ERROR) {
-      reason = await this.vision.polishReason(reason, compared.status);
-    }
     const aiResult = {
       status: compared.status,
       confidence: compared.confidence,
-      reason,
+      // 视觉模型已经返回可展示的中文结论，不再为了润色串行调用第二个模型。
+      // 这一步此前最多额外等待 12 秒，对判定结果没有帮助，却会增加“分析中”的停留时间。
+      reason: compared.reason,
     };
 
     let applied = false;

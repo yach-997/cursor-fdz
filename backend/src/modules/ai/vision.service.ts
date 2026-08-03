@@ -14,6 +14,8 @@ export interface VisionCompareResult {
 @Injectable()
 export class VisionService {
   private readonly logger = new Logger(VisionService.name);
+  private readonly imageDataCache = new Map<string, { dataUrl: string; expiresAt: number }>();
+  private readonly imageDownloadInFlight = new Map<string, Promise<string>>();
 
   constructor(private readonly config: ConfigService) {}
 
@@ -137,6 +139,19 @@ export class VisionService {
           reason: '接地安装须分别上传箱内主PE连接和箱外机壳接地照片，当前照片不完整。',
           provider: 'siliconflow',
         };
+      }
+
+      // 接地检查使用专用的逐照片双连接点审核即可。此前先走通用识别、再走专用复核，
+      // 会产生两次串行大模型请求，既增加等待时间，也放大上游偶发超时的概率。
+      if (grounding) {
+        const checked = await this.auditGroundingConnections({
+          apiKey,
+          baseUrl,
+          model,
+          photoInputs,
+          sampleInputs,
+        });
+        return { ...checked, provider: 'siliconflow' };
       }
 
       // 故障记录：未凑齐至少 2 张就不调用模型，直接不合格
@@ -310,16 +325,6 @@ export class VisionService {
           baseUrl,
           model,
           photoInputs,
-          original: enforced,
-        });
-      }
-      if (grounding) {
-        enforced = await this.auditGroundingConnections({
-          apiKey,
-          baseUrl,
-          model,
-          photoInputs,
-          sampleInputs,
           original: enforced,
         });
       }
@@ -1188,7 +1193,6 @@ export class VisionService {
     model: string;
     photoInputs: string[];
     sampleInputs: string[];
-    original: Omit<VisionCompareResult, 'provider'>;
   }): Promise<Omit<VisionCompareResult, 'provider'>> {
     const [fieldCrops, sampleCrops] = await Promise.all([
       this.createGroundingEvidenceCrops(args.photoInputs),
@@ -1383,6 +1387,33 @@ export class VisionService {
       throw new Error('图片地址不是可下载的 HTTP(S) 地址');
     }
 
+    const cached = this.imageDataCache.get(absolute);
+    if (cached && cached.expiresAt > Date.now()) return cached.dataUrl;
+    if (cached) this.imageDataCache.delete(absolute);
+
+    // 同一实例内多个检查项经常共用标准图。合并并发下载，避免瞬间重复请求图床。
+    const existing = this.imageDownloadInFlight.get(absolute);
+    if (existing) return existing;
+
+    const download = this.downloadImageDataUrl(absolute)
+      .then((dataUrl) => {
+        this.imageDataCache.set(absolute, {
+          dataUrl,
+          expiresAt: Date.now() + 10 * 60 * 1000,
+        });
+        // 防止长时间运行的实例无限增长；标准图数量通常远低于此上限。
+        if (this.imageDataCache.size > 120) {
+          const oldestKey = this.imageDataCache.keys().next().value as string | undefined;
+          if (oldestKey) this.imageDataCache.delete(oldestKey);
+        }
+        return dataUrl;
+      })
+      .finally(() => this.imageDownloadInFlight.delete(absolute));
+    this.imageDownloadInFlight.set(absolute, download);
+    return download;
+  }
+
+  private async downloadImageDataUrl(absolute: string): Promise<string> {
     const candidates = [absolute];
     // 七牛测试域名通常只支持 HTTP，其 HTTPS 证书会被 Node 和浏览器拒绝。
     if (/^https:\/\/[^/]+\.clouddn\.com\//i.test(absolute)) {
@@ -1390,33 +1421,43 @@ export class VisionService {
     }
 
     let lastError: Error | null = null;
-    for (const url of candidates) {
-      try {
-        const resp = await fetch(url, {
-          signal: AbortSignal.timeout(15_000),
-          redirect: 'follow',
-        });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    // 图床连接、DNS 或 CDN 节点偶发抖动时自动恢复；此前单次失败就会转人工。
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      for (const url of candidates) {
+        try {
+          const resp = await fetch(url, {
+            signal: AbortSignal.timeout(10_000),
+            redirect: 'follow',
+          });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
-        const contentType = (resp.headers.get('content-type') || 'image/jpeg').split(';')[0].trim();
-        if (!contentType.startsWith('image/')) {
-          throw new Error(`响应不是图片: ${contentType}`);
-        }
+          const contentType = (resp.headers.get('content-type') || 'image/jpeg')
+            .split(';')[0]
+            .trim();
+          if (!contentType.startsWith('image/')) {
+            throw new Error(`响应不是图片: ${contentType}`);
+          }
 
-        const contentLength = Number(resp.headers.get('content-length') || 0);
-        if (contentLength > 12 * 1024 * 1024) {
-          throw new Error('图片超过 12MB');
+          const contentLength = Number(resp.headers.get('content-length') || 0);
+          if (contentLength > 12 * 1024 * 1024) {
+            throw new Error('图片超过 12MB');
+          }
+          const bytes = Buffer.from(await resp.arrayBuffer());
+          if (!bytes.length || bytes.length > 12 * 1024 * 1024) {
+            throw new Error('图片为空或超过 12MB');
+          }
+          return `data:${contentType};base64,${bytes.toString('base64')}`;
+        } catch (err) {
+          lastError = err as Error;
         }
-        const bytes = Buffer.from(await resp.arrayBuffer());
-        if (!bytes.length || bytes.length > 12 * 1024 * 1024) {
-          throw new Error('图片为空或超过 12MB');
-        }
-        return `data:${contentType};base64,${bytes.toString('base64')}`;
-      } catch (err) {
-        lastError = err as Error;
       }
+      if (attempt < 3) await this.sleep(attempt * 250);
     }
     throw new Error(`图片下载失败: ${lastError?.message || '未知错误'}`);
+  }
+
+  private sleep(ms: number) {
+    return new Promise<void>((resolve) => setTimeout(resolve, ms));
   }
 
   private parseJsonResult(raw: string): Omit<VisionCompareResult, 'provider'> | null {
