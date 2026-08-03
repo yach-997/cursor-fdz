@@ -275,7 +275,7 @@ export class VisionService {
               : dcSide
                 ? this.enforceDcSideResult(parsed, raw, sampleInputs.length)
                 : acSide
-                  ? this.enforceAcSideResult(parsed, raw)
+                  ? this.enforceAcSideResult(parsed, raw, sampleInputs.length)
                   : parsed;
       // 直流侧“合格”属于高风险结论：再用自动放大的端口分块做一次独立缺陷复核。
       // 任一复核失败、看不清或发现无盖空孔，都禁止自动合格。
@@ -399,7 +399,7 @@ export class VisionService {
       return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明，必须写明照片序号和端口位置","evidence":{"connectorsIntact":true|false,"unusedPortsCapped":true|false,"allPortsIndividuallyAccountedFor":true|false,"visibleUnusedPortCount":0,"uncappedUnusedPortCount":0,"matchesSampleProtection":true|false,"photoFindings":["第1张：空闲孔及封盖情况"]}}';
     }
     if (flags.acSide) {
-      return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明，必须写明PE线及接入点所在照片","evidence":{"phaseWiresOk":true|false,"peConductorVisible":true|false,"peTerminationVisible":true|false,"peWireConnected":true|false,"terminalsCoveredOrProtected":true|false,"photoFindings":["第1张：PE线颜色和实际接入位置"]}}';
+      return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明，必须区分主PE铜芯线/铜编织带与柜门黄绿跳线","evidence":{"phaseWiresOk":true|false,"sampleRequiresCopperPe":true|false,"mainCopperPeConductorVisible":true|false,"mainCopperPeTerminationVisible":true|false,"mainPeConductorVisible":true|false,"mainPeTerminationVisible":true|false,"doorBondingJumperOnly":true|false,"peWireConnected":true|false,"terminalsCoveredOrProtected":true|false,"photoFindings":["第1张：主PE铜芯线或铜编织带及其压接位置"]}}';
     }
     return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明"}';
   }
@@ -431,7 +431,7 @@ export class VisionService {
       return `${n}逐端口向下追踪：有电缆连续伸出才算在用；黑色接头末端呈圆形开口且无电缆仍是无盖空闲孔。有蓝/红/橙盖才算已封盖。`;
     }
     if (opts.acSide) {
-      return `${n}请检查相线与 PE 接地线是否接好；交流仓内 PE 空端子/未接 PE → 不合格`;
+      return `${n}重点检查主PE：寻找从主电缆引出并压接到“PE”端子的铜芯接地线/裸铜编织带。柜门上的细黄绿跳线只是门板等电位连接，不能替代主PE。`;
     }
     return opts.total > 1 ? n : '【现场照片】';
   }
@@ -511,13 +511,15 @@ export class VisionService {
   private acSideHardRules() {
     return [
       '【交流侧安装检查·硬性否决】',
-      '交流侧除相线外，必须看到 PE 接地线已可靠接入（黄绿双色线接到 PE 端子，或铜编织带接到 PE）。',
-      '必须同时看清 PE 导体本体和它实际压接/紧固到 PE 端子的连接点；只看到 PE 字样、端子或相线，不算已连接。',
-      'peWireConnected=false 的典型情况：只见 L1/L2/L3（黄/绿/红相线色环）而 PE 端子空着、无黄绿线/无接地编织带。',
+      '本项检查的是主保护接地：必须看到主电缆中的铜芯接地线/裸铜编织带，实际压接并紧固到标有“PE”的主接地端子。',
+      '柜门右上角或门铰链附近的细黄绿跳线只是柜门等电位连接线，不能替代主PE；只看到该跳线时 doorBondingJumperOnly=true，必须 fail。',
+      '合格样本若显示裸铜编织带接PE螺栓，则 sampleRequiresCopperPe=true，现场必须看到同类铜芯线/铜编织带及其PE端压接点。',
+      '只看到 PE 字样、空螺栓、三根相线或柜门黄绿跳线，不算主PE已连接。',
+      'peWireConnected=false 的典型情况：只见 L1/L2/L3，而PE标签旁螺栓为空，未见铜芯接地线/铜编织带接入。',
       '未接 PE 属于明显安全缺陷，即使相线看起来整齐也必须 fail。',
       'terminalsCoveredOrProtected：可触及的带电端子应有透明罩/防护；严重裸露且无防护可 fail。',
-      'peConductorVisible、peTerminationVisible、peWireConnected 必须同时为 true；任一看不清或拿不准都必须 fail。',
-      'reason 与 photoFindings 必须写明 PE 位于第几张照片及具体位置，无法定位不得宣称已接地。',
+      'mainPeConductorVisible、mainPeTerminationVisible、peWireConnected 必须同时为 true；样本要求铜编织带时还必须同时满足 mainCopperPeConductorVisible、mainCopperPeTerminationVisible。',
+      'reason 与 photoFindings 必须写明主PE铜芯线/铜编织带位于第几张照片及压接位置；缺失时必须写“未见铜芯接地线/铜编织带接入PE端子”，禁止写成“未见黄绿接地线”。',
     ].join('\n');
   }
 
@@ -857,23 +859,40 @@ export class VisionService {
   private enforceAcSideResult(
     parsed: Omit<VisionCompareResult, 'provider'>,
     raw: string,
+    sampleCount: number,
   ): Omit<VisionCompareResult, 'provider'> {
     const { values, reported } = this.parseBoolEvidence(raw, [
       'phaseWiresOk',
-      'peConductorVisible',
-      'peTerminationVisible',
+      'sampleRequiresCopperPe',
+      'mainCopperPeConductorVisible',
+      'mainCopperPeTerminationVisible',
+      'mainPeConductorVisible',
+      'mainPeTerminationVisible',
+      'doorBondingJumperOnly',
       'peWireConnected',
       'terminalsCoveredOrProtected',
     ]);
     const missing: string[] = [];
-    if (!values.peConductorVisible) missing.push('清晰可见的黄绿 PE 线或接地编织带');
-    if (!values.peTerminationVisible) missing.push('PE 线实际压接/紧固到端子的连接点');
-    if (!values.peWireConnected) missing.push('PE 接地线已可靠接入');
+    const copperRequired = sampleCount > 0 && values.sampleRequiresCopperPe;
+    if (
+      !values.mainPeConductorVisible ||
+      !values.mainPeTerminationVisible ||
+      !values.peWireConnected ||
+      values.doorBondingJumperOnly
+    ) {
+      missing.push('主PE铜芯接地线/铜编织带实际压接到PE端子（柜门黄绿跳线不能替代）');
+    }
+    if (
+      copperRequired &&
+      (!values.mainCopperPeConductorVisible || !values.mainCopperPeTerminationVisible)
+    ) {
+      missing.push('与合格样本一致的铜芯接地线/裸铜编织带及PE端压接点');
+    }
     if (!values.phaseWiresOk) missing.push('相线接线正常');
     return this.enforceEvidencePass(
       parsed,
       missing,
-      '交流侧相线与 PE 接地线接线完整，合格。',
+      '交流侧相线正常，主PE铜芯接地线/铜编织带已可靠压接到PE端子，合格。',
       reported,
     );
   }
