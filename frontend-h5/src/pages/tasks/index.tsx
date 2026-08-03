@@ -6,6 +6,7 @@ import { fetchMyFinanceCases, type MobileFinanceCase } from '../../api/finance';
 import { useAuthStore } from '../../stores/auth';
 import { mobileCacheKeys } from '../../utils/mobileCacheKeys';
 import { useCachedResource } from '../../utils/useCachedResource';
+import type { SiteBrief } from '../../types';
 import './tasks.css';
 
 const FILTERS = [
@@ -23,7 +24,7 @@ interface UnifiedItem {
   meta: string;
   rejectReason?: string;
   financeCase?: MobileFinanceCase;
-  task?: TaskItem;
+  siteId?: string | null;
 }
 
 function statusClass(status: string, label?: string) {
@@ -68,14 +69,31 @@ function financeMatchesTab(status: string, tab: (typeof FILTERS)[number]['key'])
   return true;
 }
 
-/** 作业列表：以费用案例为主入口 */
+/** 作业列表：跨站点展示已派案例 */
 export default function TasksPage() {
   const navigate = useNavigate();
   const currentSite = useAuthStore((s) => s.currentSite);
   const user = useAuthStore((s) => s.user);
+  const setCurrentSite = useAuthStore((s) => s.setCurrentSite);
   const [tab, setTab] = useState<(typeof FILTERS)[number]['key']>('all');
   const [keyword, setKeyword] = useState('');
   const [appliedKeyword, setAppliedKeyword] = useState('');
+
+  const siteNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of user?.siteMemberships || []) {
+      if (m.site?.id) map.set(m.site.id, m.site.name);
+    }
+    return map;
+  }, [user?.siteMemberships]);
+
+  const siteBriefById = useMemo(() => {
+    const map = new Map<string, SiteBrief>();
+    for (const m of user?.siteMemberships || []) {
+      if (m.site?.id) map.set(m.site.id, m.site);
+    }
+    return map;
+  }, [user?.siteMemberships]);
 
   const loader = useCallback(async () => {
     const [taskPage, financeCases] = await Promise.all([
@@ -84,15 +102,14 @@ export default function TasksPage() {
         limit: 50,
         statusGroup: tab === 'all' ? undefined : tab,
         keyword: appliedKeyword || undefined,
-        siteId: currentSite?.id,
       }),
       fetchMyFinanceCases().catch(() => [] as MobileFinanceCase[]),
     ]);
     return { tasks: taskPage.list, financeCases };
-  }, [tab, appliedKeyword, currentSite?.id]);
+  }, [tab, appliedKeyword]);
 
   const { data, loading, error, reload } = useCachedResource(
-    mobileCacheKeys.taskList(user?.id, currentSite?.id, `jobs|${tab}|${appliedKeyword}`),
+    mobileCacheKeys.taskList(user?.id, 'all-sites', `jobs|${tab}|${appliedKeyword}`),
     loader,
   );
 
@@ -107,7 +124,6 @@ export default function TasksPage() {
     const kw = appliedKeyword.toLowerCase();
 
     for (const c of data?.financeCases || []) {
-      if (currentSite?.id && c.siteId && c.siteId !== currentSite.id) continue;
       const linked = taskByCaseId.get(String(c.id));
       const tabStatus = linked
         ? linked.status === 'pending'
@@ -121,12 +137,16 @@ export default function TasksPage() {
       const label = linked ? inspectionStatusText(linked) : financeStatusText(c.status);
       const statusForClass = linked?.status || c.status;
       const reject = linked?.record?.rejectReason?.reason;
+      const siteName =
+        (c.siteId && siteNameById.get(c.siteId)) ||
+        [c.province, c.city].filter(Boolean).join('') ||
+        '未分站点';
       items.push({
         key: `case-${c.id}`,
         title: c.projectName || c.gspCaseNo,
         statusLabel: label,
         statusClass: statusClass(statusForClass, label),
-        meta: `${c.gspCaseNo} · ${c.taskTypeName || '未设类型'}${c.province ? ` · ${c.province}` : ''}`,
+        meta: `${siteName} · ${c.gspCaseNo} · ${c.taskTypeName || '未设类型'}`,
         rejectReason: reject
           ? `驳回：${reject}${
               linked?.record?.rejectReason?.entryIds?.length
@@ -135,22 +155,26 @@ export default function TasksPage() {
             }`
           : undefined,
         financeCase: c,
+        siteId: c.siteId,
       });
     }
     return items;
-  }, [data, tab, appliedKeyword, currentSite?.id]);
+  }, [data, tab, appliedKeyword, siteNameById]);
 
   const openItem = (item: UnifiedItem) => {
-    if (item.financeCase) navigate(`/m/finance-cases/${item.financeCase.id}`);
+    if (!item.financeCase) return;
+    if (item.siteId) {
+      const brief = siteBriefById.get(item.siteId);
+      if (brief && brief.id !== currentSite?.id) setCurrentSite(brief);
+    }
+    navigate(`/m/finance-cases/${item.financeCase.id}`);
   };
 
   return (
     <div className="tasks-page">
       <header className="tasks-page__header">
         <h1 className="tasks-page__title">作业</h1>
-        <p className="tasks-page__sub">
-          {currentSite?.name ? `当前站点 · ${currentSite.name}` : '未选站点时可查看全部已派作业'}
-        </p>
+        <p className="tasks-page__sub">已汇总你负责的全部站点待办与进度</p>
       </header>
 
       <div className="tasks-page__search">

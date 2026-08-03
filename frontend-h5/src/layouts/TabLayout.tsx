@@ -25,18 +25,31 @@ export default function TabLayout() {
   }, [location.pathname]);
 
   useEffect(() => {
-    const siteId = currentSite?.id;
     void prefetchResource(
-      mobileCacheKeys.homeTasks(user?.id, siteId),
-      () => fetchTasks({ page: 1, limit: 20, siteId }),
+      mobileCacheKeys.homeTasks(user?.id, 'all-sites') + ':v3',
+      () =>
+        Promise.all([
+          fetchTasks({ page: 1, limit: 50 }),
+          import('../api/finance').then((m) => m.fetchMyFinanceCases().catch(() => [])),
+        ]).then(([taskPage, financeCases]) => ({
+          tasks: taskPage.list,
+          financeCases,
+        })),
     );
     void prefetchResource(
-      mobileCacheKeys.taskList(user?.id, siteId, 'all||||'),
-      () => fetchTasks({ page: 1, limit: 50, siteId }),
+      mobileCacheKeys.taskList(user?.id, 'all-sites', 'jobs|all|'),
+      () =>
+        Promise.all([
+          fetchTasks({ page: 1, limit: 50 }),
+          import('../api/finance').then((m) => m.fetchMyFinanceCases().catch(() => [])),
+        ]).then(([taskPage, financeCases]) => ({
+          tasks: taskPage.list,
+          financeCases,
+        })),
     );
     void prefetchResource(
-      mobileCacheKeys.inspectorSummary(user?.id, siteId),
-      () => fetchInspectorSummary(siteId),
+      mobileCacheKeys.inspectorSummary(user?.id, currentSite?.id),
+      () => fetchInspectorSummary(currentSite?.id),
     );
   }, [currentSite?.id, user?.id]);
 

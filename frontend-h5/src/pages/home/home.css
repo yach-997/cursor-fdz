@@ -118,6 +118,21 @@
   animation: h5-rise 0.5s var(--h5-ease) 0.06s both;
 }
 
+.home-cross-site-tip {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #eef6f1;
+  color: #3d6a58;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.home-cross-site-tip b {
+  color: var(--h5-green-dark);
+  font-weight: 700;
+}
+
 .home-profile-tip {
   width: 100%;
   margin-bottom: 12px;
