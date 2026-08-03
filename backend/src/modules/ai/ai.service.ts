@@ -117,6 +117,7 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
       status: CheckResult.PENDING,
       confidence: 0,
       reason: photoUrls.length > 1 ? `分析中（共 ${photoUrls.length} 张）...` : '分析中...',
+      startedAt: new Date().toISOString(),
     };
     await this.recordRepo.save(record);
 
@@ -247,14 +248,19 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
       reason,
     };
 
-    try {
-      await this.recordService.applyAiResult(
-        job.recordId,
-        job.templateEntryId,
-        aiResult,
-      );
-    } catch (err) {
-      this.logger.warn(`回写 AI 结果失败: ${(err as Error).message}`);
+    let applied = false;
+    for (let attempt = 1; attempt <= 3 && !applied; attempt += 1) {
+      try {
+        await this.recordService.applyAiResult(
+          job.recordId,
+          job.templateEntryId,
+          aiResult,
+        );
+        applied = true;
+      } catch (err) {
+        this.logger.warn(`回写 AI 结果失败（${attempt}/3）: ${(err as Error).message}`);
+        if (attempt < 3) await this.sleep(attempt * 500);
+      }
     }
 
     const payload = {

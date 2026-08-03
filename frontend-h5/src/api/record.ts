@@ -8,6 +8,7 @@ export interface RecordEntry {
     status: string;
     confidence: number;
     reason: string;
+    startedAt?: string;
   };
   manualResult: string;
   finalResult: string | null;

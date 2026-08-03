@@ -11,7 +11,7 @@ export interface Paginated<T> {
 export interface RecordEntry {
   templateEntryId: string;
   photos: string[];
-  aiResult: { status: string; confidence: number; reason: string };
+  aiResult: { status: string; confidence: number; reason: string; startedAt?: string };
   manualResult: string;
   finalResult: string | null;
   remark: string;
@@ -53,7 +53,12 @@ export interface RecordItem {
     inspectorId: string;
     status: string;
     aiEnabled: boolean;
-    templateSnapshot?: Array<{ id: string; name: string; description: string }>;
+    templateSnapshot?: Array<{
+      id: string;
+      name: string;
+      description: string;
+      samplePhotos?: string[];
+    }>;
   };
 }
 
@@ -66,6 +71,18 @@ export async function fetchRecords(params: Record<string, unknown>) {
 
 export async function fetchRecord(id: string) {
   const { data } = await request.get<ApiResponse<RecordItem>>(`/records/${id}`);
+  return data.data;
+}
+
+export async function analyzeAi(payload: {
+  recordId: string;
+  templateEntryId: string;
+  photoUrls: string[];
+  samplePhotoUrls?: string[];
+}) {
+  const { data } = await request.post<
+    ApiResponse<{ queued: boolean; completed?: boolean }>
+  >('/ai/analyze', payload);
   return data.data;
 }
 

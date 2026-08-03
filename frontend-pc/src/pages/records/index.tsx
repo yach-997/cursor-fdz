@@ -19,8 +19,10 @@ import dayjs from 'dayjs';
 import {
   fetchRecords,
   fetchRecord,
+  analyzeAi,
   compareRecords,
   type RecordItem,
+  type RecordEntry,
   type AuditTrailEvent,
 } from '../../api/record';
 import { fetchSites, fetchSiteMembers } from '../../api/site';
@@ -55,6 +57,22 @@ function trailColor(action: string) {
   return 'blue';
 }
 
+function finalResultView(entry: RecordEntry) {
+  if (entry.finalResult === 'pass') return { label: '合格', color: 'success' };
+  if (entry.finalResult === 'fail') return { label: '不合格', color: 'error' };
+  if (entry.aiResult?.status === 'error') {
+    return { label: '待人工判断', color: 'warning' };
+  }
+  return { label: '分析中', color: 'processing' };
+}
+
+function aiResultColor(status?: string) {
+  if (status === 'pass') return 'success';
+  if (status === 'fail') return 'error';
+  if (status === 'error') return 'warning';
+  return 'processing';
+}
+
 /** 历史查询：所有已提交报告（AI 合格/不合格）+ 操作追溯 */
 export default function RecordsPage() {
   const [searchParams] = useSearchParams();
@@ -78,6 +96,7 @@ export default function RecordsPage() {
 
   const [detail, setDetail] = useState<RecordItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [retryingEntryId, setRetryingEntryId] = useState<string>();
 
   const [compareOpen, setCompareOpen] = useState(false);
   const [compareDeviceId, setCompareDeviceId] = useState<string>();
@@ -155,6 +174,59 @@ export default function RecordsPage() {
     setDrawerOpen(true);
   };
 
+  // 详情打开期间主动刷新分析状态；全部完成后依赖变化会自动停止轮询。
+  useEffect(() => {
+    if (!drawerOpen || !detail?.aiSummary?.pending) return;
+    let disposed = false;
+    let refreshing = false;
+    const refresh = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const fresh = await fetchRecord(detail.id);
+        if (disposed) return;
+        setDetail(fresh);
+        setData((rows) => rows.map((row) => (row.id === fresh.id ? fresh : row)));
+      } catch {
+        // 短暂网络波动不打断轮询，下一轮继续刷新。
+      } finally {
+        refreshing = false;
+      }
+    };
+    const timer = window.setInterval(() => void refresh(), 3000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [drawerOpen, detail?.id, detail?.aiSummary?.pending]);
+
+  const retryAnalysis = async (entry: RecordEntry) => {
+    if (!detail || !entry.photos?.length) {
+      message.warning('该检查项没有现场照片，无法重新分析');
+      return;
+    }
+    setRetryingEntryId(entry.templateEntryId);
+    try {
+      const template = detail.task?.templateSnapshot?.find(
+        (item) => item.id === entry.templateEntryId,
+      );
+      await analyzeAi({
+        recordId: detail.id,
+        templateEntryId: entry.templateEntryId,
+        photoUrls: entry.photos,
+        samplePhotoUrls: template?.samplePhotos || [],
+      });
+      const fresh = await fetchRecord(detail.id);
+      setDetail(fresh);
+      setData((rows) => rows.map((row) => (row.id === fresh.id ? fresh : row)));
+      message.success('已重新提交分析，结果会自动刷新');
+    } catch {
+      message.error('重新分析提交失败，请稍后重试');
+    } finally {
+      setRetryingEntryId(undefined);
+    }
+  };
+
   const handleExport = async () => {
     try {
       await downloadRecordsExport({
@@ -199,6 +271,7 @@ export default function RecordsPage() {
         if (!a) return '-';
         if (a.fail > 0) return <Tag color="error">不合格 {a.fail}</Tag>;
         if (a.pending > 0) return <Tag color="processing">分析中 {a.pending}</Tag>;
+        if (a.error > 0) return <Tag color="warning">待人工判断 {a.error}</Tag>;
         return <Tag color="success">合格 {a.pass}</Tag>;
       },
     },
@@ -425,21 +498,23 @@ export default function RecordsPage() {
                   {tplName(detail, entry.templateEntryId)}
                 </div>
                 <Space style={{ marginBottom: 8 }}>
-                  <Tag
-                    color={
-                      entry.aiResult?.status === 'pass'
-                        ? 'success'
-                        : entry.aiResult?.status === 'fail'
-                          ? 'error'
-                          : 'default'
-                    }
-                  >
+                  <Tag color={aiResultColor(entry.aiResult?.status)}>
                     智能分析：{CHECK_RESULT_LABEL[entry.aiResult?.status || 'pending'] || '待人工判断'}（
                     {((entry.aiResult?.confidence || 0) * 100).toFixed(0)}%)
                   </Tag>
-                  <Tag color={entry.finalResult === 'fail' ? 'error' : 'success'}>
-                    最终结论：{CHECK_RESULT_LABEL[entry.finalResult || 'pending'] || '待人工判断'}
-                  </Tag>
+                  {(() => {
+                    const final = finalResultView(entry);
+                    return <Tag color={final.color}>最终结论：{final.label}</Tag>;
+                  })()}
+                  {detail.status === 'submitted' && entry.aiResult?.status === 'error' ? (
+                    <Button
+                      size="small"
+                      loading={retryingEntryId === entry.templateEntryId}
+                      onClick={() => void retryAnalysis(entry)}
+                    >
+                      重新分析
+                    </Button>
+                  ) : null}
                 </Space>
                 {entry.aiResult?.reason ? (
                   <div style={{ color: '#888', marginBottom: 8 }}>{entry.aiResult.reason}</div>
@@ -491,10 +566,10 @@ export default function RecordsPage() {
                 <div key={entry.templateEntryId} style={{ marginTop: 12 }}>
                   <div style={{ fontSize: 13 }}>{tplName(rec, entry.templateEntryId)}</div>
                   <Tag
-                    color={entry.finalResult === 'fail' ? 'error' : 'success'}
+                    color={finalResultView(entry).color}
                     style={{ marginTop: 4 }}
                   >
-                    {CHECK_RESULT_LABEL[entry.finalResult || 'pending'] || '待人工判断'}
+                    {finalResultView(entry).label}
                   </Tag>
                   {(entry.photos || []).slice(0, 1).map((url) => (
                     <Image key={url} src={displayPhotoUrl(url)} width={80} height={80} style={{ marginTop: 4 }} />

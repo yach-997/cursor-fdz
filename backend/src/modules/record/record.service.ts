@@ -6,7 +6,8 @@ import {
   Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThanOrEqual, Repository } from 'typeorm';
+import { Interval } from '@nestjs/schedule';
 import {
   InspectionRecord,
   InspectionTask,
@@ -38,6 +39,8 @@ const AI_PENDING_TIMEOUT_MS = 3 * 60 * 1000;
 
 @Injectable()
 export class RecordService {
+  private resolvingStalePending = false;
+
   constructor(
     @InjectRepository(InspectionRecord)
     private readonly recordRepo: Repository<InspectionRecord>,
@@ -678,6 +681,41 @@ export class RecordService {
     return entries.some((e) => e.aiResult?.status === CheckResult.ERROR);
   }
 
+  private isStalePendingEntry(entry: RecordEntry, fallbackStartedAt: Date, now = Date.now()) {
+    const status = entry.aiResult?.status;
+    if (status && status !== CheckResult.PENDING) return false;
+    const startedAt = new Date(entry.aiResult?.startedAt || fallbackStartedAt).getTime();
+    return Number.isFinite(startedAt) && now - startedAt >= AI_PENDING_TIMEOUT_MS;
+  }
+
+  /**
+   * 主动清理超时任务，避免必须等用户刷新报告后才从“分析中”转为人工判断。
+   * 加入进程内互斥，防止数据库响应较慢时重复扫描同一批记录。
+   */
+  @Interval('resolve-stale-ai-results', 60 * 1000)
+  private async resolveStalePendingInBackground() {
+    if (this.resolvingStalePending) return;
+    this.resolvingStalePending = true;
+    try {
+      const deadline = new Date(Date.now() - AI_PENDING_TIMEOUT_MS);
+      const records = await this.recordRepo.find({
+        where: {
+          status: RecordStatus.SUBMITTED,
+          submittedAt: LessThanOrEqual(deadline),
+        },
+        take: 100,
+        order: { submittedAt: 'ASC' },
+      });
+      for (const record of records) {
+        if (this.hasAiPending(record.entries || [])) {
+          await this.resolveStalePending(record);
+        }
+      }
+    } finally {
+      this.resolvingStalePending = false;
+    }
+  }
+
   /**
    * 清理异常中断后遗留的 pending。Vercel 实例退出、浏览器断网或上游模型
    * 长时间无响应时，都不能让用户永久停留在“后台分析中”。
@@ -686,15 +724,9 @@ export class RecordService {
     if (
       record.status !== RecordStatus.SUBMITTED ||
       !record.submittedAt ||
-      !this.hasAiPending(record.entries || [])
-    ) {
-      return record;
-    }
-
-    const submittedAt = new Date(record.submittedAt).getTime();
-    if (
-      !Number.isFinite(submittedAt) ||
-      Date.now() - submittedAt < AI_PENDING_TIMEOUT_MS
+      !(record.entries || []).some((entry) =>
+        this.isStalePendingEntry(entry, record.submittedAt!),
+      )
     ) {
       return record;
     }
@@ -712,22 +744,15 @@ export class RecordService {
         !latest ||
         latest.status !== RecordStatus.SUBMITTED ||
         !latest.submittedAt ||
-        !this.hasAiPending(latest.entries || [])
+        !(latest.entries || []).some((entry) =>
+          this.isStalePendingEntry(entry, latest.submittedAt!),
+        )
       ) {
         return latest || record;
       }
 
-      const latestSubmittedAt = new Date(latest.submittedAt).getTime();
-      if (
-        !Number.isFinite(latestSubmittedAt) ||
-        Date.now() - latestSubmittedAt < AI_PENDING_TIMEOUT_MS
-      ) {
-        return latest;
-      }
-
       latest.entries = (latest.entries || []).map((entry) => {
-        const status = entry.aiResult?.status;
-        if (status && status !== CheckResult.PENDING) return entry;
+        if (!this.isStalePendingEntry(entry, latest.submittedAt!)) return entry;
         return {
           ...entry,
           aiResult: {

@@ -15,6 +15,8 @@ export interface AiResult {
   status: CheckResult;
   confidence: number;
   reason: string;
+  /** 本轮分析开始时间，用于按检查项独立判断超时。 */
+  startedAt?: string;
 }
 
 /** 巡检记录条目结构（JSONB） */
