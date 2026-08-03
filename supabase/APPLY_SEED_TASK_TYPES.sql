@@ -10,7 +10,7 @@ WITH updated AS (
       {"id":"tt-si-1","name":"上传阳光云截图","description":"必检。须上传完整阳光云页面截图（含设备信息与序列号，不可半截）。","isRequired":true,"order":0,"samplePhotos":[],"checkType":"photo","isOptionalModule":false},
       {"id":"tt-si-2","name":"上传故障记录","description":"必检。须同时上传实时故障/告警页与历史故障/告警页。","isRequired":true,"order":1,"samplePhotos":[],"checkType":"photo","isOptionalModule":false},
       {"id":"tt-si-3","name":"安装固定检查","description":"必检。检查支架/螺栓等固定点，证明安装牢固、无松动倾斜。","isRequired":true,"order":2,"samplePhotos":[],"checkType":"photo","isOptionalModule":false},
-      {"id":"tt-si-4","name":"直流侧安装检查","description":"必检。检查直流接线、端子与标识；未使用端子须有防护盖。","isRequired":true,"order":3,"samplePhotos":[],"checkType":"photo","isOptionalModule":false},
+      {"id":"tt-si-4","name":"直流侧安装检查","description":"必检。已插线正常；未插线空闲孔须盖蓝/红/橙防护盖，无盖裸露不合格。","isRequired":true,"order":3,"samplePhotos":[],"checkType":"photo","isOptionalModule":false},
       {"id":"tt-si-5","name":"交流侧安装检查","description":"必检。检查交流侧接线与防护；须看到 PE 接地线已接入。","isRequired":true,"order":4,"samplePhotos":[],"checkType":"photo","isOptionalModule":false},
       {"id":"tt-si-6","name":"接地安装检查","description":"必检。须清晰看到黄绿接地线、接地排/端子、接地标识。","isRequired":true,"order":5,"samplePhotos":[],"checkType":"photo","isOptionalModule":false}
     ]$json$::jsonb,
@@ -29,7 +29,7 @@ SELECT
     {"id":"tt-si-1","name":"上传阳光云截图","description":"必检。须上传完整阳光云页面截图（含设备信息与序列号，不可半截）。","isRequired":true,"order":0,"samplePhotos":[],"checkType":"photo","isOptionalModule":false},
     {"id":"tt-si-2","name":"上传故障记录","description":"必检。须同时上传实时故障/告警页与历史故障/告警页。","isRequired":true,"order":1,"samplePhotos":[],"checkType":"photo","isOptionalModule":false},
     {"id":"tt-si-3","name":"安装固定检查","description":"必检。检查支架/螺栓等固定点，证明安装牢固、无松动倾斜。","isRequired":true,"order":2,"samplePhotos":[],"checkType":"photo","isOptionalModule":false},
-    {"id":"tt-si-4","name":"直流侧安装检查","description":"必检。检查直流接线、端子与标识；未使用端子须有防护盖。","isRequired":true,"order":3,"samplePhotos":[],"checkType":"photo","isOptionalModule":false},
+    {"id":"tt-si-4","name":"直流侧安装检查","description":"必检。已插线正常；未插线空闲孔须盖蓝/红/橙防护盖，无盖裸露不合格。","isRequired":true,"order":3,"samplePhotos":[],"checkType":"photo","isOptionalModule":false},
     {"id":"tt-si-5","name":"交流侧安装检查","description":"必检。检查交流侧接线与防护；须看到 PE 接地线已接入。","isRequired":true,"order":4,"samplePhotos":[],"checkType":"photo","isOptionalModule":false},
     {"id":"tt-si-6","name":"接地安装检查","description":"必检。须清晰看到黄绿接地线、接地排/端子、接地标识。","isRequired":true,"order":5,"samplePhotos":[],"checkType":"photo","isOptionalModule":false}
   ]$json$::jsonb,
