@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import sharp from 'sharp';
 import { CheckResult } from '../../common/enums';
 
 export interface VisionCompareResult {
@@ -263,7 +264,7 @@ export class VisionService {
           provider: 'siliconflow',
         };
       }
-      const enforced = grounding
+      let enforced = grounding
         ? this.enforceGroundingResult(parsed, raw)
         : faultRecord
           ? this.enforceFaultRecordResult(parsed, raw, photoInputs.length)
@@ -276,6 +277,17 @@ export class VisionService {
                 : acSide
                   ? this.enforceAcSideResult(parsed, raw)
                   : parsed;
+      // 直流侧“合格”属于高风险结论：再用自动放大的端口分块做一次独立缺陷复核。
+      // 任一复核失败、看不清或发现无盖空孔，都禁止自动合格。
+      if (dcSide && enforced.status === CheckResult.PASS) {
+        enforced = await this.auditDcUnusedPorts({
+          apiKey,
+          baseUrl,
+          model,
+          photoInputs,
+          original: enforced,
+        });
+      }
       return { ...enforced, provider: 'siliconflow' };
     } catch (err) {
       this.logger.warn(`Vision 请求异常: ${(err as Error).message}`);
@@ -416,7 +428,7 @@ export class VisionService {
       return `${n}请看抱箍/横担螺栓是否清晰；多张有侧面+特写或不同方位即可，勿因线管遮挡某一张就否决全部`;
     }
     if (opts.dcSide) {
-      return `${n}只检查「未插线」的空闲孔：有蓝/红/橙盖 → 合格；呈黑色空洞无盖 → 不合格。已插 MC4/电缆的孔一律忽略`;
+      return `${n}逐端口向下追踪：有电缆连续伸出才算在用；黑色接头末端呈圆形开口且无电缆仍是无盖空闲孔。有蓝/红/橙盖才算已封盖。`;
     }
     if (opts.acSide) {
       return `${n}请检查相线与 PE 接地线是否接好；交流仓内 PE 空端子/未接 PE → 不合格`;
@@ -692,6 +704,154 @@ export class VisionService {
       '直流侧在用接头插接正常，空闲孔已盖蓝/红/橙防护盖，合格。',
       reported,
     );
+  }
+
+  /** 对准备判合格的直流侧照片做第二次、缺陷优先的放大复核。 */
+  private async auditDcUnusedPorts(args: {
+    apiKey: string;
+    baseUrl: string;
+    model: string;
+    photoInputs: string[];
+    original: Omit<VisionCompareResult, 'provider'>;
+  }): Promise<Omit<VisionCompareResult, 'provider'>> {
+    const crops = await this.createDcPortCrops(args.photoInputs);
+    if (!crops.length) {
+      return {
+        status: CheckResult.ERROR,
+        confidence: 0,
+        reason: '直流端口放大复核未完成，已转人工判断',
+      };
+    }
+
+    const content: Array<Record<string, unknown>> = [
+      {
+        type: 'text',
+        text: [
+          '你是光伏逆变器直流端口安全复核员。以下均为现场照片的自动放大分块，不是合格样本。',
+          '任务只有一个：找出任何“未插线且没有蓝色/红色/橙色防护盖”的空闲端口。',
+          '判别时沿每个端口向下追踪：有电缆连续伸出才算在用；黑色接头末端呈圆形开口、且没有电缆继续伸出，仍是未封盖空闲端口。',
+          '蓝色、红色或橙色堵头/盖子属于已封盖；红色/橙色大旋钮属于开关盖，不要误判。',
+          '必须逐块从左到右检查。只要任一块发现一个无盖空孔，hasUncappedUnusedPort=true。',
+          '只要有区域过暗、遮挡或无法逐端口确认，allVisiblePortsVerified=false；禁止凭“整体看起来整齐”判定。',
+          '只输出 JSON：',
+          '{"hasUncappedUnusedPort":true|false,"allVisiblePortsVerified":true|false,"confidence":0~1,"reason":"中文，写明原图序号、左/中/右位置和数量","findings":[{"photoIndex":1,"area":"左/中/右","uncappedCount":1}]}',
+        ].join('\n'),
+      },
+    ];
+    for (const crop of crops) {
+      content.push({ type: 'text', text: crop.label });
+      content.push({ type: 'image_url', image_url: { url: crop.dataUrl } });
+    }
+
+    try {
+      const response = await fetch(`${args.baseUrl}/chat/completions`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(45_000),
+        headers: {
+          Authorization: `Bearer ${args.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: args.model,
+          temperature: 0,
+          max_tokens: 384,
+          messages: [{ role: 'user', content }],
+        }),
+      });
+      if (!response.ok) {
+        this.logger.warn(`DC safety audit API ${response.status}`);
+        return {
+          status: CheckResult.ERROR,
+          confidence: 0,
+          reason: '直流端口安全复核服务异常，已转人工判断',
+        };
+      }
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const raw = data.choices?.[0]?.message?.content || '';
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (!match) throw new Error('复核结果不是 JSON');
+      const audit = JSON.parse(match[0]) as {
+        hasUncappedUnusedPort?: unknown;
+        allVisiblePortsVerified?: unknown;
+        confidence?: unknown;
+        reason?: unknown;
+        findings?: unknown;
+      };
+      const asBool = (value: unknown) => value === true || value === 'true' || value === 1;
+      const hasUncapped = asBool(audit.hasUncappedUnusedPort);
+      const allVerified = asBool(audit.allVisiblePortsVerified);
+      const confidence = Math.max(0, Math.min(1, Number(audit.confidence) || 0.9));
+      const reason = String(audit.reason || '')
+        .trim()
+        .slice(0, 240);
+
+      if (hasUncapped) {
+        return {
+          status: CheckResult.FAIL,
+          confidence: Math.max(confidence, 0.95),
+          reason: reason || '放大复核发现未插线且无蓝/红/橙防护盖的空闲直流端口。',
+        };
+      }
+      if (!allVerified) {
+        return {
+          status: CheckResult.FAIL,
+          confidence: Math.min(confidence, 0.9),
+          reason: reason || '放大复核无法逐一确认全部可见直流端口，证据不足，不予自动合格。',
+        };
+      }
+      return {
+        ...args.original,
+        confidence: Math.min(args.original.confidence, confidence, 0.95),
+        reason: reason || args.original.reason,
+      };
+    } catch (error) {
+      this.logger.warn(`DC safety audit parse failed: ${(error as Error).message}`);
+      return {
+        status: CheckResult.ERROR,
+        confidence: 0,
+        reason: '直流端口安全复核未完成，已转人工判断',
+      };
+    }
+  }
+
+  private async createDcPortCrops(
+    photoInputs: string[],
+  ): Promise<Array<{ label: string; dataUrl: string }>> {
+    const crops: Array<{ label: string; dataUrl: string }> = [];
+    for (let photoIndex = 0; photoIndex < Math.min(photoInputs.length, 4); photoIndex += 1) {
+      try {
+        const encoded = photoInputs[photoIndex].split(',', 2)[1];
+        if (!encoded) continue;
+        const source = Buffer.from(encoded, 'base64');
+        const metadata = await sharp(source).metadata();
+        const width = metadata.width || 0;
+        const height = metadata.height || 0;
+        if (width < 200 || height < 200) continue;
+
+        const cropHeight = Math.max(160, Math.min(height, Math.round(height * 0.68)));
+        const cropWidth = Math.max(160, Math.min(width, Math.round(width * 0.62)));
+        const positions = [
+          { name: '左侧放大区', left: 0 },
+          { name: '右侧放大区', left: Math.max(0, width - cropWidth) },
+        ];
+        for (const position of positions) {
+          const output = await sharp(source)
+            .extract({ left: position.left, top: 0, width: cropWidth, height: cropHeight })
+            .resize({ width: 1100, withoutEnlargement: false })
+            .jpeg({ quality: 88 })
+            .toBuffer();
+          crops.push({
+            label: `【原现场照片 ${photoIndex + 1} · ${position.name}】请逐个检查黑色圆形端口是否有电缆或彩色防护盖`,
+            dataUrl: `data:image/jpeg;base64,${output.toString('base64')}`,
+          });
+        }
+      } catch (error) {
+        this.logger.warn(`DC crop failed for photo ${photoIndex + 1}: ${(error as Error).message}`);
+      }
+    }
+    return crops;
   }
 
   private enforceAcSideResult(
