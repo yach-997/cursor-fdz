@@ -27,7 +27,15 @@ export class FinanceQueryService {
     assertFinanceClearAllowed(confirm);
     const total = await this.cases.count();
     await this.cases.manager.transaction(async (em) => {
-      // 兼容部分环境未配齐 cascade 的情况，先删依赖再删案例
+      // 案例派单会建巡检任务/报告/占位设备；只删案例会导致 H5「本月统计」残留
+      await em.query(`
+        DELETE FROM inspection_records
+        WHERE task_id IN (
+          SELECT id FROM inspection_tasks WHERE service_case_id IS NOT NULL
+        )
+      `);
+      await em.query(`DELETE FROM inspection_tasks WHERE service_case_id IS NOT NULL`);
+      await em.query(`DELETE FROM devices WHERE serial_number LIKE 'CASE-%'`);
       await em.query('DELETE FROM case_work_record');
       await em.query('DELETE FROM case_performance');
       await em.query('DELETE FROM service_case');
@@ -39,7 +47,7 @@ export class FinanceQueryService {
       { total },
       { deleted: total },
       user.id,
-      `清空全部费用案例，共 ${total} 条`,
+      `清空全部费用案例及关联巡检，共 ${total} 条`,
     );
     return { deleted: total };
   }
