@@ -377,7 +377,8 @@ export class VisionService {
   }
 
   private isGroundingCheck(criteria: string) {
-    return /接地/.test(criteria);
+    const title = this.checkTitle(criteria);
+    return /^(?:接地安装检查|接地检查)$/.test(title);
   }
 
   private isFaultRecordCheck(criteria: string) {
@@ -393,11 +394,17 @@ export class VisionService {
   }
 
   private isDcSideCheck(criteria: string) {
-    return /直流侧/.test(criteria);
+    return /直流侧/.test(this.checkTitle(criteria));
   }
 
   private isAcSideCheck(criteria: string) {
-    return /交流侧/.test(criteria);
+    return /交流侧/.test(this.checkTitle(criteria));
+  }
+
+  private checkTitle(criteria: string) {
+    return String(criteria || '')
+      .split(/\r?\n/, 1)[0]
+      .trim();
   }
 
   private jsonSchemaHint(flags: {
