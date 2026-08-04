@@ -283,7 +283,8 @@ export class VisionService {
         content,
         temperature: 0.1,
         maxTokens: 512,
-        timeoutMs: 75_000,
+        timeoutMs: 55_000,
+        maxAttempts: 2,
         label: dcSide ? 'dc-main' : acSide ? 'ac-main' : 'vision-main',
       });
       const parsed = this.parseJsonResult(raw);
@@ -308,39 +309,35 @@ export class VisionService {
                 : acSide
                   ? this.enforceAcSideResult(parsed, raw, sampleInputs.length)
                   : parsed;
-      // 交流侧若因主PE被误杀而 fail，用严格探针纠偏（仅清晰铜编织带压接才翻成合格）
-      if (
-        acSide &&
-        enforced.status === CheckResult.FAIL &&
-        /主PE|铜编织|铜芯/.test(enforced.reason || '')
-      ) {
-        try {
-          const peOk = await this.probeAcMainPeStrict({
+      // 交流侧：只做一次短复核，避免主请求+探针+缺陷复核串行导致整体超时
+      if (acSide) {
+        if (enforced.status === CheckResult.FAIL && /主PE|铜编织|铜芯|相线屏蔽/.test(enforced.reason || '')) {
+          try {
+            const peOk = await this.probeAcMainPeStrict({
+              apiKey,
+              baseUrl,
+              model,
+              photoInputs,
+            });
+            if (peOk && !/相线接线正常/.test(enforced.reason || '')) {
+              enforced = {
+                status: CheckResult.PASS,
+                confidence: 0.9,
+                reason: '交流侧相线正常，主PE铜芯接地线/铜编织带已可靠压接到PE端子，合格。',
+              };
+            }
+          } catch (error) {
+            this.logger.warn(`AC PE strict probe failed: ${(error as Error).message}`);
+          }
+        } else if (enforced.status === CheckResult.PASS) {
+          enforced = await this.auditAcMainPeDefect({
             apiKey,
             baseUrl,
             model,
             photoInputs,
+            original: enforced,
           });
-          if (peOk && !/相线接线正常/.test(enforced.reason || '')) {
-            enforced = {
-              status: CheckResult.PASS,
-              confidence: 0.9,
-              reason: '交流侧相线正常，主PE铜芯接地线/铜编织带已可靠压接到PE端子，合格。',
-            };
-          }
-        } catch (error) {
-          this.logger.warn(`AC PE strict probe failed: ${(error as Error).message}`);
         }
-      }
-      // 交流侧准备判合格时，再做一次「缺陷优先」主PE复核，防止空PE/细屏蔽线被放水
-      if (acSide && enforced.status === CheckResult.PASS) {
-        enforced = await this.auditAcMainPeDefect({
-          apiKey,
-          baseUrl,
-          model,
-          photoInputs,
-          original: enforced,
-        });
       }
       // 直流侧首轮合格时再做放大复核；复核服务异常时回退首轮结论，避免整项分析失败。
       if (dcSide && enforced.status === CheckResult.PASS) {
@@ -1176,8 +1173,8 @@ export class VisionService {
       content,
       temperature: 0,
       maxTokens: 140,
-      timeoutMs: 40_000,
-      maxAttempts: 2,
+      timeoutMs: 30_000,
+      maxAttempts: 1,
       label: 'ac-pe-strict',
     });
     const match = raw.match(/\{[\s\S]*\}/);
@@ -1237,8 +1234,8 @@ export class VisionService {
         content,
         temperature: 0,
         maxTokens: 180,
-        timeoutMs: 45_000,
-        maxAttempts: 2,
+        timeoutMs: 30_000,
+        maxAttempts: 1,
         label: 'ac-pe-defect',
       });
       const match = raw.match(/\{[\s\S]*\}/);
@@ -1665,8 +1662,8 @@ export class VisionService {
       content,
       temperature: 0,
       maxTokens: 160,
-      timeoutMs: 45_000,
-      maxAttempts: 2,
+      timeoutMs: 35_000,
+      maxAttempts: 1,
       label: `grounding-probe-${args.point}`,
     });
     const match = raw.match(/\{[\s\S]*\}/);
@@ -1741,8 +1738,8 @@ export class VisionService {
       content,
       temperature: 0,
       maxTokens: 360,
-      timeoutMs: 50_000,
-      maxAttempts: 2,
+      timeoutMs: 40_000,
+      maxAttempts: 1,
       label: 'grounding-simple',
     });
     const parsed = this.parseJsonResult(raw);

@@ -131,7 +131,7 @@ export async function analyzeAi(payload: {
   >(
     '/ai/analyze',
     payload,
-    { timeout: 120_000 },
+    { timeout: 180_000 },
   );
   return data.data;
 }

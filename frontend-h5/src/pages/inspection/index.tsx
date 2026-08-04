@@ -458,7 +458,7 @@ export default function InspectionPage() {
     let tries = 0;
     pollRefs.current[templateEntryId] = window.setInterval(async () => {
       tries += 1;
-      if (tries > 24) {
+      if (tries > 48) {
         window.clearInterval(pollRefs.current[templateEntryId]);
         delete pollRefs.current[templateEntryId];
         setAnalyzingIds((ids) => ids.filter((id) => id !== templateEntryId));
