@@ -1,4 +1,4 @@
-import request from './request';
+import request from '../utils/request';
 import type { ApiResponse } from '../types';
 
 export type HardRuleMatchMode = 'title_exact' | 'title_includes' | 'criteria_includes';
