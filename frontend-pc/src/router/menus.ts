@@ -19,17 +19,17 @@ export const menuConfig: MenuConfig[] = [
     roles: ['super_admin', 'site_manager'],
   },
   {
-    key: 'sites',
-    path: '/sites',
-    label: '站点管理',
-    icon: 'EnvironmentOutlined',
-    roles: ['super_admin', 'site_manager'],
-  },
-  {
     key: 'users',
     path: '/users',
     label: '用户管理',
     icon: 'TeamOutlined',
+    roles: ['super_admin', 'site_manager'],
+  },
+  {
+    key: 'sites',
+    path: '/sites',
+    label: '站点管理',
+    icon: 'EnvironmentOutlined',
     roles: ['super_admin', 'site_manager'],
   },
   {
