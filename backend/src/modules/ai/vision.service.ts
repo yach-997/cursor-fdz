@@ -291,7 +291,7 @@ export class VisionService {
           : sungrowShot
             ? this.enforceSungrowShotResult(parsed, raw, sampleInputs.length)
             : mountFix
-              ? this.enforceMountFixResult(parsed, raw, photoInputs.length)
+              ? await this.enforceMountFixResult(parsed, raw, photoInputs, sampleInputs.length)
               : dcSide
                 ? this.enforceDcSideResult(parsed, raw, sampleInputs.length)
                 : acSide
@@ -329,10 +329,12 @@ export class VisionService {
     maxTokens?: number;
     timeoutMs?: number;
     label?: string;
+    maxAttempts?: number;
   }): Promise<string> {
     const timeoutMs = args.timeoutMs ?? 60_000;
+    const maxAttempts = Math.max(1, Math.min(args.maxAttempts ?? 3, 3));
     let lastError: Error | null = null;
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
         const resp = await fetch(`${args.baseUrl}/chat/completions`, {
           method: 'POST',
@@ -354,7 +356,7 @@ export class VisionService {
           this.logger.warn(
             `Vision API ${args.label || ''} ${resp.status} (try ${attempt}): ${errText.slice(0, 200)}`,
           );
-          if (!retryable || attempt >= 3) {
+          if (!retryable || attempt >= maxAttempts) {
             throw new Error(`视觉模型调用失败(${resp.status})`);
           }
           await this.sleep(attempt * 800);
@@ -374,7 +376,7 @@ export class VisionService {
         this.logger.warn(
           `Vision chat ${args.label || ''} try ${attempt} failed: ${msg.slice(0, 160)}`,
         );
-        if (!retryable || attempt >= 3) throw lastError;
+        if (!retryable || attempt >= maxAttempts) throw lastError;
         await this.sleep(attempt * 800);
       }
     }
@@ -481,7 +483,7 @@ export class VisionService {
       return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明，必须写明缺失区域","evidence":{"screenshotComplete":true|false,"serialNumberVisible":true|false,"topSectionVisible":true|false,"bottomContentVisible":true|false,"requiredSectionsCovered":true|false,"croppedOrPartial":true|false,"matchesSampleLayout":true|false,"photoFindings":["第1张：实际可见区域"]}}';
     }
     if (flags.mountFix) {
-      return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"multiAngleCoverage":true|false,"mountPointsVisible":true|false,"noObviousLooseness":true|false}}';
+      return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明","evidence":{"multiAngleCoverage":true|false,"hasOverviewShot":true|false,"hasMountCloseup":true|false,"mountPointsVisible":true|false,"nearDuplicatePhotos":true|false,"matchesSampleViews":true|false,"noObviousLooseness":true|false}}';
     }
     if (flags.dcSide) {
       return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明，必须写明照片序号和端口位置","evidence":{"connectorsIntact":true|false,"unusedPortsCapped":true|false,"allPortsIndividuallyAccountedFor":true|false,"visibleUnusedPortCount":0,"uncappedUnusedPortCount":0,"matchesSampleProtection":true|false,"photoFindings":["第1张：空闲孔及封盖情况"]}}';
@@ -513,7 +515,7 @@ export class VisionService {
       return `${n}请严格对照样本：是否完整 App 截图（含设备头图/序列号），禁止只拍功率数字半截`;
     }
     if (opts.mountFix) {
-      return `${n}请看抱箍/横担螺栓是否清晰；多张有侧面+特写或不同方位即可，勿因线管遮挡某一张就否决全部`;
+      return `${n}区分本张是「整机安装关系概览」还是「抱箍/U型螺栓特写」；同角度重复图不算新视角；看不清锁紧点则 mountPointsVisible 不能为 true`;
     }
     if (opts.dcSide) {
       return `${n}逐端口向下追踪：有电缆连续伸出才算在用；黑色接头末端呈圆形开口且无电缆仍是无盖空闲孔。有蓝/红/橙盖才算已封盖。`;
@@ -557,14 +559,16 @@ export class VisionService {
   private mountFixHardRules() {
     return [
       '【安装固定检查·硬性否决】',
-      '至少 2 张照片。',
-      'multiAngleCoverage=true：照片在方位或景别上有差异即可，例如「支架/螺栓特写 + 整机侧面」「左侧 + 背面/另一侧」。',
-      '不必强求正面全身照；杆上逆变器常见以侧面+背面/抱箍特写即可。',
-      '仅当多张照片构图几乎完全相同（同一侧连拍）时，multiAngleCoverage 才为 false。',
-      'mountPointsVisible=true：只要任意一张能清晰看到抱箍、横担、螺栓螺母或墙挂固定件即可。',
-      '个别照片被线管/电杆遮挡没关系，以拍清固定点的那张为准。',
+      '至少需要 2 张「有效且不重复」的照片。',
+      '必须同时具备两类证据，缺一不可：',
+      'A) 整机/安装关系概览：能看清设备与电杆/墙面/支架的相对位置（不是只拍机箱铭牌面）；',
+      'B) 固定点特写：能看清把设备固定住的抱箍、U型螺栓、抱杆螺栓或膨胀螺栓锁紧点。',
+      'multiAngleCoverage=true 仅当上述 A+B 都覆盖，或明确拍到不同侧面（如左侧+背面）。',
+      '若多张照片构图几乎相同（同侧连拍/重复上传），视为无效重复，multiAngleCoverage 必须 false。',
+      'mountPointsVisible=true：必须看到抱箍/U型螺栓/锁紧螺母本体；只见机箱外壳、线管、横担边缘但看不清锁紧点 → false。',
+      '有合格标准图时：现场视角覆盖应与样本同级；样本展示了抱箍特写+整机侧面，现场只有机箱外观重复图 → fail。',
       'noObviousLooseness：未见明显松动、倾斜、支架开裂则可 true。',
-      '不要因为“不够完美的展览级多角度”而否决已经拍到抱箍螺栓的现场图。',
+      '拿不准是否拍全固定点时，按不合格处理，禁止放水合格。',
     ].join('\n');
   }
 
@@ -699,54 +703,93 @@ export class VisionService {
     );
   }
 
-  private enforceMountFixResult(
+  private async enforceMountFixResult(
     parsed: Omit<VisionCompareResult, 'provider'>,
     raw: string,
-    photoCount: number,
-  ): Omit<VisionCompareResult, 'provider'> {
+    photoInputs: string[],
+    sampleCount: number,
+  ): Promise<Omit<VisionCompareResult, 'provider'>> {
+    const photoCount = photoInputs.length;
     if (photoCount < 2) {
       return {
         status: CheckResult.FAIL,
         confidence: 0.96,
         reason:
-          '安装固定检查至少需要 2 张照片（特写+侧面或不同方位），仅一张无法判定整体是否牢固。',
+          '安装固定检查至少需要 2 张照片（整机安装关系 + 抱箍/螺栓特写），仅一张无法判定是否牢固。',
       };
     }
+
+    const { uniqueCount, hasNearDuplicate } = await this.summarizePhotoUniqueness(photoInputs);
+    if (uniqueCount < 2) {
+      return {
+        status: CheckResult.FAIL,
+        confidence: 0.97,
+        reason: '现场照片存在同角度重复，有效角度不足 2 个，请补拍不同方位或抱箍特写后再分析。',
+      };
+    }
+
     const { values, reported } = this.parseBoolEvidence(raw, [
       'multiAngleCoverage',
+      'hasOverviewShot',
+      'hasMountCloseup',
       'mountPointsVisible',
+      'nearDuplicatePhotos',
+      'matchesSampleViews',
       'noObviousLooseness',
     ]);
     const text = `${parsed.reason || ''} ${raw}`;
-    const sameAngle = /构图相同|同一角度|几乎一样|重复拍摄|角度相同|连拍同侧/.test(text);
+    const sameAngleText = /构图相同|同一角度|几乎一样|重复拍摄|角度相同|连拍同侧|重复上传/.test(
+      text,
+    );
     const affirmsMount =
-      /抱箍|横担|螺栓|螺母|支架|固定点|抱杆/.test(text) &&
-      !/未见.*(?:抱箍|螺栓|支架|固定)|缺少.*(?:抱箍|螺栓|支架|固定)/.test(text);
+      /抱箍|U型|U形|横担|螺栓|螺母|抱杆/.test(text) &&
+      !/未见.*(?:抱箍|螺栓|U型|U形|抱杆)|缺少.*(?:抱箍|螺栓|固定)/.test(text);
+    const deniesMountCloseup =
+      /未见.*(?:抱箍|U型|U形|锁紧|固定点)|看不清.*(?:抱箍|螺栓)|只有机箱|未拍到抱箍/.test(text);
+    const onlyCabinetShell =
+      /仅.*机箱|只有外壳|铭牌面|未显示固定|看不清固定/.test(text) && !affirmsMount;
 
-    // 3 张及以上且未明确“同角度连拍”时，视为已具备多角度/多景别
-    if (photoCount >= 3 && !sameAngle) {
-      values.multiAngleCoverage = true;
+    // 服务端指纹发现重复图时，强制视为近重复，不再因“张数够”放行
+    if (hasNearDuplicate || sameAngleText) {
+      values.nearDuplicatePhotos = true;
     }
-    // 文案已承认见到抱箍/螺栓时，纠正漏标
-    if (!values.mountPointsVisible && affirmsMount) {
+    if (!values.mountPointsVisible && affirmsMount && !deniesMountCloseup) {
       values.mountPointsVisible = true;
+      values.hasMountCloseup = true;
     }
-    // 2 张且固定点清晰时，不过度苛求“展览级多角度”
-    if (photoCount >= 2 && values.mountPointsVisible && !sameAngle && !values.multiAngleCoverage) {
-      values.multiAngleCoverage = true;
+    if (onlyCabinetShell || deniesMountCloseup) {
+      values.mountPointsVisible = false;
+      values.hasMountCloseup = false;
+    }
+
+    // 多角度：必须概览+特写都成立，且不能主要靠重复图凑数
+    const coverageOk =
+      values.multiAngleCoverage &&
+      (values.hasOverviewShot || values.hasMountCloseup
+        ? values.hasOverviewShot && (values.hasMountCloseup || values.mountPointsVisible)
+        : values.mountPointsVisible) &&
+      !(values.nearDuplicatePhotos && uniqueCount < 3);
+
+    // 近重复且模型未明确给到双类证据时，否决多角度
+    if (hasNearDuplicate && !(values.hasOverviewShot && values.mountPointsVisible)) {
+      values.multiAngleCoverage = false;
+    } else if (!coverageOk) {
+      values.multiAngleCoverage = false;
     }
 
     const missing: string[] = [];
-    if (!values.multiAngleCoverage) {
-      missing.push('不同方位或景别（勿同侧连拍相同构图）');
+    if (!values.multiAngleCoverage || uniqueCount < 2) {
+      missing.push('不同方位/景别（须含安装关系概览，勿同侧重复图）');
     }
     if (!values.mountPointsVisible) {
-      missing.push('可见抱箍/螺栓/支架固定点');
+      missing.push('清晰可见的抱箍/U型螺栓/锁紧螺母固定点');
     }
-    if (reported && values.noObviousLooseness === false) {
-      // 仅当模型明确给出 false 时才作为缺陷；缺省 false 在上面 parse 里不好区分
+    if (reported && /hasOverviewShot"\s*:\s*false/.test(raw) && !values.hasOverviewShot) {
+      missing.push('整机与电杆/支架相对位置的概览照片');
     }
-    // noObviousLooseness：若 evidence 显式为 false（且 reported），加入缺失
+    if (sampleCount > 0 && reported && /matchesSampleViews"\s*:\s*false/.test(raw)) {
+      missing.push('与合格标准图同级的安装固定视角覆盖');
+    }
     if (reported && /noObviousLooseness"\s*:\s*false/.test(raw)) {
       missing.push('存在明显松动/倾斜风险');
     }
@@ -757,6 +800,36 @@ export class VisionService {
       '已拍摄多张安装固定照片，抱箍/螺栓等固定点可见，未见明显松动，合格。',
       reported,
     );
+  }
+
+  /** 统计现场图有效张数，并检测近重复（同角度连拍）。 */
+  private async summarizePhotoUniqueness(
+    photoInputs: string[],
+  ): Promise<{ uniqueCount: number; hasNearDuplicate: boolean }> {
+    try {
+      const prints = await Promise.all(photoInputs.map((item) => this.imageFingerprint(item)));
+      const unique: Buffer[] = [];
+      let hasNearDuplicate = false;
+      for (let i = 0; i < prints.length; i += 1) {
+        const similarToUnique = unique.findIndex(
+          (item) => this.fingerprintSimilarity(item, prints[i]) >= 0.93,
+        );
+        if (similarToUnique >= 0) {
+          hasNearDuplicate = true;
+          continue;
+        }
+        for (let j = i + 1; j < prints.length; j += 1) {
+          if (this.fingerprintSimilarity(prints[i], prints[j]) >= 0.93) {
+            hasNearDuplicate = true;
+          }
+        }
+        unique.push(prints[i]);
+      }
+      return { uniqueCount: unique.length, hasNearDuplicate };
+    } catch (error) {
+      this.logger.warn(`Photo uniqueness check failed: ${(error as Error).message}`);
+      return { uniqueCount: photoInputs.length, hasNearDuplicate: false };
+    }
   }
 
   private enforceDcSideResult(
@@ -1241,7 +1314,7 @@ export class VisionService {
     }
   }
 
-  /** 接地：先轻量双点审核；若仍否决，再对失败点做单点探针，避免一次塞太多图误杀。 */
+  /** 接地：轻量双点审核；失败则双探针并行回退，尽量给出可判定结论，避免整项“分析失败”。 */
   private async auditGroundingConnections(args: {
     apiKey: string;
     baseUrl: string;
@@ -1249,65 +1322,65 @@ export class VisionService {
     photoInputs: string[];
     sampleInputs: string[];
   }): Promise<Omit<VisionCompareResult, 'provider'>> {
-    let first: Omit<VisionCompareResult, 'provider'>;
+    let first: Omit<VisionCompareResult, 'provider'> | null = null;
     try {
       first = await this.auditGroundingConnectionsSimple(args);
+      if (first.status === CheckResult.PASS) return first;
     } catch (error) {
       this.logger.warn(`Grounding simple audit failed: ${(error as Error).message}`);
+    }
+
+    // 首轮不合格或超时：对箱内/箱外各做一次轻量探针（并行，缩短总耗时）
+    try {
+      const reason = first?.reason || '';
+      const probeInternal =
+        !first ||
+        first.status !== CheckResult.FAIL ||
+        /箱内主PE|铜芯线\/铜编织带实际压接|逐照片接地|可解析/.test(reason) ||
+        !/箱外黄绿|箱外机壳/.test(reason);
+      const probeExternal =
+        !first ||
+        first.status !== CheckResult.FAIL ||
+        /箱外黄绿|箱外机壳|逐照片接地|可解析/.test(reason) ||
+        !/箱内主PE|铜芯线\/铜编织带实际压接/.test(reason);
+
+      const [internalOk, externalOk] = await Promise.all([
+        probeInternal
+          ? this.probeGroundingPoint({ ...args, point: 'internal' }).catch(() => false)
+          : Promise.resolve(true),
+        probeExternal
+          ? this.probeGroundingPoint({ ...args, point: 'external' }).catch(() => false)
+          : Promise.resolve(true),
+      ]);
+
+      if (internalOk && externalOk) {
+        return {
+          status: CheckResult.PASS,
+          confidence: Math.max(first?.confidence || 0, 0.9),
+          reason: '箱内主PE铜芯线/铜编织带及箱外黄绿接地线均已分别可靠连接，符合标准图要求。',
+        };
+      }
+
+      const missing: string[] = [];
+      if (!internalOk) missing.push('箱内主PE铜芯线/铜编织带实际压接到PE端子');
+      if (!externalOk) missing.push('箱外黄绿接地线实际连接机壳/支架接地点');
+      return {
+        status: CheckResult.FAIL,
+        confidence: Math.min(first?.confidence || 0.9, 0.95),
+        reason: `现场不满足：${missing.join('、')}。`,
+      };
+    } catch (error) {
+      this.logger.warn(`Grounding probe fallback failed: ${(error as Error).message}`);
+      if (first) return first;
       return {
         status: CheckResult.ERROR,
         confidence: 0,
-        reason: '接地双连接点分析暂时失败，请点「重新分析」或人工判断',
+        reason: '接地分析暂时失败，请点「重新分析」或人工判断',
       };
     }
-    if (first.status === CheckResult.PASS) return first;
-
-    const reason = first.reason || '';
-    let internalOk = !/箱内主PE|铜芯线\/铜编织带实际压接/.test(reason);
-    let externalOk = !/箱外黄绿|箱外机壳/.test(reason);
-    // 首轮失败但原因未拆清时，两个点都再探针一次
-    if (first.status === CheckResult.FAIL && internalOk && externalOk) {
-      internalOk = false;
-      externalOk = false;
-    }
-
-    try {
-      if (!internalOk) {
-        internalOk = await this.probeGroundingPoint({
-          ...args,
-          point: 'internal',
-        });
-      }
-      if (!externalOk) {
-        externalOk = await this.probeGroundingPoint({
-          ...args,
-          point: 'external',
-        });
-      }
-    } catch (error) {
-      this.logger.warn(`Grounding probe failed: ${(error as Error).message}`);
-      return first;
-    }
-
-    if (internalOk && externalOk) {
-      return {
-        status: CheckResult.PASS,
-        confidence: Math.max(first.confidence, 0.9),
-        reason: '箱内主PE铜芯线/铜编织带及箱外黄绿接地线均已分别可靠连接，符合标准图要求。',
-      };
-    }
-
-    const missing: string[] = [];
-    if (!internalOk) missing.push('箱内主PE铜芯线/铜编织带实际压接到PE端子');
-    if (!externalOk) missing.push('箱外黄绿接地线实际连接机壳/支架接地点');
-    return {
-      status: CheckResult.FAIL,
-      confidence: Math.min(first.confidence, 0.95),
-      reason: `现场不满足：${missing.join('、')}。`,
-    };
   }
 
-  /** 单点探针：只问一个连接是否成立，降低模型漏检铜编织带/主PE 的概率。 */
+  /** 单点探针：只问一个连接是否成立；默认不附带标准图，降低超时。 */
   private async probeGroundingPoint(args: {
     apiKey: string;
     baseUrl: string;
@@ -1327,16 +1400,14 @@ export class VisionService {
               '1) 裸铜编织带压接在标有 PE 的端子/螺栓上；',
               '2) 较粗的铜芯接地线（可带黄绿绝缘）压接到 PE 端子或接地排；',
               '3) PE 标签旁螺栓上有明显铜导体压接，不是空螺栓。',
-              '不要因为同框还有柜门右上角/铰链处的细黄绿跳线就判 false——那是门板等电位线，可忽略。',
+              '不要因为同框还有柜门右上角/铰链处的细黄绿跳线就判 false。',
               '只有明确看到 PE 螺栓空着、完全没有铜导体时才输出 false。',
-              '拿不准但已看到铜编织带或铜芯压接时输出 true。',
               '只输出 JSON：{"connected":true|false,"reason":"一句话"}',
             ].join('\n')
           : [
               '你只判断一件事：这些现场照片里，是否至少有一张能证明箱外机壳/支架接地已连接？',
-              '判 true：可见黄绿接地线连接到设备机壳、安装支架或抱箍接地点；线细可以，不必线鼻子特写。',
+              '判 true：可见黄绿接地线连接到设备机壳、安装支架或抱箍接地点；线细可以。',
               '判 false：完全看不到黄绿接地线，或明显悬空未接到机壳/支架。',
-              '拿不准但线与接地点同框可追踪时输出 true。',
               '只输出 JSON：{"connected":true|false,"reason":"一句话"}',
             ].join('\n'),
       },
@@ -1345,17 +1416,6 @@ export class VisionService {
       content.push({ type: 'text', text: `【现场照片 ${i + 1}】` });
       content.push({ type: 'image_url', image_url: { url: args.photoInputs[i] } });
     }
-    // 给一张对应视角标准图作对照，不叠加裁剪，避免干扰
-    const sample = args.sampleInputs[internal ? 0 : Math.min(1, args.sampleInputs.length - 1)];
-    if (sample) {
-      content.push({
-        type: 'text',
-        text: internal
-          ? '【参考·箱内主PE合格样例】仅作外观对照，现场不必构图一致'
-          : '【参考·箱外接地合格样例】仅作外观对照，现场不必构图一致',
-      });
-      content.push({ type: 'image_url', image_url: { url: sample } });
-    }
 
     const raw = await this.callVisionChat({
       apiKey: args.apiKey,
@@ -1363,8 +1423,9 @@ export class VisionService {
       model: args.model,
       content,
       temperature: 0,
-      maxTokens: 200,
-      timeoutMs: 55_000,
+      maxTokens: 160,
+      timeoutMs: 45_000,
+      maxAttempts: 2,
       label: `grounding-probe-${args.point}`,
     });
     const match = raw.match(/\{[\s\S]*\}/);
@@ -1379,13 +1440,17 @@ export class VisionService {
           !/未见|空着|未压接|未接入|未连接/.test(reason)
         );
       }
-      return /黄绿/.test(reason) && /机壳|支架|抱箍|外壳|接地点/.test(reason) && !/未见|悬空|未连接/.test(reason);
+      return (
+        /黄绿/.test(reason) &&
+        /机壳|支架|抱箍|外壳|接地点/.test(reason) &&
+        !/未见|悬空|未连接/.test(reason)
+      );
     } catch {
       return false;
     }
   }
 
-  /** 接地轻量复核：不送自动放大图，降低超时概率 */
+  /** 接地轻量复核：现场图优先，标准图最多 1 张，降低超时。 */
   private async auditGroundingConnectionsSimple(args: {
     apiKey: string;
     baseUrl: string;
@@ -1411,18 +1476,19 @@ export class VisionService {
       content.push({ type: 'text', text: `【现场照片 ${index + 1}】` });
       content.push({ type: 'image_url', image_url: { url: dataUrl } });
     });
-    args.sampleInputs.slice(0, 2).forEach((dataUrl, index) => {
-      content.push({ type: 'text', text: `【合格标准图 ${index + 1}】` });
-      content.push({ type: 'image_url', image_url: { url: dataUrl } });
-    });
+    if (args.sampleInputs[0]) {
+      content.push({ type: 'text', text: '【合格标准图参考】仅对照视角类型，不必构图一致' });
+      content.push({ type: 'image_url', image_url: { url: args.sampleInputs[0] } });
+    }
     const raw = await this.callVisionChat({
       apiKey: args.apiKey,
       baseUrl: args.baseUrl,
       model: args.model,
       content,
       temperature: 0,
-      maxTokens: 400,
-      timeoutMs: 60_000,
+      maxTokens: 360,
+      timeoutMs: 50_000,
+      maxAttempts: 2,
       label: 'grounding-simple',
     });
     const parsed = this.parseJsonResult(raw);
