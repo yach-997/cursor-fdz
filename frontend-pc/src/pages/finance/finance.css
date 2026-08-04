@@ -5,7 +5,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 4px;
+  margin-bottom: 16px;
 }
 .finance-heading h2 {
   margin: 0;
@@ -22,9 +22,6 @@
   background: #e6f7f1;
   color: #07845f;
   font-weight: 600;
-}
-.finance-tabs {
-  margin-bottom: 12px;
 }
 .finance-toolbar {
   display: flex;

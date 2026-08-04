@@ -2,16 +2,66 @@ import type { MenuConfig, UserRole } from '../types';
 
 /**
  * 侧栏菜单（主流程：费用案例派工 → 巡检 → 结算）
- * 已下线入口不出现在菜单：旧仪表盘 / 任务管理 / 数据分析 / 预警 / 运维监控
- * （路由仍保留或重定向，避免书签 404）
+ * 费用结算拆为可展开分组，子功能直接落在侧栏。
  */
 export const menuConfig: MenuConfig[] = [
   {
     key: 'finance',
     path: '/finance',
-    label: '费用结算中心',
+    label: '费用结算',
     icon: 'AccountBookOutlined',
     roles: ['super_admin', 'site_manager'],
+    children: [
+      {
+        key: 'finance-dashboard',
+        path: '/finance/dashboard',
+        label: '经营看板',
+        icon: 'BarChartOutlined',
+        roles: ['super_admin', 'site_manager'],
+      },
+      {
+        key: 'finance-cases',
+        path: '/finance/cases',
+        label: '案例管理',
+        icon: 'FileTextOutlined',
+        roles: ['super_admin', 'site_manager'],
+      },
+      {
+        key: 'finance-po',
+        path: '/finance/po-orders',
+        label: 'PO 管理',
+        icon: 'ScheduleOutlined',
+        roles: ['super_admin', 'site_manager'],
+      },
+      {
+        key: 'finance-prices',
+        path: '/finance/prices',
+        label: '价格库',
+        icon: 'AccountBookOutlined',
+        roles: ['super_admin', 'site_manager'],
+      },
+      {
+        key: 'finance-review',
+        path: '/finance/review',
+        label: '结算审核',
+        icon: 'AuditOutlined',
+        roles: ['super_admin', 'site_manager'],
+      },
+      {
+        key: 'finance-assessment',
+        path: '/finance/assessment',
+        label: '考核管理',
+        icon: 'SafetyCertificateOutlined',
+        roles: ['super_admin', 'site_manager'],
+      },
+      {
+        key: 'finance-monthly',
+        path: '/finance/monthly',
+        label: '月度结算',
+        icon: 'HistoryOutlined',
+        roles: ['super_admin', 'site_manager'],
+      },
+    ],
   },
   {
     key: 'sites',
@@ -64,9 +114,29 @@ export const menuConfig: MenuConfig[] = [
   },
 ];
 
+function filterMenuByRole(items: MenuConfig[], role: UserRole): MenuConfig[] {
+  return items
+    .filter((m) => m.roles.includes(role))
+    .map((m) => ({
+      ...m,
+      children: m.children ? filterMenuByRole(m.children, role) : undefined,
+    }))
+    .filter((m) => !m.children || m.children.length > 0);
+}
+
 /** 根据角色过滤菜单 */
 export function getMenusByRole(role: UserRole): MenuConfig[] {
-  return menuConfig.filter((m) => m.roles.includes(role));
+  return filterMenuByRole(menuConfig, role);
+}
+
+/** 扁平化所有可点击叶子菜单（用于选中态 / 标题） */
+export function flattenMenus(items: MenuConfig[]): MenuConfig[] {
+  const out: MenuConfig[] = [];
+  for (const item of items) {
+    if (item.children?.length) out.push(...flattenMenus(item.children));
+    else out.push(item);
+  }
+  return out;
 }
 
 /** 登录后按角色跳转首页 */

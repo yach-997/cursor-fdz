@@ -1,36 +1,33 @@
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Tabs } from 'antd';
+import { Outlet, useLocation } from 'react-router-dom';
 import './finance.css';
 
-const tabs = [
-  { key: '/finance/dashboard', label: '经营看板' },
-  { key: '/finance/cases', label: '案例管理' },
-  { key: '/finance/po-orders', label: 'PO 管理' },
-  { key: '/finance/prices', label: '价格库' },
-  { key: '/finance/review', label: '结算审核' },
-  { key: '/finance/assessment', label: '考核管理' },
-  { key: '/finance/monthly', label: '月度结算' },
+const pageMeta: Array<{ prefix: string; title: string; desc: string }> = [
+  { prefix: '/finance/dashboard', title: '经营看板', desc: '收入、绩效与结算进度总览' },
+  { prefix: '/finance/cases', title: '案例管理', desc: '导入案例、派站点与工程师作业' },
+  { prefix: '/finance/po-orders', title: 'PO 管理', desc: '甲方订单与案例价格关联' },
+  { prefix: '/finance/prices', title: '价格库', desc: '内部绩效价与甲方结算价维护' },
+  { prefix: '/finance/review', title: '结算审核', desc: '审核作业记录与结算金额' },
+  { prefix: '/finance/assessment', title: '考核管理', desc: '考核事件与扣减规则' },
+  { prefix: '/finance/monthly', title: '月度结算', desc: '按月汇总生成结算单' },
 ];
+
 export default function FinanceLayout() {
-  const location = useLocation(),
-    navigate = useNavigate();
+  const location = useLocation();
+  const meta =
+    pageMeta.find((item) => location.pathname.startsWith(item.prefix)) || {
+      title: '费用结算',
+      desc: '案例、订单、价格与收入统一核算',
+    };
+
   return (
     <div className="finance-shell">
       <div className="finance-heading">
         <div>
-          <h2>费用结算中心</h2>
-          <p>案例、订单、价格与收入统一核算</p>
+          <h2>{meta.title}</h2>
+          <p>{meta.desc}</p>
         </div>
-        <span className="finance-phase">完整结算闭环</span>
+        <span className="finance-phase">费用结算</span>
       </div>
-      <Tabs
-        className="finance-tabs"
-        activeKey={
-          tabs.find((t) => location.pathname.startsWith(t.key))?.key || '/finance/dashboard'
-        }
-        items={tabs}
-        onChange={navigate}
-      />
       <Outlet />
     </div>
   );

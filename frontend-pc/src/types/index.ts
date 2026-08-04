@@ -99,6 +99,7 @@ export interface MenuConfig {
   label: string;
   icon?: string;
   roles: UserRole[];
+  children?: MenuConfig[];
 }
 
 export const DEVICE_TYPE_LABEL: Record<DeviceType, string> = {

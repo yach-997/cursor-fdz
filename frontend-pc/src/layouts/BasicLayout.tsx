@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Dropdown, Avatar, Drawer, Button, Grid } from 'antd';
+import type { MenuProps } from 'antd';
 import {
   DashboardOutlined,
   EnvironmentOutlined,
@@ -21,7 +22,8 @@ import {
   AccountBookOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '../stores/auth';
-import { getMenusByRole } from '../router/menus';
+import { flattenMenus, getMenusByRole } from '../router/menus';
+import type { MenuConfig } from '../types';
 import './basic-layout.css';
 
 const { Header, Sider, Content } = Layout;
@@ -48,35 +50,62 @@ const roleLabel: Record<string, string> = {
   inspector: '工程师',
 };
 
+function toMenuItems(items: MenuConfig[]): MenuProps['items'] {
+  return items.map((m) => {
+    if (m.children?.length) {
+      return {
+        key: m.key,
+        icon: m.icon ? iconMap[m.icon] : null,
+        label: m.label,
+        children: toMenuItems(m.children),
+      };
+    }
+    return {
+      key: m.path,
+      icon: m.icon ? iconMap[m.icon] : null,
+      label: m.label,
+    };
+  });
+}
+
 /** 主布局：左侧动态菜单 + 顶部用户信息 */
 export default function BasicLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [openKeys, setOpenKeys] = useState<string[]>([]);
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuthStore();
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
 
-  const menus = useMemo(() => {
-    if (!user) return [];
-    return getMenusByRole(user.role).map((m) => ({
-      key: m.path,
-      icon: m.icon ? iconMap[m.icon] : null,
-      label: m.label,
-    }));
-  }, [user]);
+  const menuTree = useMemo(() => (user ? getMenusByRole(user.role) : []), [user]);
+  const leafMenus = useMemo(() => flattenMenus(menuTree), [menuTree]);
+  const menus = useMemo(() => toMenuItems(menuTree), [menuTree]);
 
   const selectedKeys = useMemo(() => {
-    const match = menus.find((m) => location.pathname.startsWith(m.key));
-    return match ? [match.key] : [];
-  }, [location.pathname, menus]);
+    const match = leafMenus
+      .filter((m) => location.pathname === m.path || location.pathname.startsWith(`${m.path}/`))
+      .sort((a, b) => b.path.length - a.path.length)[0];
+    return match ? [match.path] : [];
+  }, [location.pathname, leafMenus]);
 
-  const currentTitle = menus.find((m) => selectedKeys.includes(m.key))?.label || '工作台';
+  const currentTitle = useMemo(() => {
+    const leaf = leafMenus.find((m) => selectedKeys.includes(m.path));
+    if (leaf) return leaf.label;
+    const group = menuTree.find((m) => location.pathname.startsWith(m.path));
+    return group?.label || '工作台';
+  }, [leafMenus, selectedKeys, menuTree, location.pathname]);
+
+  // 进入费用子页时自动展开「费用结算」分组
+  useEffect(() => {
+    if (location.pathname.startsWith('/finance')) {
+      setOpenKeys((prev) => (prev.includes('finance') ? prev : [...prev, 'finance']));
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!user) return;
-    // 工程师默认只进系统设置
     if (
       user.role === 'inspector' &&
       (location.pathname.startsWith('/finance') ||
@@ -109,10 +138,14 @@ export default function BasicLayout() {
         theme="dark"
         mode="inline"
         selectedKeys={selectedKeys}
+        openKeys={collapsed && !isMobile ? [] : openKeys}
+        onOpenChange={(keys) => setOpenKeys(keys as string[])}
         items={menus}
         onClick={({ key }) => {
-          navigate(key);
-          setMobileMenuOpen(false);
+          if (String(key).startsWith('/')) {
+            navigate(key);
+            setMobileMenuOpen(false);
+          }
         }}
       />
     </>
