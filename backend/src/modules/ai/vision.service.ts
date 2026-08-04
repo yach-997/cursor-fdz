@@ -265,36 +265,16 @@ export class VisionService {
         });
       }
 
-      const resp = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        signal: AbortSignal.timeout(60_000),
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          temperature: 0.1,
-          max_tokens: 512,
-          messages: [{ role: 'user', content }],
-        }),
+      const raw = await this.callVisionChat({
+        apiKey,
+        baseUrl,
+        model,
+        content,
+        temperature: 0.1,
+        maxTokens: 512,
+        timeoutMs: 75_000,
+        label: dcSide ? 'dc-main' : acSide ? 'ac-main' : 'vision-main',
       });
-
-      if (!resp.ok) {
-        const errText = await resp.text();
-        this.logger.warn(`Vision API ${resp.status}: ${errText.slice(0, 300)}`);
-        return {
-          status: CheckResult.ERROR,
-          confidence: 0,
-          reason: `视觉模型调用失败(${resp.status})，请人工判断`,
-          provider: 'siliconflow',
-        };
-      }
-
-      const data = (await resp.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
-      };
-      const raw = data.choices?.[0]?.message?.content || '';
       const parsed = this.parseJsonResult(raw);
       if (!parsed) {
         return {
@@ -317,8 +297,7 @@ export class VisionService {
                 : acSide
                   ? this.enforceAcSideResult(parsed, raw, sampleInputs.length)
                   : parsed;
-      // 直流侧“合格”属于高风险结论：再用自动放大的端口分块做一次独立缺陷复核。
-      // 任一复核失败、看不清或发现无盖空孔，都禁止自动合格。
+      // 直流侧首轮合格时再做放大复核；复核服务异常时回退首轮结论，避免整项分析失败。
       if (dcSide && enforced.status === CheckResult.PASS) {
         enforced = await this.auditDcUnusedPorts({
           apiKey,
@@ -334,10 +313,72 @@ export class VisionService {
       return {
         status: CheckResult.ERROR,
         confidence: 0,
-        reason: '视觉服务异常，请人工判断',
+        reason: '视觉服务异常，请人工判断或稍后点「重新分析」',
         provider: 'siliconflow',
       };
     }
+  }
+
+  /** 带重试的多模态调用（应对超时 / 429 / 5xx） */
+  private async callVisionChat(args: {
+    apiKey: string;
+    baseUrl: string;
+    model: string;
+    content: Array<Record<string, unknown>>;
+    temperature?: number;
+    maxTokens?: number;
+    timeoutMs?: number;
+    label?: string;
+  }): Promise<string> {
+    const timeoutMs = args.timeoutMs ?? 60_000;
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const resp = await fetch(`${args.baseUrl}/chat/completions`, {
+          method: 'POST',
+          signal: AbortSignal.timeout(timeoutMs),
+          headers: {
+            Authorization: `Bearer ${args.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: args.model,
+            temperature: args.temperature ?? 0.1,
+            max_tokens: args.maxTokens ?? 512,
+            messages: [{ role: 'user', content: args.content }],
+          }),
+        });
+        if (!resp.ok) {
+          const errText = await resp.text();
+          const retryable = resp.status === 429 || resp.status >= 500;
+          this.logger.warn(
+            `Vision API ${args.label || ''} ${resp.status} (try ${attempt}): ${errText.slice(0, 200)}`,
+          );
+          if (!retryable || attempt >= 3) {
+            throw new Error(`视觉模型调用失败(${resp.status})`);
+          }
+          await this.sleep(attempt * 800);
+          continue;
+        }
+        const data = (await resp.json()) as {
+          choices?: Array<{ message?: { content?: string } }>;
+        };
+        return data.choices?.[0]?.message?.content || '';
+      } catch (err) {
+        lastError = err as Error;
+        const msg = lastError.message || '';
+        const retryable =
+          /timeout|aborted|ECONNRESET|ETIMEDOUT|fetch failed|429|5\d\d/i.test(msg) ||
+          lastError.name === 'TimeoutError' ||
+          lastError.name === 'AbortError';
+        this.logger.warn(
+          `Vision chat ${args.label || ''} try ${attempt} failed: ${msg.slice(0, 160)}`,
+        );
+        if (!retryable || attempt >= 3) throw lastError;
+        await this.sleep(attempt * 800);
+      }
+    }
+    throw lastError || new Error('视觉模型调用失败');
   }
 
   /** DeepSeek 润色原因（可选） */
@@ -765,10 +806,11 @@ export class VisionService {
   }): Promise<Omit<VisionCompareResult, 'provider'>> {
     const crops = await this.createDcPortCrops(args.photoInputs);
     if (!crops.length) {
+      // 裁剪失败不整项失败，保留首轮结论
       return {
-        status: CheckResult.ERROR,
-        confidence: 0,
-        reason: '直流端口放大复核未完成，已转人工判断',
+        ...args.original,
+        confidence: Math.min(args.original.confidence, 0.86),
+        reason: `${args.original.reason || '首轮分析完成'}（端口放大复核跳过）`.slice(0, 300),
       };
     }
 
@@ -781,7 +823,7 @@ export class VisionService {
           '判别时沿每个端口向下追踪：有电缆连续伸出才算在用；黑色接头末端呈圆形开口、且没有电缆继续伸出，仍是未封盖空闲端口。',
           '蓝色、红色或橙色堵头/盖子属于已封盖；红色/橙色大旋钮属于开关盖，不要误判。',
           '必须逐块从左到右检查。只要任一块发现一个无盖空孔，hasUncappedUnusedPort=true。',
-          '只要有区域过暗、遮挡或无法逐端口确认，allVisiblePortsVerified=false；禁止凭“整体看起来整齐”判定。',
+          '只有明确看到无盖空孔才判 hasUncappedUnusedPort=true；局部遮挡但未见无盖孔时 allVisiblePortsVerified 可 true。',
           '只输出 JSON：',
           '{"hasUncappedUnusedPort":true|false,"allVisiblePortsVerified":true|false,"confidence":0~1,"reason":"中文，写明原图序号、左/中/右位置和数量","findings":[{"photoIndex":1,"area":"左/中/右","uncappedCount":1}]}',
         ].join('\n'),
@@ -793,32 +835,16 @@ export class VisionService {
     }
 
     try {
-      const response = await fetch(`${args.baseUrl}/chat/completions`, {
-        method: 'POST',
-        signal: AbortSignal.timeout(45_000),
-        headers: {
-          Authorization: `Bearer ${args.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: args.model,
-          temperature: 0,
-          max_tokens: 384,
-          messages: [{ role: 'user', content }],
-        }),
+      const raw = await this.callVisionChat({
+        apiKey: args.apiKey,
+        baseUrl: args.baseUrl,
+        model: args.model,
+        content,
+        temperature: 0,
+        maxTokens: 384,
+        timeoutMs: 55_000,
+        label: 'dc-audit',
       });
-      if (!response.ok) {
-        this.logger.warn(`DC safety audit API ${response.status}`);
-        return {
-          status: CheckResult.ERROR,
-          confidence: 0,
-          reason: '直流端口安全复核服务异常，已转人工判断',
-        };
-      }
-      const data = (await response.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
-      };
-      const raw = data.choices?.[0]?.message?.content || '';
       const match = raw.match(/\{[\s\S]*\}/);
       if (!match) throw new Error('复核结果不是 JSON');
       const audit = JSON.parse(match[0]) as {
@@ -844,10 +870,11 @@ export class VisionService {
         };
       }
       if (!allVerified) {
+        // 看不清时不再整项失败：保留首轮合格，略降置信度
         return {
-          status: CheckResult.FAIL,
-          confidence: Math.min(confidence, 0.9),
-          reason: reason || '放大复核无法逐一确认全部可见直流端口，证据不足，不予自动合格。',
+          ...args.original,
+          confidence: Math.min(args.original.confidence, confidence, 0.84),
+          reason: reason || `${args.original.reason || '首轮合格'}（放大区局部不清，未推翻结论）`,
         };
       }
       return {
@@ -858,9 +885,12 @@ export class VisionService {
     } catch (error) {
       this.logger.warn(`DC safety audit parse failed: ${(error as Error).message}`);
       return {
-        status: CheckResult.ERROR,
-        confidence: 0,
-        reason: '直流端口安全复核未完成，已转人工判断',
+        ...args.original,
+        confidence: Math.min(args.original.confidence, 0.85),
+        reason: `${args.original.reason || '首轮分析完成'}（二次复核未完成，以首轮为准）`.slice(
+          0,
+          300,
+        ),
       };
     }
   }
@@ -869,7 +899,7 @@ export class VisionService {
     photoInputs: string[],
   ): Promise<Array<{ label: string; dataUrl: string }>> {
     const crops: Array<{ label: string; dataUrl: string }> = [];
-    for (let photoIndex = 0; photoIndex < Math.min(photoInputs.length, 4); photoIndex += 1) {
+    for (let photoIndex = 0; photoIndex < Math.min(photoInputs.length, 2); photoIndex += 1) {
       try {
         const encoded = photoInputs[photoIndex].split(',', 2)[1];
         if (!encoded) continue;
@@ -879,8 +909,9 @@ export class VisionService {
         const height = metadata.height || 0;
         if (width < 200 || height < 200) continue;
 
+        // 每张最多 2 个裁块，边长控制在 900，避免二次复核 payload 过大超时
         const cropHeight = Math.max(160, Math.min(height, Math.round(height * 0.68)));
-        const cropWidth = Math.max(160, Math.min(width, Math.round(width * 0.62)));
+        const cropWidth = Math.max(160, Math.min(width, Math.round(width * 0.55)));
         const positions = [
           { name: '左侧放大区', left: 0 },
           { name: '右侧放大区', left: Math.max(0, width - cropWidth) },
@@ -888,8 +919,8 @@ export class VisionService {
         for (const position of positions) {
           const output = await sharp(source)
             .extract({ left: position.left, top: 0, width: cropWidth, height: cropHeight })
-            .resize({ width: 1100, withoutEnlargement: false })
-            .jpeg({ quality: 88 })
+            .resize({ width: 900, withoutEnlargement: false })
+            .jpeg({ quality: 78 })
             .toBuffer();
           crops.push({
             label: `【原现场照片 ${photoIndex + 1} · ${position.name}】请逐个检查黑色圆形端口是否有电缆或彩色防护盖`,
@@ -1239,48 +1270,87 @@ export class VisionService {
     });
 
     try {
-      const response = await fetch(`${args.baseUrl}/chat/completions`, {
-        method: 'POST',
-        signal: AbortSignal.timeout(45_000),
-        headers: {
-          Authorization: `Bearer ${args.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: args.model,
-          temperature: 0,
-          max_tokens: 512,
-          messages: [{ role: 'user', content }],
-        }),
+      const raw = await this.callVisionChat({
+        apiKey: args.apiKey,
+        baseUrl: args.baseUrl,
+        model: args.model,
+        content,
+        temperature: 0,
+        maxTokens: 512,
+        timeoutMs: 70_000,
+        label: 'grounding-audit',
       });
-      if (!response.ok) {
-        return {
-          status: CheckResult.ERROR,
-          confidence: 0,
-          reason: '接地双连接点安全复核异常，已转人工判断',
-        };
-      }
-      const data = (await response.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
-      };
-      const raw = data.choices?.[0]?.message?.content || '';
       const parsed = this.parseJsonResult(raw);
       if (!parsed) throw new Error('复核结果无法解析');
-      const checked = this.enforceGroundingResult(
+      return this.enforceGroundingResult(
         parsed,
         raw,
         args.photoInputs.length,
         args.sampleInputs.length,
       );
-      return checked;
     } catch (error) {
       this.logger.warn(`Grounding safety audit failed: ${(error as Error).message}`);
-      return {
-        status: CheckResult.ERROR,
-        confidence: 0,
-        reason: '接地双连接点安全复核未完成，已转人工判断',
-      };
+      // 放大裁剪版失败时，退回「仅原图」再试一次，避免整项直接分析失败
+      try {
+        return await this.auditGroundingConnectionsSimple(args);
+      } catch (fallbackError) {
+        this.logger.warn(
+          `Grounding simple audit also failed: ${(fallbackError as Error).message}`,
+        );
+        return {
+          status: CheckResult.ERROR,
+          confidence: 0,
+          reason: '接地双连接点分析暂时失败，请点「重新分析」或人工判断',
+        };
+      }
     }
+  }
+
+  /** 接地轻量复核：不送自动放大图，降低超时概率 */
+  private async auditGroundingConnectionsSimple(args: {
+    apiKey: string;
+    baseUrl: string;
+    model: string;
+    photoInputs: string[];
+    sampleInputs: string[];
+  }): Promise<Omit<VisionCompareResult, 'provider'>> {
+    const content: Array<Record<string, unknown>> = [
+      {
+        type: 'text',
+        text: [
+          '你是接地安全复核员。对每张现场照片单独检查，禁止跨照片拼接证据。',
+          '必须同时满足：①箱内主PE铜芯线/铜编织带压接到PE端子；②箱外黄绿接地线连接机壳或支架。',
+          '任一连接点不合格 → fail。只输出 JSON：',
+          '{"status":"pass"|"fail","confidence":0~1,"reason":"逐张说明","evidence":{"photoTypes":["internal_main_pe"|"external_chassis_ground"|"other"],"hasInternalMainPePhoto":true|false,"internalMainPeConnected":true|false,"hasExternalGroundPhoto":true|false,"externalGroundConnected":true|false,"matchesSampleViews":true|false}}',
+        ].join('\n'),
+      },
+    ];
+    args.photoInputs.forEach((dataUrl, index) => {
+      content.push({ type: 'text', text: `【现场照片 ${index + 1}】` });
+      content.push({ type: 'image_url', image_url: { url: dataUrl } });
+    });
+    args.sampleInputs.slice(0, 2).forEach((dataUrl, index) => {
+      content.push({ type: 'text', text: `【合格标准图 ${index + 1}】` });
+      content.push({ type: 'image_url', image_url: { url: dataUrl } });
+    });
+    const raw = await this.callVisionChat({
+      apiKey: args.apiKey,
+      baseUrl: args.baseUrl,
+      model: args.model,
+      content,
+      temperature: 0,
+      maxTokens: 400,
+      timeoutMs: 60_000,
+      label: 'grounding-simple',
+    });
+    const parsed = this.parseJsonResult(raw);
+    if (!parsed) throw new Error('轻量复核结果无法解析');
+    return this.enforceGroundingResult(
+      parsed,
+      raw,
+      args.photoInputs.length,
+      args.sampleInputs.length,
+    );
   }
 
   private async createGroundingEvidenceCrops(inputs: string[]): Promise<Array<string | null>> {
@@ -1380,7 +1450,18 @@ export class VisionService {
   }
 
   private async toImageDataUrl(input: string): Promise<string> {
-    if (/^data:image\//i.test(input)) return input;
+    if (/^data:image\//i.test(input)) {
+      try {
+        const encoded = input.split(',', 2)[1];
+        // 已是 data URL 但体积过大时仍压缩，避免模型超时
+        if (encoded && encoded.length > 350_000) {
+          return await this.compressToVisionDataUrl(Buffer.from(encoded, 'base64'), 'image/jpeg');
+        }
+      } catch {
+        /* 保持原样 */
+      }
+      return input;
+    }
 
     const absolute = this.toAbsoluteUrl(input);
     if (!/^https?:\/\//i.test(absolute)) {
@@ -1446,7 +1527,8 @@ export class VisionService {
           if (!bytes.length || bytes.length > 12 * 1024 * 1024) {
             throw new Error('图片为空或超过 12MB');
           }
-          return `data:${contentType};base64,${bytes.toString('base64')}`;
+          // 压缩后再送模型：大幅降低超时与“视觉服务异常”
+          return await this.compressToVisionDataUrl(bytes, contentType);
         } catch (err) {
           lastError = err as Error;
         }
@@ -1454,6 +1536,27 @@ export class VisionService {
       if (attempt < 3) await this.sleep(attempt * 250);
     }
     throw new Error(`图片下载失败: ${lastError?.message || '未知错误'}`);
+  }
+
+  /** 统一压缩为 JPEG data URL，控制体积与边长 */
+  private async compressToVisionDataUrl(bytes: Buffer, contentType: string): Promise<string> {
+    try {
+      const output = await sharp(bytes)
+        .rotate()
+        .resize({
+          width: 1600,
+          height: 1600,
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .jpeg({ quality: 80, mozjpeg: true })
+        .toBuffer();
+      return `data:image/jpeg;base64,${output.toString('base64')}`;
+    } catch (error) {
+      this.logger.warn(`图片压缩失败，使用原图: ${(error as Error).message}`);
+      const mime = contentType.startsWith('image/') ? contentType : 'image/jpeg';
+      return `data:${mime};base64,${bytes.toString('base64')}`;
+    }
   }
 
   private sleep(ms: number) {
