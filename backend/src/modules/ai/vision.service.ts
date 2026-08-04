@@ -648,15 +648,15 @@ export class VisionService {
 
   private acSideHardRules() {
     return [
-      '【交流侧安装检查·主PE判定】',
-      '合格标准：在标有 PE 的端子旁，有独立于 L1/L2/L3 的较粗裸铜编织带（或铜芯）压接在 PE 螺栓上。',
-      '同框可以有柜门细黄绿跳线，不否决上述主PE。',
-      '不合格仅限：',
-      '1) PE 螺栓空着；',
-      '2) 完全没有主PE铜编织带，只有柜门黄绿跳线；',
-      '3) 画面只有三根相线，PE 位无线。',
-      '注意：相线线鼻子处若露出屏蔽丝，不要把它当成主PE；但若 PE 位另有独立铜编织带，仍判合格。',
-      'doorBondingJumperOnly=true 仅当没有主PE、只有柜门黄绿跳线。',
+      '【交流侧安装检查·主PE判定·易错点】',
+      '先找背板上印有“PE”字样旁的那颗螺栓（通常在 L3 右侧）。',
+      '合格：该 PE 螺栓螺母下压着独立裸铜编织带（铜辫）或铜芯接地线；同框可有柜门细黄绿跳线。',
+      '不合格（必须 fail，禁止放行）：',
+      '1) PE 标签旁螺栓空着（只有螺丝/垫片，没有铜线或铜编织带被压住）；',
+      '2) 只有柜门右上角细黄绿跳线，PE 主端子无导体；',
+      '3) 铜编织带/铜芯只是搭在旁边、悬空、未压进 PE 螺母下；',
+      '4) 把相线线鼻子旁的屏蔽丝当成主PE。',
+      'doorBondingJumperOnly=true：仅有柜门跳线、主PE端子空。此时 peWireConnected 必须 false。',
       'terminalsCoveredOrProtected：有透明罩/防护即可 true。',
     ].join('\n');
   }
@@ -1074,29 +1074,33 @@ export class VisionService {
       /铜编织|裸铜编织|铜辫/.test(text) &&
       /PE|接地端子|接地螺栓/.test(text) &&
       /压接|紧固|接入|已接/.test(text) &&
-      !/未见.*(?:铜编织|铜芯)|PE端子为空|PE.*空着|未压接|只有黄绿跳线|仅柜门/.test(text);
+      !/未见|空着|未压接|悬空|未接入|只有黄绿|仅柜门|PE端子为空|PE位无线/.test(text);
     const deniesMainPe =
-      /未见.*(?:铜编织|铜芯).*PE|PE端子为空|PE.*空着|仅柜门黄绿|只有黄绿跳线|只有三根相线|PE位无线/.test(
+      /未见.*(?:铜编织|铜芯).*PE|PE端子为空|PE.*空着|PE螺栓空|仅柜门黄绿|只有黄绿跳线|只有三根相线|PE位无线|未压接.*PE|悬空/.test(
         text,
-      ) && !affirmsCopperPe;
+      );
 
-    // 仅当文案明确“铜编织带已压接PE”时才纠偏；禁止仅因出现“铜编织”字样就放行
-    if (affirmsCopperPe && !deniesMainPe) {
+    // 明确否定优先：PE空着/仅柜门跳线时，禁止被“铜编织”幻觉文案纠偏成合格
+    if (deniesMainPe || values.doorBondingJumperOnly) {
+      values.peWireConnected = false;
+      values.mainPeConductorVisible = false;
+      values.mainPeTerminationVisible = false;
+      values.mainCopperPeConductorVisible = false;
+      values.mainCopperPeTerminationVisible = false;
+      if (
+        values.doorBondingJumperOnly ||
+        /仅柜门黄绿|只有黄绿跳线|PE.*空着|PE端子为空|PE螺栓空/.test(text)
+      ) {
+        values.doorBondingJumperOnly = true;
+      }
+    } else if (affirmsCopperPe) {
+      // 仅强肯定且无否定时，才补齐证据位；后续仍会做空端子复核
       values.mainPeConductorVisible = true;
       values.mainPeTerminationVisible = true;
       values.mainCopperPeConductorVisible = true;
       values.mainCopperPeTerminationVisible = true;
       values.peWireConnected = true;
       values.doorBondingJumperOnly = false;
-    }
-    if (deniesMainPe || values.doorBondingJumperOnly) {
-      if (deniesMainPe || !affirmsCopperPe) {
-        values.peWireConnected = false;
-        if (values.doorBondingJumperOnly && !affirmsCopperPe) {
-          values.mainPeConductorVisible = false;
-          values.mainPeTerminationVisible = false;
-        }
-      }
     }
     if (
       !values.phaseWiresOk &&
@@ -1107,7 +1111,6 @@ export class VisionService {
     }
 
     const missing: string[] = [];
-    // 有合格样本时默认要求看到铜编织带压接（与现场主流标准图一致）
     const requireCopper = sampleCount > 0;
     if (
       !values.mainPeConductorVisible ||
@@ -1132,7 +1135,7 @@ export class VisionService {
     );
   }
 
-  /** 交流侧不合格纠偏：PE旁独立铜编织带压接 → 合格。 */
+  /** 交流侧主PE严格探针：PE螺栓必须压着独立铜编织带/铜芯；空端子或仅柜门跳线 → false。 */
   private async probeAcMainPeStrict(args: {
     apiKey: string;
     baseUrl: string;
@@ -1143,18 +1146,17 @@ export class VisionService {
       {
         type: 'text',
         text: [
-          '判断交流侧主PE是否合格。',
-          '合格图特征：L1/L2/L3 三根相线右侧/旁侧，标有 PE 的螺栓上压着独立的裸铜编织带（扁平铜辫）。',
-          'connected=true：看见该独立铜编织带压在 PE 螺栓上（即使同框有柜门黄绿跳线，或相线鼻子旁也有屏蔽丝）。',
-          'connected=false 仅当：PE螺栓空着；或完全没有这根独立铜编织带（只有黄绿跳线/只有三根相线）。',
-          '不要因为“提到相线”就判 false。只输出 JSON：{"connected":true|false,"reason":"一句话"}',
+          '判断交流侧主PE是否合格。先找背板“PE”字样旁的螺栓。',
+          'connected=true 仅当：该 PE 螺栓螺母下压着独立裸铜编织带（铜辫）或铜芯线。',
+          'connected=false：PE螺栓空着；铜编织带/铜芯悬空未压住；只有柜门黄绿跳线；把相线屏蔽丝当PE。',
+          '柜门黄绿跳线不能证明主PE。只输出 JSON：{"connected":true|false,"peBoltEmpty":true|false,"doorJumperOnly":true|false,"reason":"一句话"}',
         ].join('\n'),
       },
     ];
     args.photoInputs.forEach((dataUrl, index) => {
       content.push({
         type: 'text',
-        text: `【现场图 ${index + 1}】找 PE 标签旁是否有独立裸铜编织带`,
+        text: `【现场图 ${index + 1}】核对 PE 螺栓下是否压着铜编织带/铜芯`,
       });
       content.push({ type: 'image_url', image_url: { url: dataUrl } });
     });
@@ -1172,29 +1174,38 @@ export class VisionService {
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return false;
     try {
-      const obj = JSON.parse(match[0]) as { connected?: unknown; reason?: string };
+      const obj = JSON.parse(match[0]) as {
+        connected?: unknown;
+        peBoltEmpty?: unknown;
+        doorJumperOnly?: unknown;
+        reason?: string;
+      };
       const reason = String(obj.reason || raw);
-      // 仅明确否定才失败（避免“不是相线屏蔽”被正则误杀）
-      if (
-        /PE(?:螺栓)?空着|未见(?:独立)?(?:铜编织|主PE)|只有黄绿跳线|只有三根相线|PE位无线/.test(
+      const empty =
+        obj.peBoltEmpty === true ||
+        obj.peBoltEmpty === 'true' ||
+        obj.doorJumperOnly === true ||
+        obj.doorJumperOnly === 'true' ||
+        /PE(?:螺栓|端子)?空着|PE位无线|只有黄绿跳线|仅柜门|未见.*(?:铜编织|铜芯).*PE|悬空/.test(
           reason,
-        ) &&
-        !/铜编织.*(?:压接|接入|已接)|裸铜.*(?:压接|接入)|主PE已/.test(reason)
-      ) {
+        );
+      if (empty && !/铜编织.*(?:压接|压在|接入)|裸铜.*(?:压接|压在)|螺母下/.test(reason)) {
         return false;
       }
-      if (obj.connected === true || obj.connected === 'true' || obj.connected === 1) return true;
-      return (
-        /铜编织|裸铜编织|铜辫/.test(reason) &&
-        /PE|压接|接入/.test(reason) &&
-        !/未见|空着|未压接/.test(reason)
-      );
+      if (obj.connected === true || obj.connected === 'true' || obj.connected === 1) {
+        return (
+          /铜编织|裸铜|铜辫|铜芯/.test(reason) &&
+          /PE|压接|螺母|螺栓/.test(reason) &&
+          !/空着|悬空|未见|只有黄绿/.test(reason)
+        );
+      }
+      return false;
     } catch {
       return false;
     }
   }
 
-  /** 交流侧合格复核：有独立PE铜编织带则保持合格；仅空PE/仅跳线才打回。 */
+  /** 交流侧合格复核：专门抓“PE空端子却误判合格”。空端子/仅柜门跳线必须打回不合格。 */
   private async auditAcMainPeDefect(args: {
     apiKey: string;
     baseUrl: string;
@@ -1206,18 +1217,19 @@ export class VisionService {
       {
         type: 'text',
         text: [
-          '复核交流侧主PE。合格标准图常见：三根相线旁有独立裸铜编织带压在 PE 螺栓上。',
-          'peConnected=true：PE旁有独立粗铜编织带压接（同框黄绿跳线、相线屏蔽丝都不否决）。',
-          'peConnected=false 仅当：PE空着，或完全没有独立铜编织带。',
-          'doorJumperOnly=true 仅当没有主PE、只有柜门黄绿跳线。',
-          '只输出 JSON：{"peConnected":true|false,"doorJumperOnly":true|false,"reason":"一句话"}',
+          '这是交流侧“防误放行”复核。请专门检查背板 PE 标签旁的螺栓。',
+          'peConnected=true：PE螺栓螺母下清楚压着独立裸铜编织带或铜芯线。',
+          'peConnected=false：PE螺栓空着；导体悬空未压住；只有柜门黄绿跳线；无独立主PE。',
+          'doorJumperOnly=true：只有柜门跳线、主PE端子空。',
+          'peBoltEmpty=true：PE螺栓下看不见被压住的铜导体。',
+          '只输出 JSON：{"peConnected":true|false,"peBoltEmpty":true|false,"doorJumperOnly":true|false,"reason":"一句话"}',
         ].join('\n'),
       },
     ];
     args.photoInputs.forEach((dataUrl, index) => {
       content.push({
         type: 'text',
-        text: `【交流侧现场图 ${index + 1}】确认 PE 旁独立铜编织带`,
+        text: `【交流侧现场图 ${index + 1}】PE螺栓是否空着？`,
       });
       content.push({ type: 'image_url', image_url: { url: dataUrl } });
     });
@@ -1235,22 +1247,39 @@ export class VisionService {
         label: 'ac-pe-defect',
       });
       const match = raw.match(/\{[\s\S]*\}/);
-      if (!match) return args.original;
+      if (!match) {
+        // 复核无结果时不保留可疑合格，避免空PE误放行
+        return {
+          status: CheckResult.FAIL,
+          confidence: 0.9,
+          reason:
+            '现场不满足：主PE铜芯接地线/铜编织带实际压接到PE端子（柜门黄绿跳线不能替代）。',
+        };
+      }
       const obj = JSON.parse(match[0]) as {
         peConnected?: unknown;
+        peBoltEmpty?: unknown;
         doorJumperOnly?: unknown;
         reason?: string;
       };
       const peOk = obj.peConnected === true || obj.peConnected === 'true' || obj.peConnected === 1;
       const doorOnly =
         obj.doorJumperOnly === true || obj.doorJumperOnly === 'true' || obj.doorJumperOnly === 1;
+      const boltEmpty =
+        obj.peBoltEmpty === true || obj.peBoltEmpty === 'true' || obj.peBoltEmpty === 1;
       const reason = String(obj.reason || raw);
       const affirmsBraid =
-        /铜编织|裸铜编织|铜辫/.test(reason) &&
-        /PE|压接|接入/.test(reason) &&
-        !/未见.*铜编织|PE.*空着|未压接/.test(reason);
+        /铜编织|裸铜编织|铜辫|铜芯/.test(reason) &&
+        /PE|压接|螺母|接入/.test(reason) &&
+        !/未见|空着|未压接|悬空|只有黄绿|仅柜门/.test(reason);
+      const denies =
+        doorOnly ||
+        boltEmpty ||
+        /PE(?:螺栓|端子)?空着|PE位无线|只有黄绿跳线|仅柜门|悬空|未见.*(?:铜编织|铜芯)/.test(
+          reason,
+        );
 
-      if (peOk || affirmsBraid) {
+      if (peOk && affirmsBraid && !denies) {
         return {
           ...args.original,
           confidence: Math.max(args.original.confidence, 0.9),
@@ -1259,23 +1288,21 @@ export class VisionService {
             '交流侧相线正常，主PE铜芯接地线/铜编织带已可靠压接到PE端子，合格。',
         };
       }
-      if (
-        doorOnly ||
-        /PE(?:螺栓)?空着|未见(?:独立)?(?:铜编织|主PE)|只有黄绿跳线|只有三根相线|PE位无线/.test(
-          reason,
-        )
-      ) {
-        return {
-          status: CheckResult.FAIL,
-          confidence: 0.95,
-          reason:
-            '现场不满足：主PE铜芯接地线/铜编织带实际压接到PE端子（柜门黄绿跳线不能替代）。',
-        };
-      }
-      return args.original;
+      return {
+        status: CheckResult.FAIL,
+        confidence: 0.95,
+        reason:
+          '现场不满足：主PE铜芯接地线/铜编织带实际压接到PE端子（柜门黄绿跳线不能替代）。',
+      };
     } catch (error) {
       this.logger.warn(`AC PE defect audit failed: ${(error as Error).message}`);
-      return args.original;
+      // 合格路径复核失败时宁可不通过，避免空PE被放行
+      return {
+        status: CheckResult.FAIL,
+        confidence: 0.9,
+        reason:
+          '现场不满足：主PE铜芯接地线/铜编织带实际压接到PE端子（请重新分析或人工确认）。',
+      };
     }
   }
 
