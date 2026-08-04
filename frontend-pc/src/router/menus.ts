@@ -1,10 +1,56 @@
 import type { MenuConfig, UserRole } from '../types';
 
 /**
- * 侧栏菜单（主流程：费用案例派工 → 巡检 → 结算）
- * 费用结算拆为可展开分组，子功能直接落在侧栏。
+ * 侧栏菜单结构：
+ * - 巡检运营：现场任务、质量、预警（旧仪表盘能力）
+ * - 费用结算：案例派工到月结（新主流程）
+ * - 系统：站点/用户/模板/硬规则/运维监控/设置
  */
 export const menuConfig: MenuConfig[] = [
+  {
+    key: 'ops',
+    path: '/dashboard',
+    label: '巡检运营',
+    icon: 'DashboardOutlined',
+    roles: ['super_admin', 'site_manager'],
+    children: [
+      {
+        key: 'ops-dashboard',
+        path: '/dashboard',
+        label: '巡检仪表盘',
+        icon: 'DashboardOutlined',
+        roles: ['super_admin', 'site_manager'],
+      },
+      {
+        key: 'ops-analysis',
+        path: '/analysis',
+        label: '数据分析',
+        icon: 'BarChartOutlined',
+        roles: ['super_admin', 'site_manager'],
+      },
+      {
+        key: 'ops-alerts',
+        path: '/alerts',
+        label: '预警中心',
+        icon: 'AlertOutlined',
+        roles: ['super_admin', 'site_manager'],
+      },
+      {
+        key: 'ops-records',
+        path: '/records',
+        label: '历史查询',
+        icon: 'HistoryOutlined',
+        roles: ['super_admin', 'site_manager'],
+      },
+      {
+        key: 'ops-audit',
+        path: '/audit',
+        label: '报告审核',
+        icon: 'AuditOutlined',
+        roles: ['super_admin', 'site_manager'],
+      },
+    ],
+  },
   {
     key: 'finance',
     path: '/finance',
@@ -92,17 +138,10 @@ export const menuConfig: MenuConfig[] = [
     roles: ['super_admin'],
   },
   {
-    key: 'records',
-    path: '/records',
-    label: '历史查询',
-    icon: 'HistoryOutlined',
-    roles: ['super_admin', 'site_manager'],
-  },
-  {
-    key: 'audit',
-    path: '/audit',
-    label: '报告审核',
-    icon: 'AuditOutlined',
+    key: 'monitoring',
+    path: '/monitoring',
+    label: '运维监控',
+    icon: 'AlertOutlined',
     roles: ['super_admin', 'site_manager'],
   },
   {
@@ -139,10 +178,10 @@ export function flattenMenus(items: MenuConfig[]): MenuConfig[] {
   return out;
 }
 
-/** 登录后按角色跳转首页 */
+/** 登录后按角色跳转首页：先看巡检总览，再进费用作业 */
 export function getHomePathByRole(role: UserRole): string {
   if (role === 'inspector') {
     return '/settings';
   }
-  return '/finance/cases';
+  return '/dashboard';
 }

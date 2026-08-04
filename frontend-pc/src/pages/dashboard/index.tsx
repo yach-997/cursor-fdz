@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Card, Col, Row, Statistic, Table, Button } from 'antd';
+import { Card, Col, Row, Statistic, Table, Button, Space } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import ReactECharts from 'echarts-for-react';
 import { fetchAdminDashboard, fetchSiteDashboard, type DashboardData } from '../../api/stats';
@@ -9,7 +9,7 @@ import SiteMapView from '../../components/SiteMapView';
 import './dashboard.css';
 import { DEVICE_TYPE_LABEL } from '../../types';
 
-/** 仪表盘：统计卡片 + 趋势图 + 待审列表 */
+/** 巡检仪表盘：现场运营总览，与费用「经营看板」互补 */
 export default function DashboardPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
@@ -71,9 +71,20 @@ export default function DashboardPage() {
     <div className="dashboard-page">
       <div className="dashboard-welcome">
         <div>
-          <div className="dashboard-welcome__eyebrow">运营概览</div>
-          <h2>{new Date().getHours() < 12 ? '早上好' : new Date().getHours() < 18 ? '下午好' : '晚上好'}，{user?.realName || '管理员'}</h2>
-          <p>今日站点巡检与设备运行情况已为你汇总。</p>
+          <div className="dashboard-welcome__eyebrow">巡检运营概览</div>
+          <h2>
+            {new Date().getHours() < 12 ? '早上好' : new Date().getHours() < 18 ? '下午好' : '晚上好'}，
+            {user?.realName || '管理员'}
+          </h2>
+          <p>看现场任务与质量；费用派工与结算请走侧栏「费用结算」。</p>
+          <Space wrap style={{ marginTop: 12 }}>
+            <Button type="primary" onClick={() => navigate('/finance/cases')}>
+              去案例管理
+            </Button>
+            <Button onClick={() => navigate('/finance/dashboard')}>经营看板</Button>
+            <Button onClick={() => navigate('/audit')}>报告审核</Button>
+            <Button onClick={() => navigate('/monitoring')}>运维监控</Button>
+          </Space>
         </div>
         <div className="dashboard-welcome__date">
           <b>{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}</b>
@@ -83,14 +94,20 @@ export default function DashboardPage() {
       <Row className="dashboard-stats" gutter={[14, 14]}>
         {isAdmin && (
           <Col xs={12} sm={8} lg={4}>
-            <Card><Statistic title="站点数" value={data?.sites ?? '-'} /></Card>
+            <Card>
+              <Statistic title="站点数" value={data?.sites ?? '-'} />
+            </Card>
           </Col>
         )}
         <Col xs={12} sm={8} lg={4}>
-          <Card><Statistic title="设备数" value={data?.devices ?? '-'} /></Card>
+          <Card>
+            <Statistic title="设备数" value={data?.devices ?? '-'} />
+          </Card>
         </Col>
         <Col xs={12} sm={8} lg={4}>
-          <Card><Statistic title="任务总数" value={data?.tasks.total ?? '-'} /></Card>
+          <Card>
+            <Statistic title="任务总数" value={data?.tasks.total ?? '-'} />
+          </Card>
         </Col>
         <Col xs={12} sm={8} lg={4}>
           <Card>
@@ -111,14 +128,12 @@ export default function DashboardPage() {
           </Card>
         </Col>
         <Col xs={12} sm={8} lg={4}>
-          <Card><Statistic title="巡检记录" value={data?.records.total ?? '-'} /></Card>
+          <Card>
+            <Statistic title="巡检记录" value={data?.records.total ?? '-'} />
+          </Card>
         </Col>
         <Col xs={12} sm={8} lg={4}>
-          <Card
-            hoverable
-            onClick={() => navigate('/alerts')}
-            style={{ cursor: 'pointer' }}
-          >
+          <Card hoverable onClick={() => navigate('/alerts')} style={{ cursor: 'pointer' }}>
             <Statistic
               title="未处理预警"
               value={openAlerts}
@@ -148,11 +163,14 @@ export default function DashboardPage() {
           </Card>
         </Col>
         <Col xs={24} lg={10}>
-          <Card title="待审核报告" extra={
-            <Button type="link" onClick={() => navigate('/audit')}>
-              前往审核
-            </Button>
-          }>
+          <Card
+            title="待审核报告"
+            extra={
+              <Button type="link" onClick={() => navigate('/audit')}>
+                前往审核
+              </Button>
+            }
+          >
             <Table
               rowKey="id"
               size="small"

@@ -10,6 +10,10 @@ const SitesPage = lazy(() => import('../pages/sites'));
 const UsersPage = lazy(() => import('../pages/users'));
 const TemplatesPage = lazy(() => import('../pages/templates'));
 const HardRulesPage = lazy(() => import('../pages/hard-rules'));
+const DashboardPage = lazy(() => import('../pages/dashboard'));
+const AnalysisPage = lazy(() => import('../pages/analysis'));
+const AlertsPage = lazy(() => import('../pages/alerts'));
+const MonitoringPage = lazy(() => import('../pages/monitoring'));
 const RecordsPage = lazy(() => import('../pages/records'));
 const AuditPage = lazy(() => import('../pages/audit'));
 const SettingsPage = lazy(() => import('../pages/settings'));
@@ -70,9 +74,14 @@ export const router = createBrowserRouter([
     ),
     children: [
       {
-        // 旧巡检仪表盘与费用经营看板重复，统一进费用中心
         path: 'dashboard',
-        element: <Navigate to="/finance/dashboard" replace />,
+        element: (
+          <AuthGuard roles={['super_admin', 'site_manager']}>
+            <Lazy>
+              <DashboardPage />
+            </Lazy>
+          </AuthGuard>
+        ),
       },
       {
         path: 'sites',
@@ -146,22 +155,42 @@ export const router = createBrowserRouter([
       },
       {
         path: 'analysis',
-        element: <Navigate to="/finance/dashboard" replace />,
+        element: (
+          <AuthGuard roles={['super_admin', 'site_manager']}>
+            <Lazy>
+              <AnalysisPage />
+            </Lazy>
+          </AuthGuard>
+        ),
       },
       {
         path: 'alerts',
-        element: <Navigate to="/finance/dashboard" replace />,
+        element: (
+          <AuthGuard roles={['super_admin', 'site_manager']}>
+            <Lazy>
+              <AlertsPage />
+            </Lazy>
+          </AuthGuard>
+        ),
       },
       {
         path: 'monitoring',
-        element: <Navigate to="/settings" replace />,
+        element: (
+          <AuthGuard roles={['super_admin', 'site_manager']}>
+            <Lazy>
+              <MonitoringPage />
+            </Lazy>
+          </AuthGuard>
+        ),
       },
       {
         path: 'settings',
         element: (
-          <Lazy>
-            <SettingsPage />
-          </Lazy>
+          <AuthGuard roles={['super_admin', 'site_manager', 'inspector']}>
+            <Lazy>
+              <SettingsPage />
+            </Lazy>
+          </AuthGuard>
         ),
       },
       {
