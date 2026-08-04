@@ -297,6 +297,39 @@ export class VisionService {
                 : acSide
                   ? this.enforceAcSideResult(parsed, raw, sampleInputs.length)
                   : parsed;
+      // 交流侧若因主PE被模型漏检而 fail，再做一次箱内主PE专用探针纠偏
+      if (
+        acSide &&
+        enforced.status === CheckResult.FAIL &&
+        /主PE|铜编织|铜芯/.test(enforced.reason || '')
+      ) {
+        try {
+          const peOk = await this.probeGroundingPoint({
+            apiKey,
+            baseUrl,
+            model,
+            photoInputs,
+            sampleInputs,
+            point: 'internal',
+          });
+          if (peOk) {
+            const phaseFail = /相线接线正常/.test(enforced.reason || '');
+            enforced = phaseFail
+              ? {
+                  status: CheckResult.FAIL,
+                  confidence: Math.min(enforced.confidence, 0.95),
+                  reason: '现场不满足：相线接线正常。',
+                }
+              : {
+                  status: CheckResult.PASS,
+                  confidence: Math.max(enforced.confidence, 0.9),
+                  reason: '交流侧相线正常，主PE铜芯接地线/铜编织带已可靠压接到PE端子，合格。',
+                };
+          }
+        } catch (error) {
+          this.logger.warn(`AC PE probe failed: ${(error as Error).message}`);
+        }
+      }
       // 直流侧首轮合格时再做放大复核；复核服务异常时回退首轮结论，避免整项分析失败。
       if (dcSide && enforced.status === CheckResult.PASS) {
         enforced = await this.auditDcUnusedPorts({
@@ -603,15 +636,15 @@ export class VisionService {
   private acSideHardRules() {
     return [
       '【交流侧安装检查·硬性否决】',
-      '本项检查的是主保护接地：必须看到主电缆中的铜芯接地线/裸铜编织带，实际压接并紧固到标有“PE”的主接地端子。',
-      '柜门右上角或门铰链附近的细黄绿跳线只是柜门等电位连接线，不能替代主PE；只看到该跳线时 doorBondingJumperOnly=true，必须 fail。',
-      '合格样本若显示裸铜编织带接PE螺栓，则 sampleRequiresCopperPe=true，现场必须看到同类铜芯线/铜编织带及其PE端压接点。',
-      '只看到 PE 字样、空螺栓、三根相线或柜门黄绿跳线，不算主PE已连接。',
-      'peWireConnected=false 的典型情况：只见 L1/L2/L3，而PE标签旁螺栓为空，未见铜芯接地线/铜编织带接入。',
-      '未接 PE 属于明显安全缺陷，即使相线看起来整齐也必须 fail。',
-      'terminalsCoveredOrProtected：可触及的带电端子应有透明罩/防护；严重裸露且无防护可 fail。',
-      'mainPeConductorVisible、mainPeTerminationVisible、peWireConnected 必须同时为 true；样本要求铜编织带时还必须同时满足 mainCopperPeConductorVisible、mainCopperPeTerminationVisible。',
-      'reason 与 photoFindings 必须写明主PE铜芯线/铜编织带位于第几张照片及压接位置；缺失时必须写“未见铜芯接地线/铜编织带接入PE端子”，禁止写成“未见黄绿接地线”。',
+      '本项检查主保护接地：必须看到铜芯接地线或裸铜编织带，实际压接紧固到标有“PE”的主接地端子。',
+      '【合格】PE 标签旁有裸铜编织带/铜辫/铜带压在螺栓上 → mainCopperPeConductorVisible、mainCopperPeTerminationVisible、mainPeConductorVisible、mainPeTerminationVisible、peWireConnected 全部 true，doorBondingJumperOnly=false。',
+      '【重要】同框即使还有柜门右上角细黄绿跳线，只要已有铜编织带/铜芯压接主PE，绝不能因黄绿跳线判 fail，doorBondingJumperOnly 必须 false。',
+      'doorBondingJumperOnly=true 仅当：完全没有铜编织带/铜芯主PE，只看到柜门细黄绿跳线时。',
+      'peWireConnected=false 仅当：PE 标签旁螺栓空着，完全未见铜芯/铜编织带。',
+      '合格样本有裸铜编织带时 sampleRequiresCopperPe=true；现场见到同类铜编织带压接即满足，不必构图与样本一致。',
+      '拿不准但已看见铜编织带压在 PE 螺栓上时，优先判各 PE 相关字段为 true。',
+      'terminalsCoveredOrProtected：可触及带电端子有透明罩/防护即可 true。',
+      'reason/photoFindings 须写明主PE铜编织带位置；禁止把“已接铜编织带”写成“未见黄绿接地线”。',
     ].join('\n');
   }
 
@@ -1023,6 +1056,36 @@ export class VisionService {
       'peWireConnected',
       'terminalsCoveredOrProtected',
     ]);
+    const text = `${parsed.reason || ''} ${raw}`;
+    const affirmsCopperPe =
+      /铜编织|裸铜编织|铜辫|铜带|裸铜/.test(text) &&
+      /PE|接地端子|接地螺栓|压接/.test(text) &&
+      !/未见.*(?:铜编织|铜芯|裸铜)|PE端子为空|未压接|未接入PE/.test(text);
+    const deniesMainPe =
+      /未见.*(?:铜编织|铜芯).*PE|PE端子为空|仅柜门黄绿|只有黄绿跳线/.test(text) &&
+      !affirmsCopperPe;
+
+    // 模型常因同框柜门黄绿跳线误标 doorBondingJumperOnly；有铜编织带证据时纠正
+    if (affirmsCopperPe) {
+      values.mainPeConductorVisible = true;
+      values.mainPeTerminationVisible = true;
+      values.mainCopperPeConductorVisible = true;
+      values.mainCopperPeTerminationVisible = true;
+      values.peWireConnected = true;
+      values.doorBondingJumperOnly = false;
+    }
+    if (deniesMainPe) {
+      values.peWireConnected = false;
+    }
+    // 相线：有 L1/L2/L3 描述且未否定时放宽
+    if (
+      !values.phaseWiresOk &&
+      /L1|L2|L3|相线/.test(text) &&
+      !/相线.*(?:缺失|未接|异常)|未见相线/.test(text)
+    ) {
+      values.phaseWiresOk = true;
+    }
+
     const missing: string[] = [];
     const copperRequired = sampleCount > 0 && values.sampleRequiresCopperPe;
     if (
@@ -1206,9 +1269,9 @@ export class VisionService {
       'A) internal_main_pe（箱内主PE）：同一张照片里看到铜芯接地线或裸铜编织带压接到标有PE的端子/螺栓 → 合格。',
       '   重要：裸铜编织带压在PE螺栓上就是合格主PE；同框即使还有柜门细黄绿跳线，也不能因此判不合格。',
       '   只有明确看到PE螺栓空着、完全没有铜芯线/铜编织带时，才判 internalMainPeConnected=false。',
-      'B) external_chassis_ground（箱外机壳接地）：同一张照片里看到黄绿接地线连接到机壳/支架螺栓或接地点 → 合格。',
-      '   线细可以；不必要求线鼻子每一个细节都特写清晰，线与接地点同框且走向可追踪即可。',
-      '   只有完全看不到黄绿接地线、或明显悬空未接到机壳/支架时，才判 externalGroundConnected=false。',
+      'B) external_chassis_ground（箱外机壳接地）：同一张照片里看到黄绿接地线贴机壳并接到支架/横担/抱箍/螺栓 → 合格。',
+      '   线细可以；侧视、水印遮挡都不否决；不必线鼻子特写，走向可追踪即可。',
+      '   只有完全看不到黄绿接地线、或明显悬空未接到任何金属件时，才判 externalGroundConnected=false。',
       '合格标准图分别展示箱内主PE与箱外黄绿接地；现场须覆盖这两个视角，顺序不限。',
       '逐张填 photoTypes 和 photoChecks。严禁把一张的空PE端子与另一张的黄绿线拼成合格。',
       '仅当两处连接都成立时才允许 pass；拿不准但画面已见导体压接/黄绿线入接地点时，优先判对应 connected=true。',
@@ -1406,8 +1469,12 @@ export class VisionService {
             ].join('\n')
           : [
               '你只判断一件事：这些现场照片里，是否至少有一张能证明箱外机壳/支架接地已连接？',
-              '判 true：可见黄绿接地线连接到设备机壳、安装支架或抱箍接地点；线细可以。',
-              '判 false：完全看不到黄绿接地线，或明显悬空未接到机壳/支架。',
+              '判 true（满足任一即可）：',
+              '1) 可见黄绿双色接地线贴在机壳侧面，并接到支架、横担、抱箍或螺栓；',
+              '2) 黄绿线从机壳斜向接到安装支架/抱杆件，即使线鼻子细节不清晰；',
+              '3) 黄绿线两端分别落在机壳与金属支架上，走向可追踪。',
+              '判 false 仅当：完全看不到黄绿接地线，或黄绿线明显断开悬空、未接到任何金属件。',
+              '不要因为水印遮挡、角度侧视、线较细就判 false；拿不准时输出 true。',
               '只输出 JSON：{"connected":true|false,"reason":"一句话"}',
             ].join('\n'),
       },
@@ -1440,11 +1507,12 @@ export class VisionService {
           !/未见|空着|未压接|未接入|未连接/.test(reason)
         );
       }
-      return (
-        /黄绿/.test(reason) &&
-        /机壳|支架|抱箍|外壳|接地点/.test(reason) &&
-        !/未见|悬空|未连接/.test(reason)
-      );
+      // 箱外：只要承认看见黄绿线且未明确悬空/缺失，即视为已连接（侧视常看不清线鼻子）
+      if (/未见.*黄绿|没有黄绿|无黄绿|完全看不到/.test(reason)) return false;
+      if (/悬空|断开未接|未接到任何/.test(reason) && !/已连接|接到|接入/.test(reason)) {
+        return false;
+      }
+      return /黄绿/.test(reason) && /机壳|支架|抱箍|外壳|横担|接地点|可见|存在/.test(reason);
     } catch {
       return false;
     }
@@ -1466,7 +1534,8 @@ export class VisionService {
           '必须同时满足：①箱内主PE已连接；②箱外黄绿接地线连接机壳或支架。',
           '箱内合格（任一即可）：裸铜编织带压在PE螺栓；或较粗铜芯/黄绿绝缘主PE线压接到PE端子/接地排。',
           '柜门右上角细黄绿跳线不能单独替代主PE，但同框有铜编织带/主PE压接时必须判 internalMainPeConnected=true。',
-          '箱外黄绿线接到机壳/支架=箱外合格。拿不准但已看见连接时，对应 connected 优先 true。',
+          '箱外黄绿线接到机壳/支架/横担/抱箍=箱外合格；侧视能看见黄绿线走向即可，不必线鼻子特写。',
+          '拿不准但已看见铜编织带或箱外黄绿线时，对应 connected 优先 true。',
           '只输出 JSON（须含 photoChecks）：',
           '{"status":"pass"|"fail","confidence":0~1,"reason":"逐张说明","evidence":{"photoTypes":["internal_main_pe"|"external_chassis_ground"|"other"],"photoChecks":[{"photoIndex":1,"type":"internal_main_pe|external_chassis_ground|other","internalMainPeConnected":true|false,"externalGroundConnected":true|false,"wireAndTerminalVisibleInSamePhoto":true|false,"reason":"本张独立结论"}],"hasInternalMainPePhoto":true|false,"internalMainPeConnected":true|false,"hasExternalGroundPhoto":true|false,"externalGroundConnected":true|false,"matchesSampleViews":true|false}}',
         ].join('\n'),
