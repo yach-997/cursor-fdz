@@ -1241,7 +1241,7 @@ export class VisionService {
     }
   }
 
-  /** 接地项目准备判合格时，再进行一次只关注“两处连接必须分别成立”的独立复核。 */
+  /** 接地：先轻量双点审核；若仍否决，再对失败点做单点探针，避免一次塞太多图误杀。 */
   private async auditGroundingConnections(args: {
     apiKey: string;
     baseUrl: string;
@@ -1249,85 +1249,139 @@ export class VisionService {
     photoInputs: string[];
     sampleInputs: string[];
   }): Promise<Omit<VisionCompareResult, 'provider'>> {
-    const [fieldCrops, sampleCrops] = await Promise.all([
-      this.createGroundingEvidenceCrops(args.photoInputs),
-      this.createGroundingEvidenceCrops(args.sampleInputs),
-    ]);
+    let first: Omit<VisionCompareResult, 'provider'>;
+    try {
+      first = await this.auditGroundingConnectionsSimple(args);
+    } catch (error) {
+      this.logger.warn(`Grounding simple audit failed: ${(error as Error).message}`);
+      return {
+        status: CheckResult.ERROR,
+        confidence: 0,
+        reason: '接地双连接点分析暂时失败，请点「重新分析」或人工判断',
+      };
+    }
+    if (first.status === CheckResult.PASS) return first;
+
+    const reason = first.reason || '';
+    let internalOk = !/箱内主PE|铜芯线\/铜编织带实际压接/.test(reason);
+    let externalOk = !/箱外黄绿|箱外机壳/.test(reason);
+    // 首轮失败但原因未拆清时，两个点都再探针一次
+    if (first.status === CheckResult.FAIL && internalOk && externalOk) {
+      internalOk = false;
+      externalOk = false;
+    }
+
+    try {
+      if (!internalOk) {
+        internalOk = await this.probeGroundingPoint({
+          ...args,
+          point: 'internal',
+        });
+      }
+      if (!externalOk) {
+        externalOk = await this.probeGroundingPoint({
+          ...args,
+          point: 'external',
+        });
+      }
+    } catch (error) {
+      this.logger.warn(`Grounding probe failed: ${(error as Error).message}`);
+      return first;
+    }
+
+    if (internalOk && externalOk) {
+      return {
+        status: CheckResult.PASS,
+        confidence: Math.max(first.confidence, 0.9),
+        reason: '箱内主PE铜芯线/铜编织带及箱外黄绿接地线均已分别可靠连接，符合标准图要求。',
+      };
+    }
+
+    const missing: string[] = [];
+    if (!internalOk) missing.push('箱内主PE铜芯线/铜编织带实际压接到PE端子');
+    if (!externalOk) missing.push('箱外黄绿接地线实际连接机壳/支架接地点');
+    return {
+      status: CheckResult.FAIL,
+      confidence: Math.min(first.confidence, 0.95),
+      reason: `现场不满足：${missing.join('、')}。`,
+    };
+  }
+
+  /** 单点探针：只问一个连接是否成立，降低模型漏检铜编织带/主PE 的概率。 */
+  private async probeGroundingPoint(args: {
+    apiKey: string;
+    baseUrl: string;
+    model: string;
+    photoInputs: string[];
+    sampleInputs: string[];
+    point: 'internal' | 'external';
+  }): Promise<boolean> {
+    const internal = args.point === 'internal';
     const content: Array<Record<string, unknown>> = [
       {
         type: 'text',
-        text: [
-          '你是接地安全复核员。对每张现场照片单独检查，禁止跨照片拼接证据。',
-          '必须同时满足：①箱内铜芯接地线/裸铜编织带实际压接到PE端子；②箱外黄绿接地线实际连接机壳或支架。',
-          '合格示例：箱内 PE 标签旁有裸铜编织带压在螺栓上 → internalMainPeConnected=true；同框柜门细黄绿跳线可忽略，不能因此判 fail。',
-          '合格示例：箱外机壳/支架旁有黄绿线接到螺栓或接地点 → externalGroundConnected=true；不必要求线鼻子特写。',
-          '仅当PE螺栓明确空着、完全无铜导体时，才判箱内不合格；仅当完全看不到黄绿线或其连接时，才判箱外不合格。',
-          '另一张照片的黄绿线不能弥补箱内主PE缺失。标准图无固定顺序，按画面内容识别视角。',
-          '拿不准但已看见导体压接/黄绿线入接地点时，对应 connected 优先 true。只输出 JSON：',
-          '{"status":"pass"|"fail","confidence":0~1,"reason":"逐张说明","evidence":{"photoTypes":["internal_main_pe"|"external_chassis_ground"|"other"],"photoChecks":[{"photoIndex":1,"type":"internal_main_pe|external_chassis_ground|other","internalMainPeConnected":true|false,"externalGroundConnected":true|false,"wireAndTerminalVisibleInSamePhoto":true|false,"reason":"本张独立结论"}],"hasInternalMainPePhoto":true|false,"internalMainPeConnected":true|false,"hasExternalGroundPhoto":true|false,"externalGroundConnected":true|false,"matchesSampleViews":true|false}}',
-        ].join('\n'),
+        text: internal
+          ? [
+              '你只判断一件事：这些现场照片里，是否至少有一张能证明箱内主PE已连接？',
+              '判 true 的任一证据即可：',
+              '1) 裸铜编织带压接在标有 PE 的端子/螺栓上；',
+              '2) 较粗的铜芯接地线（可带黄绿绝缘）压接到 PE 端子或接地排；',
+              '3) PE 标签旁螺栓上有明显铜导体压接，不是空螺栓。',
+              '不要因为同框还有柜门右上角/铰链处的细黄绿跳线就判 false——那是门板等电位线，可忽略。',
+              '只有明确看到 PE 螺栓空着、完全没有铜导体时才输出 false。',
+              '拿不准但已看到铜编织带或铜芯压接时输出 true。',
+              '只输出 JSON：{"connected":true|false,"reason":"一句话"}',
+            ].join('\n')
+          : [
+              '你只判断一件事：这些现场照片里，是否至少有一张能证明箱外机壳/支架接地已连接？',
+              '判 true：可见黄绿接地线连接到设备机壳、安装支架或抱箍接地点；线细可以，不必线鼻子特写。',
+              '判 false：完全看不到黄绿接地线，或明显悬空未接到机壳/支架。',
+              '拿不准但线与接地点同框可追踪时输出 true。',
+              '只输出 JSON：{"connected":true|false,"reason":"一句话"}',
+            ].join('\n'),
       },
     ];
-    args.photoInputs.forEach((dataUrl, index) => {
-      content.push({ type: 'text', text: `【现场照片 ${index + 1}】只判断本张连接是否真实存在` });
-      content.push({ type: 'image_url', image_url: { url: dataUrl } });
-      if (fieldCrops[index]) {
-        content.push({
-          type: 'text',
-          text: `【现场照片 ${index + 1} · 关键连接区域放大】辅助观察导体与接地点，勿因裁切不全否决整张原图已可见的连接`,
-        });
-        content.push({ type: 'image_url', image_url: { url: fieldCrops[index] } });
-      }
-    });
-    args.sampleInputs.forEach((dataUrl, index) => {
+    for (let i = 0; i < args.photoInputs.length; i++) {
+      content.push({ type: 'text', text: `【现场照片 ${i + 1}】` });
+      content.push({ type: 'image_url', image_url: { url: args.photoInputs[i] } });
+    }
+    // 给一张对应视角标准图作对照，不叠加裁剪，避免干扰
+    const sample = args.sampleInputs[internal ? 0 : Math.min(1, args.sampleInputs.length - 1)];
+    if (sample) {
       content.push({
         type: 'text',
-        text: `【接地合格标准图 ${index + 1}】请按图像内容识别视角，不要按序号猜测`,
+        text: internal
+          ? '【参考·箱内主PE合格样例】仅作外观对照，现场不必构图一致'
+          : '【参考·箱外接地合格样例】仅作外观对照，现场不必构图一致',
       });
-      content.push({ type: 'image_url', image_url: { url: dataUrl } });
-      if (sampleCrops[index]) {
-        content.push({
-          type: 'text',
-          text: `【标准图 ${index + 1} · 关键连接区域放大】`,
-        });
-        content.push({ type: 'image_url', image_url: { url: sampleCrops[index] } });
-      }
-    });
+      content.push({ type: 'image_url', image_url: { url: sample } });
+    }
 
+    const raw = await this.callVisionChat({
+      apiKey: args.apiKey,
+      baseUrl: args.baseUrl,
+      model: args.model,
+      content,
+      temperature: 0,
+      maxTokens: 200,
+      timeoutMs: 55_000,
+      label: `grounding-probe-${args.point}`,
+    });
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return false;
     try {
-      const raw = await this.callVisionChat({
-        apiKey: args.apiKey,
-        baseUrl: args.baseUrl,
-        model: args.model,
-        content,
-        temperature: 0,
-        maxTokens: 512,
-        timeoutMs: 70_000,
-        label: 'grounding-audit',
-      });
-      const parsed = this.parseJsonResult(raw);
-      if (!parsed) throw new Error('复核结果无法解析');
-      return this.enforceGroundingResult(
-        parsed,
-        raw,
-        args.photoInputs.length,
-        args.sampleInputs.length,
-      );
-    } catch (error) {
-      this.logger.warn(`Grounding safety audit failed: ${(error as Error).message}`);
-      // 放大裁剪版失败时，退回「仅原图」再试一次，避免整项直接分析失败
-      try {
-        return await this.auditGroundingConnectionsSimple(args);
-      } catch (fallbackError) {
-        this.logger.warn(
-          `Grounding simple audit also failed: ${(fallbackError as Error).message}`,
+      const obj = JSON.parse(match[0]) as { connected?: unknown; reason?: string };
+      if (obj.connected === true || obj.connected === 'true' || obj.connected === 1) return true;
+      const reason = String(obj.reason || raw);
+      if (internal) {
+        return (
+          /铜编织|铜芯|裸铜|已压接|已接入|已连接/.test(reason) &&
+          !/未见|空着|未压接|未接入|未连接/.test(reason)
         );
-        return {
-          status: CheckResult.ERROR,
-          confidence: 0,
-          reason: '接地双连接点分析暂时失败，请点「重新分析」或人工判断',
-        };
       }
+      return /黄绿/.test(reason) && /机壳|支架|抱箍|外壳|接地点/.test(reason) && !/未见|悬空|未连接/.test(reason);
+    } catch {
+      return false;
     }
   }
 
@@ -1344,8 +1398,9 @@ export class VisionService {
         type: 'text',
         text: [
           '你是接地安全复核员。对每张现场照片单独检查，禁止跨照片拼接证据。',
-          '必须同时满足：①箱内主PE铜芯线/裸铜编织带压接到PE端子；②箱外黄绿接地线连接机壳或支架。',
-          '裸铜编织带压在PE螺栓上=箱内合格；柜门细黄绿跳线不能单独替代主PE，但也不要因它否决已存在的铜编织带。',
+          '必须同时满足：①箱内主PE已连接；②箱外黄绿接地线连接机壳或支架。',
+          '箱内合格（任一即可）：裸铜编织带压在PE螺栓；或较粗铜芯/黄绿绝缘主PE线压接到PE端子/接地排。',
+          '柜门右上角细黄绿跳线不能单独替代主PE，但同框有铜编织带/主PE压接时必须判 internalMainPeConnected=true。',
           '箱外黄绿线接到机壳/支架=箱外合格。拿不准但已看见连接时，对应 connected 优先 true。',
           '只输出 JSON（须含 photoChecks）：',
           '{"status":"pass"|"fail","confidence":0~1,"reason":"逐张说明","evidence":{"photoTypes":["internal_main_pe"|"external_chassis_ground"|"other"],"photoChecks":[{"photoIndex":1,"type":"internal_main_pe|external_chassis_ground|other","internalMainPeConnected":true|false,"externalGroundConnected":true|false,"wireAndTerminalVisibleInSamePhoto":true|false,"reason":"本张独立结论"}],"hasInternalMainPePhoto":true|false,"internalMainPeConnected":true|false,"hasExternalGroundPhoto":true|false,"externalGroundConnected":true|false,"matchesSampleViews":true|false}}',
