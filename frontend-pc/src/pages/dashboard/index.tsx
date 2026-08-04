@@ -71,7 +71,7 @@ export default function DashboardPage() {
     <div className="dashboard-page">
       <div className="dashboard-welcome">
         <div>
-          <div className="dashboard-welcome__eyebrow">巡检运营概览</div>
+          <div className="dashboard-welcome__eyebrow">仪表盘</div>
           <h2>
             {new Date().getHours() < 12 ? '早上好' : new Date().getHours() < 18 ? '下午好' : '晚上好'}，
             {user?.realName || '管理员'}
@@ -83,7 +83,7 @@ export default function DashboardPage() {
             </Button>
             <Button onClick={() => navigate('/finance/dashboard')}>经营看板</Button>
             <Button onClick={() => navigate('/audit')}>报告审核</Button>
-            <Button onClick={() => navigate('/monitoring')}>运维监控</Button>
+            <Button onClick={() => navigate('/analysis')}>数据分析</Button>
           </Space>
         </div>
         <div className="dashboard-welcome__date">
@@ -133,7 +133,7 @@ export default function DashboardPage() {
           </Card>
         </Col>
         <Col xs={12} sm={8} lg={4}>
-          <Card hoverable onClick={() => navigate('/alerts')} style={{ cursor: 'pointer' }}>
+          <Card>
             <Statistic
               title="未处理预警"
               value={openAlerts}

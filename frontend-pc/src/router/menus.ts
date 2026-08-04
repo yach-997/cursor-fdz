@@ -1,55 +1,26 @@
 import type { MenuConfig, UserRole } from '../types';
 
 /**
- * 侧栏菜单结构：
- * - 巡检运营：现场任务、质量、预警（旧仪表盘能力）
- * - 费用结算：案例派工到月结（新主流程）
- * - 系统：站点/用户/模板/硬规则/运维监控/设置
+ * 侧栏：
+ * - 仪表盘 / 数据分析：一级
+ * - 费用结算：分组
+ * - 报告审核 / 历史查询：一级（审核在上）
+ * - 已下线菜单入口：预警中心、运维监控
  */
 export const menuConfig: MenuConfig[] = [
   {
-    key: 'ops',
+    key: 'dashboard',
     path: '/dashboard',
-    label: '巡检运营',
+    label: '仪表盘',
     icon: 'DashboardOutlined',
     roles: ['super_admin', 'site_manager'],
-    children: [
-      {
-        key: 'ops-dashboard',
-        path: '/dashboard',
-        label: '巡检仪表盘',
-        icon: 'DashboardOutlined',
-        roles: ['super_admin', 'site_manager'],
-      },
-      {
-        key: 'ops-analysis',
-        path: '/analysis',
-        label: '数据分析',
-        icon: 'BarChartOutlined',
-        roles: ['super_admin', 'site_manager'],
-      },
-      {
-        key: 'ops-alerts',
-        path: '/alerts',
-        label: '预警中心',
-        icon: 'AlertOutlined',
-        roles: ['super_admin', 'site_manager'],
-      },
-      {
-        key: 'ops-records',
-        path: '/records',
-        label: '历史查询',
-        icon: 'HistoryOutlined',
-        roles: ['super_admin', 'site_manager'],
-      },
-      {
-        key: 'ops-audit',
-        path: '/audit',
-        label: '报告审核',
-        icon: 'AuditOutlined',
-        roles: ['super_admin', 'site_manager'],
-      },
-    ],
+  },
+  {
+    key: 'analysis',
+    path: '/analysis',
+    label: '数据分析',
+    icon: 'BarChartOutlined',
+    roles: ['super_admin', 'site_manager'],
   },
   {
     key: 'finance',
@@ -138,10 +109,17 @@ export const menuConfig: MenuConfig[] = [
     roles: ['super_admin'],
   },
   {
-    key: 'monitoring',
-    path: '/monitoring',
-    label: '运维监控',
-    icon: 'AlertOutlined',
+    key: 'audit',
+    path: '/audit',
+    label: '报告审核',
+    icon: 'AuditOutlined',
+    roles: ['super_admin', 'site_manager'],
+  },
+  {
+    key: 'records',
+    path: '/records',
+    label: '历史查询',
+    icon: 'HistoryOutlined',
     roles: ['super_admin', 'site_manager'],
   },
   {
@@ -178,7 +156,7 @@ export function flattenMenus(items: MenuConfig[]): MenuConfig[] {
   return out;
 }
 
-/** 登录后按角色跳转首页：先看巡检总览，再进费用作业 */
+/** 登录后默认进仪表盘 */
 export function getHomePathByRole(role: UserRole): string {
   if (role === 'inspector') {
     return '/settings';

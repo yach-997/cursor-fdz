@@ -12,8 +12,6 @@ const TemplatesPage = lazy(() => import('../pages/templates'));
 const HardRulesPage = lazy(() => import('../pages/hard-rules'));
 const DashboardPage = lazy(() => import('../pages/dashboard'));
 const AnalysisPage = lazy(() => import('../pages/analysis'));
-const AlertsPage = lazy(() => import('../pages/alerts'));
-const MonitoringPage = lazy(() => import('../pages/monitoring'));
 const RecordsPage = lazy(() => import('../pages/records'));
 const AuditPage = lazy(() => import('../pages/audit'));
 const SettingsPage = lazy(() => import('../pages/settings'));
@@ -164,24 +162,14 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        // 预警中心已从侧栏下线，旧书签落到仪表盘
         path: 'alerts',
-        element: (
-          <AuthGuard roles={['super_admin', 'site_manager']}>
-            <Lazy>
-              <AlertsPage />
-            </Lazy>
-          </AuthGuard>
-        ),
+        element: <Navigate to="/dashboard" replace />,
       },
       {
+        // 运维监控已从侧栏下线，旧书签落到系统设置
         path: 'monitoring',
-        element: (
-          <AuthGuard roles={['super_admin', 'site_manager']}>
-            <Lazy>
-              <MonitoringPage />
-            </Lazy>
-          </AuthGuard>
-        ),
+        element: <Navigate to="/settings" replace />,
       },
       {
         path: 'settings',

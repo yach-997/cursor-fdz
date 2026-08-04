@@ -97,26 +97,11 @@ export default function BasicLayout() {
     return group?.label || '工作台';
   }, [leafMenus, selectedKeys, menuTree, location.pathname]);
 
-  // 进入巡检运营 / 费用结算子页时自动展开对应分组
+  // 进入费用结算子页时自动展开分组
   useEffect(() => {
-    const next: string[] = [];
-    if (
-      location.pathname === '/dashboard' ||
-      location.pathname.startsWith('/analysis') ||
-      location.pathname.startsWith('/alerts') ||
-      location.pathname.startsWith('/records') ||
-      location.pathname.startsWith('/audit')
-    ) {
-      next.push('ops');
-    }
     if (location.pathname.startsWith('/finance')) {
-      next.push('finance');
+      setOpenKeys((prev) => (prev.includes('finance') ? prev : [...prev, 'finance']));
     }
-    if (!next.length) return;
-    setOpenKeys((prev) => {
-      const merged = new Set([...prev, ...next]);
-      return [...merged];
-    });
   }, [location.pathname]);
 
   useEffect(() => {
