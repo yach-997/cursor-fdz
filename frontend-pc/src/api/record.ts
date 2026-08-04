@@ -83,7 +83,7 @@ export async function analyzeAi(payload: {
   const { data } = await request.post<
     ApiResponse<{ queued: boolean; completed?: boolean }>
   >('/ai/analyze', payload, {
-    timeout: 120_000,
+    timeout: 180_000,
     skipErrorToast: true,
   } as AppAxiosRequestConfig);
   return data.data;
