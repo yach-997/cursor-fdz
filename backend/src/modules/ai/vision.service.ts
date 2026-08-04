@@ -1637,26 +1637,23 @@ export class VisionService {
         text: internal
           ? [
               '你只判断【箱内】主PE是否清晰合格。',
-              '判 true 仅当：较粗裸铜编织带/铜芯清晰压接在 PE 端子螺栓上。',
-              '判 false：PE空着、只有柜门细黄绿跳线、只有细银灰屏蔽线、压接点看不清。',
+              '判 true 仅当：独立于相线的较粗裸铜编织带/铜芯压接在 PE 端子螺栓上。',
+              '判 false：PE空着；只有柜门黄绿跳线；把相线屏蔽编织当成PE；压接点看不清。',
               '拿不准必须 false。只输出 JSON：{"connected":true|false,"reason":"一句话"}',
             ].join('\n')
           : [
-              '你只看【箱外机壳侧面】照片，判断机壳接地是否已做。',
-              '判 true（任一即可，必须宽松）：',
-              '1) 黄绿线贴机壳或接到支架/横担/抱箍/螺栓；',
-              '2) 机壳底部/侧面有黄色或黄绿线鼻子用螺栓压接在机壳金属上；',
-              '3) 黄/黄绿接地线从机壳走向支架，走向可追踪（线鼻子不清也算）。',
-              '判 false 仅当：完全看不到黄/黄绿接地线，或明显悬空未固定到金属件。',
-              '水印、侧视、线细、接点略糊 → 仍 true。拿不准必须 true。',
-              '只输出 JSON：{"connected":true|false,"reason":"一句话"}',
+              '你只判断照片是否证明【箱外机壳接地】。',
+              '若是箱内开盖（可见 L1/L2/L3 端子排）→ 不是箱外图，connected=false。',
+              '判 true 仅当：箱外机壳/抱杆侧照片上，黄绿或黄色接地线接到机壳/支架/抱箍。',
+              '判 false：箱内图；完全无黄/黄绿线；线悬空。拿不准 → false。',
+              '只输出 JSON：{"connected":true|false,"isExteriorPhoto":true|false,"reason":"一句话"}',
             ].join('\n'),
       },
     ];
     for (let i = 0; i < photos.length; i++) {
       content.push({
         type: 'text',
-        text: internal ? `【箱内现场图 ${i + 1}】` : `【箱外机壳现场图 ${i + 1}】`,
+        text: internal ? `【箱内现场图 ${i + 1}】` : `【待判定是否箱外机壳图 ${i + 1}】`,
       });
       content.push({ type: 'image_url', image_url: { url: photos[i] } });
     }
@@ -1673,38 +1670,37 @@ export class VisionService {
       label: `grounding-probe-${args.point}`,
     });
     const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) return !internal;
+    if (!match) return false;
     try {
-      const obj = JSON.parse(match[0]) as { connected?: unknown; reason?: string };
+      const obj = JSON.parse(match[0]) as {
+        connected?: unknown;
+        isExteriorPhoto?: unknown;
+        reason?: string;
+      };
       const reason = String(obj.reason || raw);
       const connectedTrue =
         obj.connected === true || obj.connected === 'true' || obj.connected === 1;
       if (internal) {
         if (
-          /细.*屏蔽|屏蔽线|仅柜门|只有黄绿|PE.*空着|未见.*铜|看不清.*压接|不确定/.test(reason)
+          /细.*屏蔽|屏蔽线|仅柜门|只有黄绿|PE.*空着|未见.*铜|相线.*编织|不确定/.test(reason)
         ) {
           return false;
         }
-        if (connectedTrue) {
-          return /铜编织|裸铜|铜芯|压接/.test(reason) || reason.length < 4;
-        }
-        return (
-          /铜编织|铜芯|裸铜|已压接/.test(reason) &&
-          !/未见|空着|未压接|未接入|未连接|看不清/.test(reason)
-        );
+        if (!connectedTrue) return false;
+        return /铜编织|裸铜|铜芯|压接|PE/.test(reason) && !/相线屏蔽|铠装/.test(reason);
       }
-      if (connectedTrue) return true;
-      if (/完全看不到|没有黄绿|未见黄绿|无黄绿线|没有黄色.*接地|未见.*接地线/.test(reason)) {
+      if (
+        obj.isExteriorPhoto === false ||
+        obj.isExteriorPhoto === 'false' ||
+        /不是箱外|箱内开盖|可见L1|端子排/.test(reason)
+      ) {
         return false;
       }
-      if (/悬空|断开未接|未接到任何金属/.test(reason) && !/已连接|接到|压接|固定/.test(reason)) {
-        return false;
-      }
-      if (/黄绿|黄色|黄线|接地线|线鼻子|压接|螺栓/.test(reason)) return true;
-      if (/看不清|不清晰|无法确认|角度|遮挡|拿不准/.test(reason)) return true;
-      return false;
+      if (/完全看不到|没有黄绿|未见黄绿|无黄绿线|未见.*接地线/.test(reason)) return false;
+      if (!connectedTrue) return false;
+      return /黄绿|黄色|黄线|机壳|支架|抱箍|横担/.test(reason);
     } catch {
-      return !internal;
+      return false;
     }
   }
 
