@@ -64,23 +64,27 @@ export class VisionService {
     try {
       // SiliconFlow 必须能直接下载图片。localhost/内网地址和证书异常的
       // 七牛测试域名都无法由模型服务读取，因此在服务端转为 data URL。
+      const photoLoadErrors: string[] = [];
       const photoInputs = (
         await Promise.all(
-          fieldPhotos.map(async (url) => {
+          fieldPhotos.map(async (url, index) => {
             try {
               return await this.toImageDataUrl(url);
             } catch (err) {
-              this.logger.warn(`现场图读取失败，已跳过: ${(err as Error).message}`);
+              const msg = (err as Error).message || '未知错误';
+              photoLoadErrors.push(`第${index + 1}张: ${msg}`);
+              this.logger.warn(`现场图读取失败，已跳过: ${msg}`);
               return null;
             }
           }),
         )
       ).filter((url): url is string => Boolean(url));
       if (!photoInputs.length) {
+        const detail = photoLoadErrors.slice(0, 2).join('；') || '图床不可达或超时';
         return {
           status: CheckResult.ERROR,
           confidence: 0,
-          reason: '现场照片无法读取，请重新上传后再分析',
+          reason: `现场照片无法读取（${detail}），请点「重新分析」或重新上传后再试`,
           provider: 'siliconflow',
         };
       }
@@ -1903,27 +1907,46 @@ export class VisionService {
   }
 
   private async downloadImageDataUrl(absolute: string): Promise<string> {
-    const candidates = [absolute];
-    // 七牛测试域名通常只支持 HTTP，其 HTTPS 证书会被 Node 和浏览器拒绝。
+    const candidates: string[] = [];
+    // 七牛测试域名 HTTPS 证书常被 Node 拒绝，优先尝试 HTTP
     if (/^https:\/\/[^/]+\.clouddn\.com\//i.test(absolute)) {
-      candidates.push(absolute.replace(/^https:/i, 'http:'));
+      candidates.push(absolute.replace(/^https:/i, 'http:'), absolute);
+    } else if (/^http:\/\/[^/]+\.clouddn\.com\//i.test(absolute)) {
+      candidates.push(absolute, absolute.replace(/^http:/i, 'https:'));
+    } else {
+      candidates.push(absolute);
+      if (/^https:\/\//i.test(absolute) && /\.(qiniucdn|qnssl|qbox)\.com\//i.test(absolute)) {
+        candidates.push(absolute.replace(/^https:/i, 'http:'));
+      }
     }
 
     let lastError: Error | null = null;
-    // 图床连接、DNS 或 CDN 节点偶发抖动时自动恢复；此前单次失败就会转人工。
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
+    // 服务端在海外拉国内图床易抖动：加长超时、多轮重试、带浏览器 UA
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
       for (const url of candidates) {
         try {
           const resp = await fetch(url, {
-            signal: AbortSignal.timeout(10_000),
+            signal: AbortSignal.timeout(25_000),
             redirect: 'follow',
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (compatible; CursorFDZ-Vision/1.0; +https://vercel.app)',
+              Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+            },
           });
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
           const contentType = (resp.headers.get('content-type') || 'image/jpeg')
             .split(';')[0]
-            .trim();
-          if (!contentType.startsWith('image/')) {
+            .trim()
+            .toLowerCase();
+          // 部分图床返回 application/octet-stream，仍按图片处理
+          if (
+            contentType &&
+            !contentType.startsWith('image/') &&
+            contentType !== 'application/octet-stream' &&
+            contentType !== 'binary/octet-stream'
+          ) {
             throw new Error(`响应不是图片: ${contentType}`);
           }
 
@@ -1935,21 +1958,37 @@ export class VisionService {
           if (!bytes.length || bytes.length > 12 * 1024 * 1024) {
             throw new Error('图片为空或超过 12MB');
           }
-          // 压缩后再送模型：大幅降低超时与“视觉服务异常”
-          return await this.compressToVisionDataUrl(bytes, contentType);
+          return await this.compressToVisionDataUrl(
+            bytes,
+            contentType.startsWith('image/') ? contentType : 'image/jpeg',
+          );
         } catch (err) {
           lastError = err as Error;
+          const msg = lastError.message || '';
+          this.logger.warn(
+            `图片下载失败 try${attempt} ${url.slice(0, 80)}: ${msg.slice(0, 120)}`,
+          );
         }
       }
-      if (attempt < 3) await this.sleep(attempt * 250);
+      if (attempt < 4) await this.sleep(attempt * 400);
     }
-    throw new Error(`图片下载失败: ${lastError?.message || '未知错误'}`);
+    const tip = lastError?.message || '未知错误';
+    if (/timeout|aborted|TimeoutError/i.test(tip)) {
+      throw new Error('图床下载超时');
+    }
+    if (/HTTP 403|HTTP 401/.test(tip)) {
+      throw new Error('图床拒绝访问(鉴权/防盗链)');
+    }
+    if (/HTTP 404/.test(tip)) {
+      throw new Error('图片不存在或链接已失效');
+    }
+    throw new Error(`图片下载失败: ${tip}`);
   }
 
   /** 统一压缩为 JPEG data URL，控制体积与边长 */
   private async compressToVisionDataUrl(bytes: Buffer, contentType: string): Promise<string> {
     try {
-      const output = await sharp(bytes)
+      const output = await sharp(bytes, { failOn: 'none' })
         .rotate()
         .resize({
           width: 1600,
