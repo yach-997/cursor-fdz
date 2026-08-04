@@ -1,11 +1,7 @@
 import type { MenuConfig, UserRole } from '../types';
 
 /**
- * 侧栏：
- * - 仪表盘 / 数据分析：一级
- * - 费用结算：分组
- * - 报告审核 / 历史查询：一级（审核在上）
- * - 已下线菜单入口：预警中心、运维监控
+ * 侧栏顺序：看数 → 基础配置 → 费用结算 → 审核查询 → 设置
  */
 export const menuConfig: MenuConfig[] = [
   {
@@ -20,6 +16,27 @@ export const menuConfig: MenuConfig[] = [
     path: '/analysis',
     label: '数据分析',
     icon: 'BarChartOutlined',
+    roles: ['super_admin', 'site_manager'],
+  },
+  {
+    key: 'sites',
+    path: '/sites',
+    label: '站点管理',
+    icon: 'EnvironmentOutlined',
+    roles: ['super_admin', 'site_manager'],
+  },
+  {
+    key: 'users',
+    path: '/users',
+    label: '用户管理',
+    icon: 'TeamOutlined',
+    roles: ['super_admin', 'site_manager'],
+  },
+  {
+    key: 'templates',
+    path: '/templates',
+    label: '任务类型',
+    icon: 'FileTextOutlined',
     roles: ['super_admin', 'site_manager'],
   },
   {
@@ -81,27 +98,6 @@ export const menuConfig: MenuConfig[] = [
     ],
   },
   {
-    key: 'sites',
-    path: '/sites',
-    label: '站点管理',
-    icon: 'EnvironmentOutlined',
-    roles: ['super_admin', 'site_manager'],
-  },
-  {
-    key: 'users',
-    path: '/users',
-    label: '用户管理',
-    icon: 'TeamOutlined',
-    roles: ['super_admin', 'site_manager'],
-  },
-  {
-    key: 'templates',
-    path: '/templates',
-    label: '任务类型',
-    icon: 'FileTextOutlined',
-    roles: ['super_admin', 'site_manager'],
-  },
-  {
     key: 'hard-rules',
     path: '/hard-rules',
     label: 'AI 硬规则',
@@ -141,12 +137,10 @@ function filterMenuByRole(items: MenuConfig[], role: UserRole): MenuConfig[] {
     .filter((m) => !m.children || m.children.length > 0);
 }
 
-/** 根据角色过滤菜单 */
 export function getMenusByRole(role: UserRole): MenuConfig[] {
   return filterMenuByRole(menuConfig, role);
 }
 
-/** 扁平化所有可点击叶子菜单（用于选中态 / 标题） */
 export function flattenMenus(items: MenuConfig[]): MenuConfig[] {
   const out: MenuConfig[] = [];
   for (const item of items) {
@@ -156,7 +150,6 @@ export function flattenMenus(items: MenuConfig[]): MenuConfig[] {
   return out;
 }
 
-/** 登录后默认进仪表盘 */
 export function getHomePathByRole(role: UserRole): string {
   if (role === 'inspector') {
     return '/settings';
