@@ -24,3 +24,9 @@ export { CaseWorkRecord } from './case-work-record.entity';
 export { Assessment } from './assessment.entity';
 export { AssessmentEvent } from './assessment-event.entity';
 export { MonthlySettlement } from './monthly-settlement.entity';
+export {
+  AiHardRule,
+  AiHardRuleCode,
+  AiHardRuleMatchMode,
+  AiHardRuleEnforceMode,
+} from './ai-hard-rule.entity';

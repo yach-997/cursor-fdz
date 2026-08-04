@@ -35,6 +35,13 @@ export const menuConfig: MenuConfig[] = [
     roles: ['super_admin', 'site_manager'],
   },
   {
+    key: 'hard-rules',
+    path: '/hard-rules',
+    label: 'AI 硬规则',
+    icon: 'SafetyCertificateOutlined',
+    roles: ['super_admin'],
+  },
+  {
     key: 'records',
     path: '/records',
     label: '历史查询',

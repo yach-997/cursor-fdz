@@ -9,6 +9,7 @@ const LoginPage = lazy(() => import('../pages/login'));
 const SitesPage = lazy(() => import('../pages/sites'));
 const UsersPage = lazy(() => import('../pages/users'));
 const TemplatesPage = lazy(() => import('../pages/templates'));
+const HardRulesPage = lazy(() => import('../pages/hard-rules'));
 const RecordsPage = lazy(() => import('../pages/records'));
 const AuditPage = lazy(() => import('../pages/audit'));
 const SettingsPage = lazy(() => import('../pages/settings'));
@@ -104,6 +105,16 @@ export const router = createBrowserRouter([
           <AuthGuard roles={['super_admin', 'site_manager']}>
             <Lazy>
               <TemplatesPage />
+            </Lazy>
+          </AuthGuard>
+        ),
+      },
+      {
+        path: 'hard-rules',
+        element: (
+          <AuthGuard roles={['super_admin']}>
+            <Lazy>
+              <HardRulesPage />
             </Lazy>
           </AuthGuard>
         ),

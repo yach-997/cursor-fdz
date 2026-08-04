@@ -1,18 +1,20 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { InspectionRecord, InspectionTask } from '../../entities';
+import { InspectionRecord, InspectionTask, AiHardRule } from '../../entities';
 import { RecordModule } from '../record/record.module';
 import { AiService } from './ai.service';
 import { AiController } from './ai.controller';
 import { VisionService } from './vision.service';
+import { HardRuleService } from './hard-rule.service';
+import { HardRuleController } from './hard-rule.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([InspectionRecord, InspectionTask]),
+    TypeOrmModule.forFeature([InspectionRecord, InspectionTask, AiHardRule]),
     RecordModule,
   ],
-  controllers: [AiController],
-  providers: [AiService, VisionService],
-  exports: [AiService, VisionService],
+  controllers: [AiController, HardRuleController],
+  providers: [AiService, VisionService, HardRuleService],
+  exports: [AiService, VisionService, HardRuleService],
 })
 export class AiModule {}

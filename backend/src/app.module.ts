@@ -25,6 +25,7 @@ import {
   Assessment,
   MonthlySettlement,
   AssessmentEvent,
+  AiHardRule,
 } from './entities';
 import { AuthModule } from './modules/auth/auth.module';
 import { SiteModule } from './modules/site/site.module';
@@ -101,6 +102,7 @@ import { HealthController } from './modules/health/health.controller';
               Assessment,
               MonthlySettlement,
               AssessmentEvent,
+            AiHardRule,
           ],
           synchronize,
           logging: config.get<string>('NODE_ENV') === 'development',

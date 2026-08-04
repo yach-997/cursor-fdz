@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import sharp from 'sharp';
 import { CheckResult } from '../../common/enums';
+import { HardRuleService } from './hard-rule.service';
 
 export interface VisionCompareResult {
   status: CheckResult.PASS | CheckResult.FAIL | CheckResult.ERROR;
@@ -17,7 +18,10 @@ export class VisionService {
   private readonly imageDataCache = new Map<string, { dataUrl: string; expiresAt: number }>();
   private readonly imageDownloadInFlight = new Map<string, Promise<string>>();
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly hardRules: HardRuleService,
+  ) {}
 
   isEnabled() {
     return Boolean((this.config.get<string>('VISION_API_KEY') || '').trim());
@@ -104,13 +108,52 @@ export class VisionService {
 
       const criteria = String(checkCriteria || '').trim();
       const remark = String(options?.remark || '').trim();
-      const grounding = this.isGroundingCheck(criteria);
-      const faultRecord = this.isFaultRecordCheck(criteria);
-      const sungrowShot = this.isSungrowShotCheck(criteria);
-      const mountFix = this.isMountFixCheck(criteria);
-      const dcSide = this.isDcSideCheck(criteria);
-      const acSide = this.isAcSideCheck(criteria);
+      const [acMode, gndMode, dcMode, faultMode, sungrowMode, mountMode] = await Promise.all([
+        this.hardRules.getEnforceMode('ac_side'),
+        this.hardRules.getEnforceMode('grounding'),
+        this.hardRules.getEnforceMode('dc_side'),
+        this.hardRules.getEnforceMode('fault_record'),
+        this.hardRules.getEnforceMode('sungrow'),
+        this.hardRules.getEnforceMode('mount_fix'),
+      ]);
+      const grounding = this.isGroundingCheck(criteria) && gndMode !== 'off';
+      const faultRecord = this.isFaultRecordCheck(criteria) && faultMode !== 'off';
+      const sungrowShot = this.isSungrowShotCheck(criteria) && sungrowMode !== 'off';
+      const mountFix = this.isMountFixCheck(criteria) && mountMode !== 'off';
+      const dcSide = this.isDcSideCheck(criteria) && dcMode !== 'off';
+      const acSide = this.isAcSideCheck(criteria) && acMode !== 'off';
       const hardItem = grounding || faultRecord || sungrowShot || mountFix || dcSide || acSide;
+
+      const [
+        groundingPrompt,
+        sungrowPrompt,
+        mountPrompt,
+        dcPrompt,
+        acPrompt,
+        faultPrompt,
+      ] = await Promise.all([
+        grounding
+          ? this.hardRules.getEffectivePrompt('grounding', this.groundingHardRules(photoInputs.length, sampleInputs.length))
+          : Promise.resolve(''),
+        sungrowShot
+          ? this.hardRules.getEffectivePrompt('sungrow', this.sungrowShotHardRules())
+          : Promise.resolve(''),
+        mountFix
+          ? this.hardRules.getEffectivePrompt('mount_fix', this.mountFixHardRules())
+          : Promise.resolve(''),
+        dcSide
+          ? this.hardRules.getEffectivePrompt('dc_side', this.dcSideHardRules())
+          : Promise.resolve(''),
+        acSide
+          ? this.hardRules.getEffectivePrompt('ac_side', this.acSideHardRules())
+          : Promise.resolve(''),
+        faultRecord
+          ? this.hardRules.getEffectivePrompt(
+              'fault_record',
+              this.faultRecordHardRules(photoInputs.length),
+            )
+          : Promise.resolve(''),
+      ]);
 
       // 关键检查项配置了标准图但读取失败时，禁止绕过标准继续自动判定。
       if (hardItem && samples.length > 0 && sampleInputs.length !== samples.length) {
@@ -165,6 +208,7 @@ export class VisionService {
           model,
           photoInputs,
           sampleInputs,
+          enforceMode: gndMode,
         });
         return { ...checked, provider: 'siliconflow' };
       }
@@ -205,13 +249,21 @@ export class VisionService {
               : '3) 仅当现场照片本身关键缺陷明确、或关键要求明显缺失时才判 fail；拿不准时优先 pass，并在 reason 说明存疑点；',
             '4) 证据越充分（多角度、完整画面）越应提高 confidence；证据不足时降低 confidence 并倾向 fail（硬性项）。',
             faultRecord
-              ? this.faultRecordHardRules(photoInputs.length)
+              ? [
+                  `【上传故障记录】本次共有 ${photoInputs.length} 张现场故障截图（不含合格样本图）。`,
+                  photoInputs.length >= 2
+                    ? '张数已满足至少 2 张，禁止再输出“张数不足”。'
+                    : '当前现场截图少于 2 张，应判定张数不足。',
+                  faultPrompt,
+                ]
+                  .filter(Boolean)
+                  .join('\n')
               : this.faultRecordSoftHint(),
-            grounding ? this.groundingHardRules(photoInputs.length, sampleInputs.length) : '',
-            sungrowShot ? this.sungrowShotHardRules() : '',
-            mountFix ? this.mountFixHardRules() : '',
-            dcSide ? this.dcSideHardRules() : '',
-            acSide ? this.acSideHardRules() : '',
+            grounding ? groundingPrompt : '',
+            sungrowShot ? sungrowPrompt : '',
+            mountFix ? mountPrompt : '',
+            dcSide ? dcPrompt : '',
+            acSide ? acPrompt : '',
             criteria ? `检查要求：\n${criteria}` : '未提供文字检查要求时，按通用现场质检规范判断。',
             remark ? `工程师备注：${remark}` : '工程师备注：无',
             '只输出 JSON（不要 Markdown）：',
@@ -313,27 +365,29 @@ export class VisionService {
                 : acSide
                   ? this.enforceAcSideResult(parsed, raw, sampleInputs.length)
                   : parsed;
-      // 交流侧：只做一次短复核，避免主请求+探针+缺陷复核串行导致整体超时
+      // 交流侧：strict 才做二次复核；normal 只做主请求证据强制
       if (acSide) {
         if (enforced.status === CheckResult.FAIL && /主PE|铜编织|铜芯|相线屏蔽/.test(enforced.reason || '')) {
-          try {
-            const peOk = await this.probeAcMainPeStrict({
-              apiKey,
-              baseUrl,
-              model,
-              photoInputs,
-            });
-            if (peOk && !/相线接线正常/.test(enforced.reason || '')) {
-              enforced = {
-                status: CheckResult.PASS,
-                confidence: 0.9,
-                reason: '交流侧相线正常，主PE铜芯接地线/铜编织带已可靠压接到PE端子，合格。',
-              };
+          if (acMode === 'strict') {
+            try {
+              const peOk = await this.probeAcMainPeStrict({
+                apiKey,
+                baseUrl,
+                model,
+                photoInputs,
+              });
+              if (peOk && !/相线接线正常/.test(enforced.reason || '')) {
+                enforced = {
+                  status: CheckResult.PASS,
+                  confidence: 0.9,
+                  reason: '交流侧相线正常，主PE铜芯接地线/铜编织带已可靠压接到PE端子，合格。',
+                };
+              }
+            } catch (error) {
+              this.logger.warn(`AC PE strict probe failed: ${(error as Error).message}`);
             }
-          } catch (error) {
-            this.logger.warn(`AC PE strict probe failed: ${(error as Error).message}`);
           }
-        } else if (enforced.status === CheckResult.PASS) {
+        } else if (enforced.status === CheckResult.PASS && acMode === 'strict') {
           enforced = await this.auditAcMainPeDefect({
             apiKey,
             baseUrl,
@@ -344,7 +398,7 @@ export class VisionService {
         }
       }
       // 直流侧首轮合格时再做放大复核；复核服务异常时回退首轮结论，避免整项分析失败。
-      if (dcSide && enforced.status === CheckResult.PASS) {
+      if (dcSide && enforced.status === CheckResult.PASS && dcMode === 'strict') {
         enforced = await this.auditDcUnusedPorts({
           apiKey,
           baseUrl,
@@ -1574,12 +1628,24 @@ export class VisionService {
     model: string;
     photoInputs: string[];
     sampleInputs: string[];
+    enforceMode?: string;
   }): Promise<Omit<VisionCompareResult, 'provider'>> {
     let first: Omit<VisionCompareResult, 'provider'> | null = null;
     try {
       first = await this.auditGroundingConnectionsSimple(args);
     } catch (error) {
       this.logger.warn(`Grounding simple audit failed: ${(error as Error).message}`);
+    }
+
+    // normal：只跑轻量审核；strict：再跑全图探针
+    if (args.enforceMode === 'normal') {
+      return (
+        first || {
+          status: CheckResult.ERROR,
+          confidence: 0,
+          reason: '接地分析暂时失败，请点「重新分析」或人工判断',
+        }
+      );
     }
 
     try {
@@ -1774,14 +1840,21 @@ export class VisionService {
         type: 'text',
         text: [
           '你是接地安全复核员。对每张现场照片单独检查，禁止跨照片拼接证据。',
-          '必须同时满足：①箱内主PE已连接；②箱外黄绿/黄色接地线连接机壳或支架。',
-          '箱内合格：任一张箱内开盖图能看见较粗裸铜编织带/铜芯压在PE螺栓上；仅柜门黄绿跳线 ≠ 主PE。',
-          '柜门黄绿跳线不能替代主PE。同框有相线不影响主PE合格。',
-          '箱外合格：任一张箱外机壳/抱杆侧视图上，黄绿线或黄色线接到机壳/支架/横担/抱箍；侧视看见线走向并固定即可，不必特写。',
-          '注意：上传顺序不定，可能先拍箱外后拍箱内，禁止按序号猜测视角。',
+          await this.hardRules.getEffectivePrompt(
+            'grounding',
+            [
+              '必须同时满足：①箱内主PE已连接；②箱外黄绿/黄色接地线连接机壳或支架。',
+              '箱内合格：任一张箱内开盖图能看见较粗裸铜编织带/铜芯压在PE螺栓上；仅柜门黄绿跳线 ≠ 主PE。',
+              '柜门黄绿跳线不能替代主PE。同框有相线不影响主PE合格。',
+              '箱外合格：任一张箱外机壳/抱杆侧视图上，黄绿线或黄色线接到机壳/支架/横担/抱箍；侧视看见线走向并固定即可，不必特写。',
+              '注意：上传顺序不定，可能先拍箱外后拍箱内，禁止按序号猜测视角。',
+            ].join('\n'),
+          ),
           '任一点不合格 → 整项 fail。只输出 JSON（须含 photoChecks）：',
           '{"status":"pass"|"fail","confidence":0~1,"reason":"逐张说明","evidence":{"photoTypes":["internal_main_pe"|"external_chassis_ground"|"other"],"photoChecks":[{"photoIndex":1,"type":"internal_main_pe|external_chassis_ground|other","internalMainPeConnected":true|false,"externalGroundConnected":true|false,"wireAndTerminalVisibleInSamePhoto":true|false,"reason":"本张独立结论"}],"hasInternalMainPePhoto":true|false,"internalMainPeConnected":true|false,"hasExternalGroundPhoto":true|false,"externalGroundConnected":true|false,"matchesSampleViews":true|false}}',
-        ].join('\n'),
+        ]
+          .filter(Boolean)
+          .join('\n'),
       },
     ];
     args.photoInputs.forEach((dataUrl, index) => {
