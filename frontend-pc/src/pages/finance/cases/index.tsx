@@ -1119,13 +1119,24 @@ export default function FinanceCasesPage() {
         }
         cancelText="取消"
         okButtonProps={{
-          disabled:
-            assignMode === 'multi'
-              ? assigning?.status === 'pending_assign'
-                ? inspectorIds.length === 0
-                : inspectorIds.filter((id) => !activeAssignees.some((a) => a.id === id)).length ===
-                  0
-              : !inspectorId,
+          disabled: (() => {
+            if (assignMode === 'multi') {
+              if (assigning?.status === 'pending_assign') {
+                return inspectorIds.length === 0;
+              }
+              const adding = inspectorIds.filter(
+                (id) => !activeAssignees.some((a) => a.id === id),
+              );
+              const convertingFromSingle =
+                (assigning?.assignMode || 'single') !== 'multi';
+              // 单人改多人：可只改模式/台数（保留原人）；已是多人则必须选新人
+              if (convertingFromSingle) {
+                return activeAssignees.length === 0 && adding.length === 0;
+              }
+              return adding.length === 0;
+            }
+            return !inspectorId;
+          })(),
         }}
         onCancel={() => {
           assignLoadSeq.current += 1;
@@ -1137,12 +1148,25 @@ export default function FinanceCasesPage() {
           const multi = assignMode === 'multi';
           const isFirst = assigning.status === 'pending_assign';
           if (multi) {
-            const existing = new Set(activeAssignees.map((a) => a.id));
+            const existingIds = activeAssignees.map((a) => a.id);
+            const existing = new Set(existingIds);
+            const convertingFromSingle =
+              !isFirst && (assigning.assignMode || 'single') !== 'multi';
+            const added = inspectorIds.filter((id) => !existing.has(id));
+            // 首次派单：用所选；单人改多人：原人+新人；多人加人：仅新人
             const toSend = isFirst
               ? inspectorIds
-              : inspectorIds.filter((id) => !existing.has(id));
+              : convertingFromSingle
+                ? [...new Set([...existingIds, ...added])]
+                : added;
             if (!toSend.length) {
-              message.warning(isFirst ? '请选择工程师' : '请选择要追加的工程师');
+              message.warning(
+                isFirst
+                  ? '请选择工程师'
+                  : convertingFromSingle
+                    ? '请保留原工程师或选择要派的工程师'
+                    : '请选择要追加的工程师',
+              );
               return;
             }
             await assignFinanceCase(assigning.id, toSend, assignReason || undefined, {
@@ -1150,7 +1174,13 @@ export default function FinanceCasesPage() {
               plannedUnits: Math.max(1, plannedUnits || 1),
             });
             message.success(
-              isFirst ? `已派给 ${toSend.length} 名工程师` : `已追加 ${toSend.length} 名工程师`,
+              isFirst
+                ? `已派给 ${toSend.length} 名工程师`
+                : convertingFromSingle
+                  ? added.length
+                    ? `已改为多人模式，并追加 ${added.length} 名工程师`
+                    : '已改为多人模式'
+                  : `已追加 ${toSend.length} 名工程师`,
             );
           } else {
             if (!inspectorId) return;
@@ -1172,12 +1202,24 @@ export default function FinanceCasesPage() {
           <Select
             style={{ width: '100%' }}
             value={assignMode}
-            disabled={assigning?.status !== 'pending_assign' && activeAssignees.length > 0}
+            disabled={
+              // 已是多人且有在派人：锁定为多人（加人/撤回）；单人已派允许改多人
+              assigning?.status !== 'pending_assign' &&
+              (assigning?.assignMode || 'single') === 'multi' &&
+              activeAssignees.length > 0
+            }
             onChange={(v: 'single' | 'multi') => {
               setAssignMode(v);
               if (v === 'single') {
                 setInspectorIds(inspectorId ? [inspectorId] : []);
                 setPlannedUnits(1);
+              } else if (
+                assigning?.status !== 'pending_assign' &&
+                (assigning?.assignMode || 'single') === 'single'
+              ) {
+                // 单人改多人：预填台数，保留当前在派人
+                setPlannedUnits((n) => Math.max(n || 1, activeAssignees.length || 1, 2));
+                setInspectorIds([]);
               }
             }}
             options={[
@@ -1188,6 +1230,10 @@ export default function FinanceCasesPage() {
           {assigning?.status === 'pending_assign' ? (
             <div style={{ marginTop: 6, color: '#8c8c8c', fontSize: 12 }}>
               默认单人；需要多人作业时在此切换，并自行填写计划台数。
+            </div>
+          ) : (assigning?.assignMode || 'single') === 'single' ? (
+            <div style={{ marginTop: 6, color: '#8c8c8c', fontSize: 12 }}>
+              可改为多人模式：设置计划台数后确认即可；也可顺带追加工程师，原工程师保留。
             </div>
           ) : null}
         </div>
@@ -1257,9 +1303,11 @@ export default function FinanceCasesPage() {
               showIcon
               style={{ marginBottom: 12 }}
               message={
-                activeAssignees.length
-                  ? '多人模式：选择要追加的工程师（不会踢掉现有人）。'
-                  : '多人模式：可同时派多名工程师，按完成的作业台数分绩效。'
+                (assigning?.assignMode || 'single') !== 'multi' && activeAssignees.length > 0
+                  ? '正在改为多人模式：原工程师保留。可设置计划台数，也可顺带追加其他人。'
+                  : activeAssignees.length
+                    ? '多人模式：选择要追加的工程师（不会踢掉现有人）。'
+                    : '多人模式：可同时派多名工程师，按完成的作业台数分绩效。'
               }
             />
             <div style={{ marginBottom: 12 }}>
