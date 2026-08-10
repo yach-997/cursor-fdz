@@ -23,6 +23,8 @@ import {
   ClearConfirmQueryDto,
   FinanceCaseQueryDto,
   OcrMileageDto,
+  OcrDeviceSerialDto,
+  SaveUnitSerialDto,
   ReviewExpenseDto,
   SaveCaseWorkDto,
   SaveExpenseClaimDto,
@@ -195,6 +197,31 @@ export class FinanceCaseController {
   ) {
     return this.multi.ocrUnitMileage(id, unitId, dto.imageUrl, dto.kind, user);
   }
+
+  /** 识别设备序列号 */
+  @Post(':id/units/:unitId/serial/ocr')
+  @Roles(UserRole.INSPECTOR)
+  ocrUnitSerial(
+    @Param('id') id: string,
+    @Param('unitId') unitId: string,
+    @Body() dto: OcrDeviceSerialDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.multi.ocrUnitDeviceSerial(id, unitId, dto.imageUrl, user);
+  }
+
+  /** 确认/手改本台设备序列号 */
+  @Post(':id/units/:unitId/serial')
+  @Roles(UserRole.INSPECTOR)
+  saveUnitSerial(
+    @Param('id') id: string,
+    @Param('unitId') unitId: string,
+    @Body() dto: SaveUnitSerialDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.multi.saveUnitDeviceSerial(id, unitId, dto, user);
+  }
+
   @Post(':id/expenses') @Roles(UserRole.INSPECTOR) saveExpense(
     @Param('id') id: string,
     @Body() dto: SaveExpenseClaimDto,

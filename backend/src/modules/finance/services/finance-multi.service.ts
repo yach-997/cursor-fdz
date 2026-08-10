@@ -2,7 +2,9 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
+  OnModuleInit,
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -50,7 +52,10 @@ type TripExpenseInput = {
 };
 
 @Injectable()
-export class FinanceMultiService {
+export class FinanceMultiService implements OnModuleInit {
+  private readonly logger = new Logger(FinanceMultiService.name);
+  private serialColsReady = false;
+
   constructor(
     @InjectRepository(ServiceCase) private readonly cases: Repository<ServiceCase>,
     @InjectRepository(CaseAssignment) private readonly assignments: Repository<CaseAssignment>,
@@ -69,8 +74,31 @@ export class FinanceMultiService {
     private readonly settlement: FinanceSettlementService,
   ) {}
 
+  async onModuleInit() {
+    await this.ensureDeviceSerialColumns();
+  }
+
+  /** 兼容未跑迁移的环境：补齐序列号相关列 */
+  private async ensureDeviceSerialColumns() {
+    if (this.serialColsReady) return;
+    try {
+      await this.units.manager.query(`
+        ALTER TABLE case_work_unit
+          ADD COLUMN IF NOT EXISTS device_serial varchar(128),
+          ADD COLUMN IF NOT EXISTS serial_photo_url text,
+          ADD COLUMN IF NOT EXISTS serial_confirmed_at timestamptz
+      `);
+      this.serialColsReady = true;
+    } catch (err) {
+      this.logger.warn(
+        `ensureDeviceSerialColumns skipped: ${(err as Error).message || err}`,
+      );
+    }
+  }
+
   /** 同步案例执行单元：按 plannedUnits 创建缺失、清理超出计划且仍可认领的单元 */
   async ensureWorkUnits(serviceCase: ServiceCase) {
+    await this.ensureDeviceSerialColumns();
     const planned = Math.max(1, Number(serviceCase.plannedUnits) || 1);
     const existing = await this.units.find({
       where: { serviceCaseId: serviceCase.id },
@@ -922,6 +950,53 @@ export class FinanceMultiService {
     await this.resolveExpenseUnit(caseId, user, unitId);
     const result = await this.vision.readOdometerMileage(imageUrl);
     return { ...result, kind: kind || 'start' };
+  }
+
+  async ocrUnitDeviceSerial(caseId: string, unitId: string, imageUrl: string, user: CurrentUserContext) {
+    await this.resolveSerialUnit(caseId, unitId, user);
+    return this.vision.readDeviceSerial(imageUrl);
+  }
+
+  async saveUnitDeviceSerial(
+    caseId: string,
+    unitId: string,
+    dto: { deviceSerial: string; serialPhotoUrl?: string },
+    user: CurrentUserContext,
+  ) {
+    const unit = await this.resolveSerialUnit(caseId, unitId, user);
+    const serial = String(dto.deviceSerial || '')
+      .trim()
+      .replace(/\s+/g, '')
+      .toUpperCase();
+    if (!serial || serial.length < 4) {
+      throw new BadRequestException('请填写有效的设备序列号（至少 4 位）');
+    }
+    unit.deviceSerial = serial.slice(0, 128);
+    if (dto.serialPhotoUrl?.trim()) {
+      unit.serialPhotoUrl = dto.serialPhotoUrl.trim();
+    }
+    unit.serialConfirmedAt = new Date();
+    await this.units.save(unit);
+    return {
+      id: unit.id,
+      seq: unit.seq,
+      deviceSerial: unit.deviceSerial,
+      serialPhotoUrl: unit.serialPhotoUrl,
+      serialConfirmedAt: unit.serialConfirmedAt,
+    };
+  }
+
+  private async resolveSerialUnit(caseId: string, unitId: string, user: CurrentUserContext) {
+    await this.caseForAssignee(caseId, user);
+    const unit = await this.units.findOne({ where: { id: unitId, serviceCaseId: caseId } });
+    if (!unit) throw new NotFoundException('作业台不存在');
+    if (unit.inspectorId !== user.id) {
+      throw new BadRequestException('只能为自己认领的台确认序列号');
+    }
+    if (!['claimed', 'submitted', 'completed'].includes(unit.status)) {
+      throw new BadRequestException('请先认领该台后再识别序列号');
+    }
+    return unit;
   }
 
   private async resolveExpenseUnit(

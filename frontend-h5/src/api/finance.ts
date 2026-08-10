@@ -114,6 +114,9 @@ export interface MobileFinanceCase {
     status: string;
     inspectorId?: string | null;
     inspectionTaskId?: string | null;
+    deviceSerial?: string | null;
+    serialPhotoUrl?: string | null;
+    serialConfirmedAt?: string | null;
   }>;
   assignTime?: string;
   finishTime?: string;
@@ -283,6 +286,38 @@ export async function ocrUnitMileage(
     >(`/cases/${caseId}/units/${unitId}/expense/ocr-mileage`, { imageUrl, kind }),
   );
 }
+
+export async function ocrUnitDeviceSerial(caseId: string, unitId: string, imageUrl: string) {
+  return unwrap(
+    await request.post<
+      ApiResponse<{
+        serial: string | null;
+        confidence: number;
+        rawText: string;
+        provider: string;
+      }>
+    >(`/cases/${caseId}/units/${unitId}/serial/ocr`, { imageUrl }),
+  );
+}
+
+export async function saveUnitDeviceSerial(
+  caseId: string,
+  unitId: string,
+  payload: { deviceSerial: string; serialPhotoUrl?: string },
+) {
+  return unwrap(
+    await request.post<
+      ApiResponse<{
+        id: string;
+        seq: number;
+        deviceSerial: string;
+        serialPhotoUrl?: string | null;
+        serialConfirmedAt?: string;
+      }>
+    >(`/cases/${caseId}/units/${unitId}/serial`, payload),
+  );
+}
+
 /** @deprecated 使用 saveUnitTripExpense */
 export async function saveFinanceExpense(
   caseId: string,

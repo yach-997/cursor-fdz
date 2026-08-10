@@ -2472,6 +2472,75 @@ export class VisionService {
     }
   }
 
+  /**
+   * 识别设备铭牌/机身序列号。失败时 serial 为 null，由工程师手填。
+   */
+  async readDeviceSerial(imageUrl: string): Promise<{
+    serial: string | null;
+    confidence: number;
+    rawText: string;
+    provider: 'siliconflow' | 'mock';
+  }> {
+    const url = String(imageUrl || '').trim();
+    if (!url) {
+      return { serial: null, confidence: 0, rawText: '缺少图片', provider: 'mock' };
+    }
+    const apiKey = (this.config.get<string>('VISION_API_KEY') || '').trim();
+    if (!apiKey) {
+      return {
+        serial: null,
+        confidence: 0,
+        rawText: '未配置视觉识别，请手填序列号',
+        provider: 'mock',
+      };
+    }
+    const baseUrl = (
+      this.config.get<string>('VISION_BASE_URL') || 'https://api.siliconflow.cn/v1'
+    ).replace(/\/$/, '');
+    const model = this.config.get<string>('VISION_MODEL') || 'Qwen/Qwen3-VL-8B-Instruct';
+    try {
+      const dataUrl = await this.toImageDataUrl(url);
+      const content: Array<Record<string, unknown>> = [
+        {
+          type: 'text',
+          text: [
+            '这是光伏/储能等电力设备铭牌或机身照片。请读取设备序列号（Serial Number / SN / S/N）。',
+            '只返回 JSON，不要其它文字：',
+            '{"serial":"序列号字符串或null","confidence":0到1,"raw":"你看到的原始文本"}',
+            'serial 只含字母数字与常见分隔符（- _ /），去掉空格；看不清则 serial=null。',
+            '不要把型号、功率、日期误当成序列号。',
+          ].join('\n'),
+        },
+        { type: 'image_url', image_url: { url: dataUrl } },
+      ];
+      const raw = await this.callVisionChat({
+        apiKey,
+        baseUrl,
+        model,
+        content,
+        temperature: 0,
+        maxTokens: 200,
+        timeoutMs: 45_000,
+        label: 'device-serial',
+      });
+      const parsed = this.parseDeviceSerialJson(raw);
+      return {
+        serial: parsed.serial,
+        confidence: parsed.confidence,
+        rawText: parsed.raw || raw.slice(0, 120),
+        provider: 'siliconflow',
+      };
+    } catch (err) {
+      this.logger.warn(`readDeviceSerial failed: ${(err as Error).message}`);
+      return {
+        serial: null,
+        confidence: 0,
+        rawText: (err as Error).message || '识别失败',
+        provider: 'siliconflow',
+      };
+    }
+  }
+
   private parseOdometerJson(text: string): {
     mileage: number | null;
     confidence: number;
@@ -2498,6 +2567,42 @@ export class VisionService {
         mileage,
         confidence: Number(confidence.toFixed(2)),
         raw: String(obj.raw || '').slice(0, 80),
+      };
+    } catch {
+      return fallback;
+    }
+  }
+
+  private parseDeviceSerialJson(text: string): {
+    serial: string | null;
+    confidence: number;
+    raw: string;
+  } {
+    const fallback = { serial: null as string | null, confidence: 0, raw: text.slice(0, 120) };
+    try {
+      const match = text.match(/\{[\s\S]*\}/);
+      if (!match) return fallback;
+      const obj = JSON.parse(match[0]) as {
+        serial?: unknown;
+        confidence?: unknown;
+        raw?: unknown;
+      };
+      let serial: string | null = null;
+      const rawSerial = String(obj.serial ?? '')
+        .trim()
+        .replace(/\s+/g, '')
+        .toUpperCase();
+      if (rawSerial && rawSerial.toLowerCase() !== 'null' && rawSerial.length >= 4) {
+        serial = rawSerial.slice(0, 128);
+      }
+      const confidence = Math.max(
+        0,
+        Math.min(1, Number(obj.confidence ?? (serial ? 0.7 : 0)) || 0),
+      );
+      return {
+        serial,
+        confidence: Number(confidence.toFixed(2)),
+        raw: String(obj.raw || rawSerial || '').slice(0, 80),
       };
     } catch {
       return fallback;

@@ -51,6 +51,7 @@ export default function FinanceCaseDetailPage() {
   const [item, setItem] = useState<MobileFinanceCase>();
   const [busy, setBusy] = useState(false);
   const [unitFilter, setUnitFilter] = useState<UnitFilter>('mine');
+  const [unitSearch, setUnitSearch] = useState('');
   const [gridLimit, setGridLimit] = useState(GRID_PAGE);
   const [showCompletedAll, setShowCompletedAll] = useState(false);
   /** 本地聚焦台：可在已认领多台之间切换，不必等当前台完成 */
@@ -183,6 +184,14 @@ export default function FinanceCaseDetailPage() {
       .sort((a, b) => a.seq - b.seq);
   }, [units, userId]);
 
+  const matchUnitSearch = (u: UnitItem) => {
+    const q = unitSearch.trim().toUpperCase();
+    if (!q) return true;
+    if (String(u.seq).includes(q.replace(/^#/, ''))) return true;
+    if (String(u.deviceSerial || '').toUpperCase().includes(q)) return true;
+    return false;
+  };
+
   const claimedUnits = useMemo(
     () => units.filter((u) => u.status === 'claimed' || u.status === 'submitted'),
     [units],
@@ -190,6 +199,22 @@ export default function FinanceCaseDetailPage() {
   const completedUnits = useMemo(
     () => units.filter((u) => u.status === 'completed').sort((a, b) => a.seq - b.seq),
     [units],
+  );
+  const filteredMine = useMemo(
+    () => myUnitList.filter(matchUnitSearch),
+    [myUnitList, unitSearch],
+  );
+  const filteredOpen = useMemo(
+    () => openUnits.filter(matchUnitSearch),
+    [openUnits, unitSearch],
+  );
+  const filteredClaimed = useMemo(
+    () => claimedUnits.filter(matchUnitSearch),
+    [claimedUnits, unitSearch],
+  );
+  const filteredCompleted = useMemo(
+    () => completedUnits.filter(matchUnitSearch),
+    [completedUnits, unitSearch],
   );
 
   const myActive = useMemo(() => {
@@ -570,12 +595,35 @@ export default function FinanceCaseDetailPage() {
             ))}
           </div>
 
+          <div className="unit-search-row">
+            <input
+              className="unit-search-input"
+              type="search"
+              value={unitSearch}
+              placeholder={`搜索序列号或${unitLabel}号`}
+              onChange={(e) => setUnitSearch(e.target.value)}
+            />
+            {unitSearch.trim() ? (
+              <button
+                type="button"
+                className="unit-search-clear"
+                onClick={() => setUnitSearch('')}
+              >
+                清除
+              </button>
+            ) : null}
+          </div>
+
           {unitFilter === 'mine' && (
             <ul className="unit-mine-list">
-              {myUnitList.length === 0 ? (
-                <li className="mobile-finance-muted">暂无我的{unitLabel}</li>
+              {filteredMine.length === 0 ? (
+                <li className="mobile-finance-muted">
+                  {myUnitList.length === 0
+                    ? `暂无我的${unitLabel}`
+                    : '没有匹配的序列号'}
+                </li>
               ) : (
-                myUnitList.map((u) => {
+                filteredMine.map((u) => {
                   const canEnter = u.status === 'claimed';
                   const canViewReport =
                     !!u.inspectionTaskId &&
@@ -583,9 +631,16 @@ export default function FinanceCaseDetailPage() {
                   const isFocus = u.id === myActive?.id;
                   return (
                     <li key={u.id} className={isFocus ? 'is-focus' : ''}>
-                      <span>
-                        {unitLabel} #{u.seq}
-                        {isFocus ? ' · 当前' : ''}
+                      <span className="unit-mine-meta">
+                        <span>
+                          {unitLabel} #{u.seq}
+                          {isFocus ? ' · 当前' : ''}
+                        </span>
+                        <span
+                          className={`unit-serial ${u.deviceSerial ? '' : 'is-empty'}`}
+                        >
+                          {u.deviceSerial?.trim() || '未识别'}
+                        </span>
                       </span>
                       <span className="unit-mine-actions">
                         <em>{UNIT_STATUS_LABEL[u.status] || u.status}</em>
@@ -618,63 +673,33 @@ export default function FinanceCaseDetailPage() {
 
           {multiWorking && unitFilter === 'open' && (
             <>
-              {openUnits.length === 0 ? (
-                <p className="mobile-finance-muted">没有可认领的{unitLabel}</p>
+              {filteredOpen.length === 0 ? (
+                <p className="mobile-finance-muted">
+                  {openUnits.length === 0
+                    ? `没有可认领的${unitLabel}`
+                    : '没有匹配的序列号'}
+                </p>
               ) : (
                 <>
                   <p className="mobile-finance-muted unit-hint" style={{ marginTop: 10 }}>
-                    推荐点上方「认领下一{unitLabel}」。要特定编号时再输入台号。
+                    日常点上方「认领下一{unitLabel}」；要指定某台，直接点编号即可。
                   </p>
-                  <div className="unit-pick-row">
-                    <input
-                      className="unit-pick-input"
-                      type="number"
-                      inputMode="numeric"
-                      min={1}
-                      placeholder={`台号，如 ${openUnits[0].seq}`}
-                      value={pickSeq}
-                      onChange={(e) => setPickSeq(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          void claimBySeq();
-                        }
-                      }}
-                    />
+                  <div className="unit-grid">
+                    {filteredOpen.slice(0, gridLimit).map((u) => renderUnitChip(u, true))}
+                  </div>
+                  {filteredOpen.length > gridLimit ? (
                     <button
                       type="button"
-                      className="unit-pick-btn"
-                      disabled={busy}
-                      onClick={() => void claimBySeq()}
+                      className="unit-more-btn"
+                      onClick={() => setGridLimit((n) => n + GRID_PAGE)}
                     >
-                      认领
+                      再显示 {Math.min(GRID_PAGE, filteredOpen.length - gridLimit)} 台（还剩{' '}
+                      {filteredOpen.length - gridLimit}）
                     </button>
-                  </div>
-                  <button
-                    type="button"
-                    className="unit-more-btn"
-                    onClick={() => setShowOpenPicker((v) => !v)}
-                  >
-                    {showOpenPicker
-                      ? '收起列表'
-                      : `从列表选（共 ${openUnits.length}，每次 ${GRID_PAGE} 台）`}
-                  </button>
-                  {showOpenPicker && (
-                    <>
-                      <div className="unit-grid">
-                        {openUnits.slice(0, gridLimit).map((u) => renderUnitChip(u, true))}
-                      </div>
-                      {openUnits.length > gridLimit && (
-                        <button
-                          type="button"
-                          className="unit-more-btn"
-                          onClick={() => setGridLimit((n) => n + GRID_PAGE)}
-                        >
-                          再显示 {Math.min(GRID_PAGE, openUnits.length - gridLimit)} 台（还剩{' '}
-                          {openUnits.length - gridLimit}）
-                        </button>
-                      )}
-                    </>
+                  ) : (
+                    <p className="mobile-finance-muted unit-hint" style={{ textAlign: 'center' }}>
+                      共 {filteredOpen.length} 台可认领
+                    </p>
                   )}
                 </>
               )}
@@ -687,15 +712,15 @@ export default function FinanceCaseDetailPage() {
                 <div className="unit-group">
                   <div className="unit-group-title">可认领 · {openUnits.length}</div>
                   <p className="mobile-finance-muted unit-hint">
-                    请用上方「认领下一{unitLabel}」或到「可认领」里指定台号。
+                    请用上方「认领下一{unitLabel}」，或到「可认领」里点编号选择。
                   </p>
                 </div>
               )}
-              {claimedUnits.length > 0 && (
+              {filteredClaimed.length > 0 && (
                 <div className="unit-group">
-                  <div className="unit-group-title">作业中 · {claimedUnits.length}</div>
+                  <div className="unit-group-title">作业中 · {filteredClaimed.length}</div>
                   <ul className="unit-mine-list">
-                    {claimedUnits.map((u) => {
+                    {filteredClaimed.map((u) => {
                       const mine = !!userId && u.inspectorId === userId;
                       const canEnter = mine && u.status === 'claimed';
                       const canViewReport =
@@ -704,9 +729,16 @@ export default function FinanceCaseDetailPage() {
                         (u.status === 'submitted' || u.status === 'completed');
                       return (
                         <li key={u.id}>
-                          <span>
-                            {unitLabel} #{u.seq}
-                            {mine ? ' · 我的' : ''}
+                          <span className="unit-mine-meta">
+                            <span>
+                              {unitLabel} #{u.seq}
+                              {mine ? ' · 我的' : ''}
+                            </span>
+                            <span
+                              className={`unit-serial ${u.deviceSerial ? '' : 'is-empty'}`}
+                            >
+                              {u.deviceSerial?.trim() || '未识别'}
+                            </span>
                           </span>
                           <span className="unit-mine-actions">
                             <em>{UNIT_STATUS_LABEL[u.status] || u.status}</em>
@@ -736,26 +768,33 @@ export default function FinanceCaseDetailPage() {
                   </ul>
                 </div>
               )}
-              {completedUnits.length > 0 && (
+              {filteredCompleted.length > 0 && (
                 <div className="unit-group">
                   <button
                     type="button"
                     className="unit-group-title is-btn"
                     onClick={() => setShowCompletedAll((v) => !v)}
                   >
-                    已完成 · {completedUnits.length}
+                    已完成 · {filteredCompleted.length}
                     <span>{showCompletedAll ? '收起' : '展开'}</span>
                   </button>
                   {showCompletedAll && (
                     <ul className="unit-mine-list">
-                      {completedUnits.map((u) => {
+                      {filteredCompleted.map((u) => {
                         const mine = !!userId && u.inspectorId === userId;
                         const canView = !!u.inspectionTaskId && mine;
                         return (
                           <li key={u.id}>
-                            <span>
-                              {unitLabel} #{u.seq}
-                              {mine ? ' · 我的' : ''}
+                            <span className="unit-mine-meta">
+                              <span>
+                                {unitLabel} #{u.seq}
+                                {mine ? ' · 我的' : ''}
+                              </span>
+                              <span
+                                className={`unit-serial ${u.deviceSerial ? '' : 'is-empty'}`}
+                              >
+                                {u.deviceSerial?.trim() || '未识别'}
+                              </span>
                             </span>
                             <span className="unit-mine-actions">
                               <em>已完成</em>
@@ -776,6 +815,12 @@ export default function FinanceCaseDetailPage() {
                   )}
                 </div>
               )}
+              {unitSearch.trim() &&
+              filteredClaimed.length === 0 &&
+              filteredCompleted.length === 0 &&
+              !(openUnits.length > 0 && multiWorking) ? (
+                <p className="mobile-finance-muted">没有匹配的序列号</p>
+              ) : null}
             </div>
           )}
         </section>

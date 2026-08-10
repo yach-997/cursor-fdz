@@ -194,6 +194,15 @@ export class OcrMileageDto {
   @IsOptional() @IsIn(['start', 'end']) kind?: 'start' | 'end';
 }
 
+export class OcrDeviceSerialDto {
+  @IsString() @IsNotEmpty() imageUrl: string;
+}
+
+export class SaveUnitSerialDto {
+  @IsString() @IsNotEmpty() @MaxLength(128) deviceSerial: string;
+  @IsOptional() @IsString() serialPhotoUrl?: string;
+}
+
 export class ReviewExpenseDto {
   @IsOptional() @IsString() @MaxLength(500) note?: string;
   /** 核定报销金额；不传则按工程师申报金额通过 */

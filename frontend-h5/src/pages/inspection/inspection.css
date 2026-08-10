@@ -567,3 +567,13 @@
   object-fit: cover;
   border-radius: 12px;
 }
+.inspection-unit-serial-bar {
+  margin: 0 12px 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #eef8f3;
+  color: #087b59;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}

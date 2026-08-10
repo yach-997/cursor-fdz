@@ -47,6 +47,7 @@ import {
   type TripFormState,
   type TripMode,
 } from './trip-steps';
+import { SerialStepPanel } from './serial-step';
 import './inspection.css';
 
 const RESULT_LABEL: Record<string, string> = {
@@ -220,6 +221,9 @@ export default function InspectionPage() {
   const [tripBusy, setTripBusy] = useState(false);
   /** 单人模式旧任务可能缺 workUnitId，从案例台回填 */
   const [tripUnitId, setTripUnitId] = useState('');
+  const [unitSerial, setUnitSerial] = useState('');
+  const [unitSerialPhoto, setUnitSerialPhoto] = useState('');
+  const [unitSeq, setUnitSeq] = useState<number | undefined>();
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadSource, setUploadSource] = useState<'camera' | 'gallery' | null>(null);
@@ -334,8 +338,15 @@ export default function InspectionPage() {
     [allEntriesTpl, enabledOptionalIds],
   );
 
+  const caseId = task?.serviceCaseId || '';
+  const unitId = tripUnitId || task?.workUnitId || '';
+  const serialRequired =
+    !!caseId && !!unitId && (tripMode === 'need' || tripMode === 'skip');
+  const serialConfirmed = !!unitSerial.trim();
+
   type WizardStep =
     | { kind: 'start'; label: string }
+    | { kind: 'serial'; label: string }
     | { kind: 'end'; label: string }
     | { kind: 'entry'; label: string; entryIndex: number; tplId: string };
 
@@ -346,15 +357,22 @@ export default function InspectionPage() {
       entryIndex: i,
       tplId: e.id,
     }));
+    const serialStep: WizardStep | null = serialRequired
+      ? { kind: 'serial', label: '识别序列号' }
+      : null;
     if (tripMode === 'need') {
       return [
         { kind: 'start', label: '开始行程' },
+        ...(serialStep ? [serialStep] : []),
         ...entrySteps,
         { kind: 'end', label: '结束与费用' },
       ];
     }
+    if (tripMode === 'skip' && serialStep) {
+      return [serialStep, ...entrySteps];
+    }
     return entrySteps;
-  }, [entriesTpl, tripMode]);
+  }, [entriesTpl, tripMode, serialRequired]);
 
   const currentWizard = wizardSteps[wizardIndex];
   const currentTpl =
@@ -365,17 +383,28 @@ export default function InspectionPage() {
   );
   const showTripChoice = tripGateReady && tripMode === 'undecided';
   const showWorkSteps = tripGateReady && tripMode !== 'undecided';
-  const caseId = task?.serviceCaseId || '';
-  const unitId = tripUnitId || task?.workUnitId || '';
+
+  const canJumpWizard = (idx: number) => {
+    if (!serialRequired || serialConfirmed) return true;
+    const serialIdx = wizardSteps.findIndex((s) => s.kind === 'serial');
+    if (serialIdx < 0) return true;
+    return idx <= serialIdx;
+  };
 
   const jumpToEntryIndex = useCallback(
     (entryIndex: number) => {
+      if (serialRequired && !serialConfirmed) {
+        Toast.info('请先确认本台序列号');
+        const serialIdx = wizardSteps.findIndex((s) => s.kind === 'serial');
+        if (serialIdx >= 0) setWizardIndex(serialIdx);
+        return;
+      }
       const wi = wizardSteps.findIndex(
         (s) => s.kind === 'entry' && s.entryIndex === entryIndex,
       );
       if (wi >= 0) setWizardIndex(wi);
     },
-    [wizardSteps],
+    [wizardSteps, serialRequired, serialConfirmed],
   );
 
   useEffect(() => {
@@ -510,6 +539,12 @@ export default function InspectionPage() {
             )?.id ||
             '';
           setTripUnitId(resolvedUnit);
+          const unitRow = resolvedUnit
+            ? (c.units || []).find((u) => u.id === resolvedUnit)
+            : undefined;
+          setUnitSeq(unitRow?.seq);
+          setUnitSerial(String(unitRow?.deviceSerial || '').trim());
+          setUnitSerialPhoto(String(unitRow?.serialPhotoUrl || '').trim());
           const claim = resolvedUnit
             ? (c.expenses || []).find(
                 (e) =>
@@ -534,6 +569,9 @@ export default function InspectionPage() {
           }
         } catch {
           setTripUnitId(t.workUnitId || '');
+          setUnitSeq(undefined);
+          setUnitSerial('');
+          setUnitSerialPhoto('');
           setTripMode('undecided');
           setTripForm(emptyTripForm());
         } finally {
@@ -542,6 +580,9 @@ export default function InspectionPage() {
       } else {
         setTripMode('na');
         setTripUnitId('');
+        setUnitSeq(undefined);
+        setUnitSerial('');
+        setUnitSerialPhoto('');
         setTripForm(emptyTripForm());
         setTripGateReady(true);
       }
@@ -935,8 +976,22 @@ export default function InspectionPage() {
       })();
       return;
     }
+    if (currentWizard?.kind === 'serial') {
+      if (!serialConfirmed) {
+        Toast.info('请先确认本台序列号');
+        return;
+      }
+      setWizardIndex((s) => s + 1);
+      return;
+    }
     if (currentWizard?.kind === 'end') {
       // 结束步点「下一步」不存在，应点提交
+      return;
+    }
+    if (serialRequired && !serialConfirmed) {
+      Toast.info('请先完成序列号识别');
+      const serialIdx = wizardSteps.findIndex((s) => s.kind === 'serial');
+      if (serialIdx >= 0) setWizardIndex(serialIdx);
       return;
     }
     const mustPhoto =
@@ -962,6 +1017,12 @@ export default function InspectionPage() {
     if (!record) return;
     if (uploading || tripBusy) {
       Toast.info('照片正在上传，请稍候');
+      return;
+    }
+    if (serialRequired && !serialConfirmed) {
+      Toast.info('请先确认本台序列号');
+      const serialIdx = wizardSteps.findIndex((s) => s.kind === 'serial');
+      if (serialIdx >= 0) setWizardIndex(serialIdx);
       return;
     }
     if (tripMode === 'need') {
@@ -1491,9 +1552,11 @@ export default function InspectionPage() {
                 let done = false;
                 let needRedo = false;
                 let pendingAi = false;
-                const isTrip = ws.kind === 'start' || ws.kind === 'end';
+                const isTrip = ws.kind === 'start' || ws.kind === 'end' || ws.kind === 'serial';
                 if (ws.kind === 'start') {
                   done = isStartTripReady(tripForm);
+                } else if (ws.kind === 'serial') {
+                  done = serialConfirmed;
                 } else if (ws.kind === 'end') {
                   done = isEndTripReady(tripForm);
                 } else {
@@ -1510,7 +1573,15 @@ export default function InspectionPage() {
                     ref={idx === wizardIndex ? activeStepRef : undefined}
                     type="button"
                     className={isTrip ? 'is-trip' : undefined}
-                    onClick={() => setWizardIndex(idx)}
+                    onClick={() => {
+                      if (!canJumpWizard(idx)) {
+                        Toast.info('请先确认本台序列号');
+                        const serialIdx = wizardSteps.findIndex((s) => s.kind === 'serial');
+                        if (serialIdx >= 0) setWizardIndex(serialIdx);
+                        return;
+                      }
+                      setWizardIndex(idx);
+                    }}
                     style={{
                       flexShrink: 0,
                       border: needRedo ? '1px solid #ff4d4f' : isTrip ? undefined : 'none',
@@ -1551,6 +1622,23 @@ export default function InspectionPage() {
             />
           )}
 
+          {currentWizard?.kind === 'serial' && caseId && unitId && (
+            <SerialStepPanel
+              key={`serial-${unitId}-${unitSerial || 'new'}`}
+              caseId={caseId}
+              unitId={unitId}
+              unitSeq={unitSeq}
+              initialSerial={unitSerial}
+              initialPhotoUrl={unitSerialPhoto}
+              onConfirmed={(serial, photoUrl) => {
+                setUnitSerial(serial);
+                setUnitSerialPhoto(photoUrl || '');
+                setWizardIndex((s) => Math.min(s + 1, wizardSteps.length - 1));
+              }}
+              onPreview={(urls, index) => setPhotoPreview({ urls, index })}
+            />
+          )}
+
           {currentWizard?.kind === 'end' && caseId && unitId && (
             <TripEndPanel
               caseId={caseId}
@@ -1569,6 +1657,13 @@ export default function InspectionPage() {
                 currentWizard?.kind === 'entry' ? currentWizard.entryIndex + 1 : wizardIndex + 1
               }/${entriesTpl.length}`}
             >
+              {serialRequired ? (
+                <div className="inspection-unit-serial-bar">
+                  {serialConfirmed
+                    ? `本台序列号：${unitSerial}`
+                    : '本台序列号：未确认（请先完成识别步骤）'}
+                </div>
+              ) : null}
               <Cell
                 title={
                   <span>
@@ -1864,7 +1959,9 @@ export default function InspectionPage() {
                 />
               </Cell>
             </Cell.Group>
-          ) : currentWizard?.kind === 'start' || currentWizard?.kind === 'end' ? null : (
+          ) : currentWizard?.kind === 'start' ||
+            currentWizard?.kind === 'end' ||
+            currentWizard?.kind === 'serial' ? null : (
             <Empty description="无检查条目" />
           )}
             </>
