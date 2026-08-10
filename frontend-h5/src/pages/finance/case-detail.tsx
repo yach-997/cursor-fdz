@@ -356,9 +356,6 @@ export default function FinanceCaseDetailPage() {
 
         {!isMulti && canInspect && (
           <>
-            <p className="trip-start-hint">
-              进入作业后先选有/无行程；有行程时在产品线首尾填写开始与结束里程及费用。
-            </p>
             <button
               type="button"
               className="mobile-finance-primary"
@@ -681,75 +678,6 @@ export default function FinanceCaseDetailPage() {
               ? `完成本${unitLabel}${myActive ? ` #${myActive.seq}` : ''}`
               : '确认完工'}
           </button>
-        </section>
-      )}
-
-      {['assigned', 'working'].includes(item.status) && (myActive || !isMulti) && (
-        <section className="mobile-finance-card">
-          <h3>行程状态</h3>
-          {(() => {
-            const uid = myActive?.id || item.units?.[0]?.id;
-            const claim = tripClaim(uid);
-            const skipped = isTripSkipped(uid);
-            const started = hasTripStartFilled(uid);
-            const ended = hasTripEnd(uid);
-            const taskId =
-              myActive?.inspectionTaskId ||
-              item.inspectionTaskId ||
-              item.activeUnit?.inspectionTaskId;
-            let line = '进入作业后选择有/无行程（嵌在产品线步骤中）';
-            if (skipped) line = '已标记无行程 · 管理员可见';
-            else if (started && ended) line = '已填开始与结束里程';
-            else if (started) line = '已填开始里程 · 作业末步补结束与费用';
-            else if (claim) line = '草稿';
-            return (
-              <>
-                <p className="mobile-finance-muted">{line}</p>
-                {taskId && (skipped || !started) && (
-                  <button
-                    type="button"
-                    className="mobile-finance-secondary"
-                    style={{ width: '100%', marginTop: 12 }}
-                    onClick={() => navigate(`/m/inspection/${taskId}`)}
-                  >
-                    {skipped ? '进入作业改选有行程' : '进入作业选择行程'}
-                  </button>
-                )}
-                {started && !ended && (
-                  <button
-                    type="button"
-                    className="mobile-finance-secondary"
-                    style={{ width: '100%', marginTop: 12 }}
-                    onClick={() =>
-                      taskId
-                        ? navigate(`/m/inspection/${taskId}`)
-                        : navigate(
-                            `/m/finance-cases/${id}/expense?step=end&autoFinish=1${
-                              uid ? `&unitId=${uid}` : ''
-                            }`,
-                          )
-                    }
-                  >
-                    {taskId ? '回作业补结束行程' : '异常补填结束行程'}
-                  </button>
-                )}
-                {(claim?.status === 'submitted' || claim?.status === 'approved') && (
-                  <button
-                    type="button"
-                    className="mobile-finance-secondary"
-                    style={{ width: '100%', marginTop: 12 }}
-                    onClick={() =>
-                      navigate(
-                        `/m/finance-cases/${id}/expense${uid ? `?unitId=${uid}` : ''}`,
-                      )
-                    }
-                  >
-                    查看报销进度
-                  </button>
-                )}
-              </>
-            );
-          })()}
         </section>
       )}
 

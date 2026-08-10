@@ -214,6 +214,8 @@ export default function InspectionPage() {
   const [tripMode, setTripMode] = useState<TripMode>('na');
   const [tripForm, setTripForm] = useState<TripFormState>(emptyTripForm);
   const [tripBusy, setTripBusy] = useState(false);
+  /** 单人模式旧任务可能缺 workUnitId，从案例台回填 */
+  const [tripUnitId, setTripUnitId] = useState('');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadSource, setUploadSource] = useState<'camera' | 'gallery' | null>(null);
@@ -357,7 +359,7 @@ export default function InspectionPage() {
   );
   const showTripChoice = tripMode === 'undecided';
   const caseId = task?.serviceCaseId || '';
-  const unitId = task?.workUnitId || '';
+  const unitId = tripUnitId || task?.workUnitId || '';
 
   const jumpToEntryIndex = useCallback(
     (entryIndex: number) => {
@@ -475,18 +477,31 @@ export default function InspectionPage() {
         }
         setRecord(r);
       }
-      if (t.serviceCaseId && t.workUnitId) {
+      if (t.serviceCaseId) {
         try {
           const c = await fetchMyFinanceCase(t.serviceCaseId);
-          const claim = (c.expenses || []).find((e) => e.workUnitId === t.workUnitId);
+          const resolvedUnit =
+            t.workUnitId ||
+            c.activeUnit?.id ||
+            c.myActiveUnits?.[0]?.id ||
+            c.units?.find((u) => u.inspectorId && ['claimed', 'submitted', 'completed'].includes(u.status))?.id ||
+            c.units?.[0]?.id ||
+            '';
+          setTripUnitId(resolvedUnit);
+          const claim = resolvedUnit
+            ? (c.expenses || []).find((e) => e.workUnitId === resolvedUnit)
+            : (c.expenses || [])[0];
           setTripForm(tripFormFromClaim(claim));
+          // 有费用案例就走有/无行程选择（不再因缺 workUnitId 跳过）
           setTripMode(resolveTripMode(claim));
         } catch {
+          setTripUnitId(t.workUnitId || '');
           setTripMode('undecided');
           setTripForm(emptyTripForm());
         }
       } else {
         setTripMode('na');
+        setTripUnitId('');
         setTripForm(emptyTripForm());
       }
     } catch (error) {
@@ -1011,9 +1026,13 @@ export default function InspectionPage() {
   };
 
   const chooseTripSkip = async () => {
-    if (!caseId || !unitId) {
+    if (!caseId) {
       setTripMode('skip');
       setWizardIndex(0);
+      return;
+    }
+    if (!unitId) {
+      Toast.fail('未找到作业台，请返回后重新进入');
       return;
     }
     setTripBusy(true);

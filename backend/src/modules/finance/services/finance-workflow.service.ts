@@ -7,7 +7,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import {
   CasePerformance,
   CaseWorkRecord,
@@ -454,6 +454,7 @@ export class FinanceWorkflowService {
     inspectorId: string,
     createdBy: string,
   ): Promise<InspectionTask> {
+    await this.multi.ensureWorkUnits(serviceCase);
     const unit = await this.units.findOne({
       where: { serviceCaseId: serviceCase.id },
       order: { seq: 'ASC' },
@@ -461,6 +462,7 @@ export class FinanceWorkflowService {
     if (unit) {
       return this.ensureInspectionTaskForUnit(serviceCase, unit, inspectorId, createdBy);
     }
+    // 理论上 ensureWorkUnits 后必有台；仍兜底创建并挂上 workUnitId
     return this.createInspectionTask(serviceCase, inspectorId, createdBy, null);
   }
 
@@ -481,6 +483,11 @@ export class FinanceWorkflowService {
           existing.inspectorId = inspectorId;
           await this.tasks.save(existing);
         }
+        // 旧单人任务可能缺 workUnitId，补挂到本台
+        if (!existing.workUnitId) {
+          existing.workUnitId = unit.id;
+          await this.tasks.save(existing);
+        }
         return existing;
       }
     }
@@ -489,6 +496,24 @@ export class FinanceWorkflowService {
       unit.inspectionTaskId = byUnit.id;
       await this.units.save(unit);
       return byUnit;
+    }
+    // 同案例下已有未挂台的巡检任务：补挂，避免再建一份
+    const orphan = await this.tasks.findOne({
+      where: { serviceCaseId: serviceCase.id, workUnitId: IsNull() },
+      order: { createdAt: 'DESC' },
+    });
+    if (orphan && ![TaskStatus.SUBMITTED, TaskStatus.APPROVED].includes(orphan.status as TaskStatus)) {
+      orphan.workUnitId = unit.id;
+      if (inspectorId) orphan.inspectorId = inspectorId;
+      await this.tasks.save(orphan);
+      unit.inspectionTaskId = orphan.id;
+      if (unit.status === 'open') {
+        unit.status = 'claimed';
+        unit.inspectorId = inspectorId;
+        unit.claimedAt = unit.claimedAt || new Date();
+      }
+      await this.units.save(unit);
+      return orphan;
     }
     const task = await this.createInspectionTask(serviceCase, inspectorId, createdBy, unit.id);
     unit.inspectionTaskId = task.id;
