@@ -793,7 +793,7 @@ export default function FinanceCaseDetailPage() {
                               <span
                                 className={`unit-serial ${u.deviceSerial ? '' : 'is-empty'}`}
                               >
-                                {u.deviceSerial?.trim() || '未识别'}
+                                序列号：{u.deviceSerial?.trim() || '未识别'}
                               </span>
                             </span>
                             <span className="unit-mine-actions">
