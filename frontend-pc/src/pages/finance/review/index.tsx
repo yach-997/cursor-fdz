@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  Badge,
   Button,
   Card,
   Form,
@@ -15,10 +16,11 @@ import {
 } from 'antd';
 import { QuestionCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { Link } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   approveFinanceReview,
   fetchFinanceCase,
+  fetchPendingExpenses,
   fetchPendingFinanceReviews,
   rejectFinanceReview,
   reviewFinanceDeduction,
@@ -31,10 +33,12 @@ import AssessmentEventDrawer, {
   type AssessmentEventAssignee,
 } from '../components/AssessmentEventDrawer';
 import SettlementAmountDrawer from '../components/SettlementAmountDrawer';
+import ExpenseReviewPanel from '../expenses/ExpenseReviewPanel';
 import { formatDateTime } from '../../../utils/displayLabels';
 
 type Action = 'approve' | 'reject';
 type ReviewTab = 'pending' | 'approved' | 'rejected' | 'all';
+type ReviewScope = 'case' | 'expense';
 
 const tabLabel: Record<ReviewTab, string> = {
   pending: '待审核',
@@ -60,9 +64,17 @@ const colTip = (title: string, tip: string) => (
   </span>
 );
 
+function scopeFromSearch(raw: string | null): ReviewScope {
+  return raw === 'expense' ? 'expense' : 'case';
+}
+
 export default function FinanceReviewPage() {
   const user = useAuthStore((state) => state.user);
   const isAdmin = user?.role === 'super_admin';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [scope, setScope] = useState<ReviewScope>(() =>
+    scopeFromSearch(searchParams.get('scope')),
+  );
   const [tab, setTab] = useState<ReviewTab>('pending');
   const [keyword, setKeyword] = useState('');
   const [month, setMonth] = useState<string>();
@@ -76,7 +88,39 @@ export default function FinanceReviewPage() {
   const [eventCase, setEventCase] = useState<FinanceReviewItem>();
   const [eventAssignees, setEventAssignees] = useState<AssessmentEventAssignee[]>([]);
   const [amountCase, setAmountCase] = useState<FinanceReviewItem>();
+  const [casePending, setCasePending] = useState(0);
+  const [expensePending, setExpensePending] = useState(0);
   const [form] = Form.useForm();
+
+  useEffect(() => {
+    const next = scopeFromSearch(searchParams.get('scope'));
+    setScope((prev) => (prev === next ? prev : next));
+  }, [searchParams]);
+
+  const setScopeAndUrl = (next: ReviewScope) => {
+    setScope(next);
+    const params = new URLSearchParams(searchParams);
+    if (next === 'expense') params.set('scope', 'expense');
+    else params.delete('scope');
+    setSearchParams(params, { replace: true });
+  };
+
+  const refreshPendingBadges = useCallback(async () => {
+    try {
+      const [cases, expenses] = await Promise.all([
+        fetchPendingFinanceReviews({ reviewStatus: 'pending' }),
+        fetchPendingExpenses({ status: 'pending' }),
+      ]);
+      setCasePending(cases.length);
+      setExpensePending(Array.isArray(expenses) ? expenses.length : 0);
+    } catch {
+      /* ignore badge errors */
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshPendingBadges();
+  }, [refreshPendingBadges]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -103,8 +147,9 @@ export default function FinanceReviewPage() {
   }, [keyword, month, siteId, overdue, isAdmin, tab]);
 
   useEffect(() => {
+    if (scope !== 'case') return;
     void load();
-  }, [load]);
+  }, [load, scope]);
 
   const submit = async () => {
     if (!current || !action) return;
@@ -117,26 +162,7 @@ export default function FinanceReviewPage() {
     form.resetFields();
     if (action === 'approve') setTab('approved');
     else await load();
-  };
-
-  const openApprove = (row: FinanceReviewItem) => {
-    const pending = Number(row.pendingExpenseCount || 0);
-    if (pending > 0) {
-      Modal.confirm({
-        title: '仍有报销未核定',
-        content: `本案例还有 ${pending} 台行程报销待核定。可先点「明细」审报销；仍要通过案例结算吗？`,
-        okText: '仍要通过',
-        cancelText: '先去明细',
-        onOk: () => {
-          setCurrent(row);
-          setAction('approve');
-        },
-        onCancel: () => setAmountCase(row),
-      });
-      return;
-    }
-    setCurrent(row);
-    setAction('approve');
+    void refreshPendingBadges();
   };
 
   const openEventPenalty = async (row: FinanceReviewItem) => {
@@ -182,308 +208,332 @@ export default function FinanceReviewPage() {
   const canAudit = (row: FinanceReviewItem) =>
     row.reviewStatus === 'pending' || row.reviewStatus === 'rejected';
 
+  const scopeLabel = (key: ReviewScope, text: string, count: number) => (
+    <span>
+      {text}
+      {count > 0 ? (
+        <Badge
+          count={count}
+          overflowCount={99}
+          size="small"
+          style={{ marginLeft: 8 }}
+        />
+      ) : null}
+    </span>
+  );
+
   return (
     <Card className="finance-card" title="结算审核">
       <Tabs
-        activeKey={tab}
-        onChange={(key) => setTab(key as ReviewTab)}
-        items={(Object.keys(tabLabel) as ReviewTab[]).map((key) => ({
-          key,
-          label: tabLabel[key],
-        }))}
-      />
-      <div className="finance-review-tip">
-        {tab === 'pending'
-          ? '默认看待审核队列：点「明细」可同时查看计件金额与各台行程报销凭证并核定。'
-          : tab === 'approved'
-            ? '已通过的结算记录不会从系统消失，可按月份/网格继续查询。'
-            : tab === 'rejected'
-              ? '已驳回记录可在此查看原因；工程师补齐后仍会出现在待审核队列。'
-              : '全部状态汇总；仍可用下方筛选缩小范围。网格长仅见本网格案例。'}
-      </div>
-      <Space className="finance-toolbar" wrap style={{ marginBottom: 12 }}>
-        <Input
-          allowClear
-          placeholder="案例号/项目/工程师"
-          value={keyword}
-          onChange={(event) => setKeyword(event.target.value)}
-          style={{ width: 200 }}
-        />
-        <Input
-          type="month"
-          value={month || ''}
-          onChange={(event) => setMonth(event.target.value || undefined)}
-          title="完工月份"
-        />
-        {isAdmin && (
-          <Select
-            allowClear
-            showSearch
-            optionFilterProp="label"
-            placeholder="网格"
-            value={siteId}
-            onChange={setSiteId}
-            style={{ width: 180 }}
-            options={sites.map((site) => ({ value: site.id, label: site.name }))}
-          />
-        )}
-        {(tab === 'pending' || tab === 'all' || tab === 'rejected') && (
-          <Select
-            allowClear
-            placeholder="超期"
-            value={overdue}
-            onChange={setOverdue}
-            style={{ width: 120 }}
-            options={[{ value: 'true', label: '仅超期' }]}
-          />
-        )}
-        <Button type="primary" onClick={load}>
-          查询
-        </Button>
-      </Space>
-      <Table
-        rowKey="id"
-        loading={loading}
-        dataSource={rows}
-        scroll={{ x: 1380 }}
-        locale={{
-          emptyText:
-            tab === 'pending'
-              ? '暂无待审核记录'
-              : tab === 'approved'
-                ? '暂无已通过记录'
-                : tab === 'rejected'
-                  ? '暂无已驳回记录'
-                  : '暂无结算审核记录',
-        }}
-        columns={[
-          { title: '案例号', dataIndex: 'gspCaseNo', width: 145 },
-          { title: '项目', dataIndex: 'projectName', ellipsis: true },
+        activeKey={scope}
+        onChange={(key) => setScopeAndUrl(key as ReviewScope)}
+        style={{ marginBottom: 4 }}
+        items={[
           {
-            title: '工程师',
-            dataIndex: 'inspectorName',
-            width: 140,
-            ellipsis: true,
-            render: (v) => v || '-',
+            key: 'case',
+            label: scopeLabel('case', '案例结算', casePending),
           },
           {
-            title: '审核状态',
-            dataIndex: 'reviewStatus',
-            width: 100,
-            render: (v) => statusTag(v),
-          },
-          {
-            title: colTip('报销', '本案例待核定的行程报销台数；点「明细」可审凭证。'),
-            width: 100,
-            render: (_, row) => {
-              const n = Number(row.pendingExpenseCount || 0);
-              return n > 0 ? (
-                <Tag color="gold">待审 {n}</Tag>
-              ) : (
-                <span style={{ color: '#98a29c' }}>—</span>
-              );
-            },
-          },
-          {
-            title: colTip(
-              '审核条件',
-              '可结算 = 已派工程师，且全部未忽略 PO 条目已配置内部绩效价。与现场照片是否齐全无关。',
-            ),
-            width: 120,
-            render: (_, row) =>
-              row.approvalReady ? (
-                <Tag color="green">可结算</Tag>
-              ) : !row.inspectorName ? (
-                <Tag color="orange">未派工</Tag>
-              ) : (
-                <Tooltip title="点击前往价格库补内部绩效价；补齐后刷新本页即可通过结算">
-                  <Link to="/finance/prices?type=perf" className="finance-missing-price-link">
-                    <Tag color="orange">缺价 {row.missingPerf}</Tag>
-                  </Link>
-                </Tooltip>
-              ),
-          },
-          {
-            title: '完工时间',
-            dataIndex: 'finishTime',
-            width: 132,
-            render: (v) => {
-              if (!v) return '-';
-              const d = dayjs(v);
-              return d.isValid() ? d.format('MM-DD HH:mm') : formatDateTime(v);
-            },
-          },
-          ...(tab === 'approved'
-            ? [
-                {
-                  title: '审核时间',
-                  dataIndex: 'reviewTime',
-                  width: 132,
-                  render: (v: string | null | undefined) => {
-                    if (!v) return '-';
-                    const d = dayjs(v);
-                    return d.isValid() ? d.format('MM-DD HH:mm') : formatDateTime(v);
-                  },
-                },
-              ]
-            : [
-                {
-                  title: colTip(
-                    '审核时限',
-                    '完工后 7 天内建议完成结算审核。超时仅标红提醒，不自动驳回，仍可正常审核通过。',
-                  ),
-                  width: 108,
-                  render: (_: unknown, row: FinanceReviewItem) =>
-                    row.reviewStatus === 'approved' ? (
-                      <Tag color="green">已完成</Tag>
-                    ) : row.overdue ? (
-                      <Tag color="red">已超期</Tag>
-                    ) : (
-                      <Tag color="gold">
-                        剩 {Math.max(0, row.remainingHours || 0)}h
-                      </Tag>
-                    ),
-                },
-              ]),
-          {
-            title: colTip('案例收入', 'Σ(条目数量 × 结算单价)。点操作列「明细」可看条目拆分。'),
-            dataIndex: 'caseRevenue',
-            width: 100,
-            align: 'right' as const,
-            render: (v) => moneyText(v),
-          },
-          {
-            title: colTip(
-              '计件绩效',
-              'Σ(条目数量 × 内部绩效单价)，与案例收入不是同一套价格。点「明细」可看拆分。',
-            ),
-            dataIndex: 'perfBase',
-            width: 100,
-            align: 'right' as const,
-            render: (v) => moneyText(v),
-          },
-          {
-            title: colTip('事件扣罚', '本案例已登记的事件扣罚合计。点「明细」可看原因与对象。'),
-            dataIndex: 'eventPenalty',
-            width: 92,
-            align: 'right' as const,
-            render: (v) => moneyText(v),
-          },
-          {
-            title: '操作',
-            fixed: 'right' as const,
-            width: tab === 'approved' ? 140 : 220,
-            render: (_: unknown, row: FinanceReviewItem) => (
-              <Space size={0} wrap={false} className="finance-review-ops-links">
-                <Button type="link" onClick={() => setAmountCase(row)}>
-                  明细
-                </Button>
-                <Button type="link" onClick={() => openEventPenalty(row)}>
-                  事件
-                </Button>
-                {canAudit(row) &&
-                  row.deductionStatus === 'pending' &&
-                  user?.role === 'super_admin' && (
-                    <Button
-                      type="link"
-                      onClick={async () => {
-                        await reviewFinanceDeduction(row.id, true);
-                        message.success('历史特殊扣减已复核');
-                        await load();
-                      }}
-                    >
-                      复核
-                    </Button>
-                  )}
-                {canAudit(row) && (
-                  <>
-                    <Button
-                      type="link"
-                      danger
-                      onClick={() => {
-                        setCurrent(row);
-                        setAction('reject');
-                      }}
-                    >
-                      驳回
-                    </Button>
-                    <Button
-                      type="link"
-                      disabled={!row.approvalReady || row.deductionStatus === 'pending'}
-                      onClick={() => openApprove(row)}
-                    >
-                      通过
-                    </Button>
-                  </>
-                )}
-                {row.reviewStatus === 'approved' && row.reviewComment && (
-                  <Button
-                    type="link"
-                    onClick={() =>
-                      Modal.info({
-                        title: '审核意见',
-                        content: row.reviewComment,
-                      })
-                    }
-                  >
-                    意见
-                  </Button>
-                )}
-              </Space>
-            ),
+            key: 'expense',
+            label: scopeLabel('expense', '行程报销', expensePending),
           },
         ]}
       />
-      <Modal
-        open={!!action}
-        title={action === 'approve' ? '通过结算审核' : '驳回结算审核'}
-        okText="确认"
-        cancelText="取消"
-        onCancel={() => {
-          setAction(undefined);
-          setCurrent(undefined);
-          form.resetFields();
-        }}
-        onOk={() => void submit()}
-      >
-        <Form form={form} layout="vertical">
-          {action === 'reject' && (
-            <Form.Item name="reason" label="原因" rules={[{ required: true, message: '请填写原因' }]}>
-              <Input.TextArea rows={3} maxLength={500} showCount />
-            </Form.Item>
+
+      {scope === 'expense' ? (
+        <ExpenseReviewPanel onChanged={() => void refreshPendingBadges()} />
+      ) : (
+        <>
+          <Tabs
+            activeKey={tab}
+            onChange={(key) => setTab(key as ReviewTab)}
+            items={(Object.keys(tabLabel) as ReviewTab[]).map((key) => ({
+              key,
+              label: tabLabel[key],
+            }))}
+          />
+          <div className="finance-review-tip">
+            {tab === 'pending'
+              ? '默认看待审核队列：案例完工后 7 天内完成审核。通过后可到「已通过」页签查看。'
+              : tab === 'approved'
+                ? '已通过的结算记录不会从系统消失，可按月份/网格继续查询。'
+                : tab === 'rejected'
+                  ? '已驳回记录可在此查看原因；工程师补齐后仍会出现在待审核队列。'
+                  : '全部状态汇总；仍可用下方筛选缩小范围。网格长仅见本网格案例。'}
+          </div>
+          <Space className="finance-toolbar" wrap style={{ marginBottom: 12 }}>
+            <Input
+              allowClear
+              placeholder="案例号/项目/工程师"
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+              style={{ width: 200 }}
+            />
+            <Input
+              type="month"
+              value={month || ''}
+              onChange={(event) => setMonth(event.target.value || undefined)}
+              title="完工月份"
+            />
+            {isAdmin && (
+              <Select
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                placeholder="网格"
+                value={siteId}
+                onChange={setSiteId}
+                style={{ width: 180 }}
+                options={sites.map((site) => ({ value: site.id, label: site.name }))}
+              />
+            )}
+            {(tab === 'pending' || tab === 'all' || tab === 'rejected') && (
+              <Select
+                allowClear
+                placeholder="超期"
+                value={overdue}
+                onChange={setOverdue}
+                style={{ width: 120 }}
+                options={[{ value: 'true', label: '仅超期' }]}
+              />
+            )}
+            <Button type="primary" onClick={load}>
+              查询
+            </Button>
+          </Space>
+          <Table
+            rowKey="id"
+            loading={loading}
+            dataSource={rows}
+            scroll={{ x: 1280 }}
+            locale={{
+              emptyText:
+                tab === 'pending'
+                  ? '暂无待审核记录'
+                  : tab === 'approved'
+                    ? '暂无已通过记录'
+                    : tab === 'rejected'
+                      ? '暂无已驳回记录'
+                      : '暂无结算审核记录',
+            }}
+            columns={[
+              { title: '案例号', dataIndex: 'gspCaseNo', width: 145 },
+              { title: '项目', dataIndex: 'projectName', ellipsis: true },
+              {
+                title: '工程师',
+                dataIndex: 'inspectorName',
+                width: 160,
+                ellipsis: true,
+                render: (v) => v || '-',
+              },
+              {
+                title: '审核状态',
+                dataIndex: 'reviewStatus',
+                width: 100,
+                render: (v) => statusTag(v),
+              },
+              {
+                title: colTip(
+                  '审核条件',
+                  '可结算 = 已派工程师，且全部未忽略 PO 条目已配置内部绩效价。与现场照片是否齐全无关。',
+                ),
+                width: 135,
+                render: (_, row) =>
+                  row.approvalReady ? (
+                    <Tag color="green">可结算</Tag>
+                  ) : (
+                    <Tag color="orange">
+                      {!row.inspectorName ? '未派工程师' : `缺绩效价 ${row.missingPerf} 项`}
+                    </Tag>
+                  ),
+              },
+              {
+                title: '完工时间',
+                dataIndex: 'finishTime',
+                width: 160,
+                render: (v) => formatDateTime(v),
+              },
+              ...(tab === 'approved'
+                ? [
+                    {
+                      title: '审核时间',
+                      dataIndex: 'reviewTime',
+                      width: 160,
+                      render: (v: string | null | undefined) => formatDateTime(v),
+                    },
+                  ]
+                : [
+                    {
+                      title: '审核时限',
+                      width: 130,
+                      render: (_: unknown, row: FinanceReviewItem) =>
+                        row.reviewStatus === 'approved' ? (
+                          <Tag color="green">已完成</Tag>
+                        ) : row.overdue ? (
+                          <Tag color="red">已超期</Tag>
+                        ) : (
+                          <Tag color="gold">
+                            剩余 {Math.max(0, row.remainingHours || 0)} 小时
+                          </Tag>
+                        ),
+                    },
+                  ]),
+              {
+                title: colTip(
+                  '案例收入',
+                  'Σ(条目数量 × 结算单价)。点操作列「明细」可看条目拆分。',
+                ),
+                dataIndex: 'caseRevenue',
+                width: 110,
+                render: (v) => moneyText(v),
+              },
+              {
+                title: colTip(
+                  '计件绩效',
+                  'Σ(条目数量 × 内部绩效单价)，与案例收入不是同一套价格。点「明细」可看拆分。',
+                ),
+                dataIndex: 'perfBase',
+                width: 110,
+                render: (v) => moneyText(v),
+              },
+              {
+                title: colTip(
+                  '事件扣罚',
+                  '本案例已登记的事件扣罚合计。点「明细」可看原因与对象。',
+                ),
+                dataIndex: 'eventPenalty',
+                width: 100,
+                render: (v) => moneyText(v),
+              },
+              {
+                title: '操作',
+                fixed: 'right' as const,
+                width: tab === 'approved' ? 140 : 220,
+                render: (_: unknown, row: FinanceReviewItem) => (
+                  <Space size={0} wrap={false} className="finance-review-ops-links">
+                    <Button type="link" onClick={() => setAmountCase(row)}>
+                      明细
+                    </Button>
+                    <Button type="link" onClick={() => openEventPenalty(row)}>
+                      事件
+                    </Button>
+                    {canAudit(row) &&
+                      row.deductionStatus === 'pending' &&
+                      user?.role === 'super_admin' && (
+                        <Button
+                          type="link"
+                          onClick={async () => {
+                            await reviewFinanceDeduction(row.id, true);
+                            message.success('历史特殊扣减已复核');
+                            await load();
+                            void refreshPendingBadges();
+                          }}
+                        >
+                          复核
+                        </Button>
+                      )}
+                    {canAudit(row) && (
+                      <>
+                        <Button
+                          type="link"
+                          danger
+                          onClick={() => {
+                            setCurrent(row);
+                            setAction('reject');
+                          }}
+                        >
+                          驳回
+                        </Button>
+                        <Button
+                          type="link"
+                          disabled={!row.approvalReady || row.deductionStatus === 'pending'}
+                          onClick={() => {
+                            setCurrent(row);
+                            setAction('approve');
+                          }}
+                        >
+                          通过
+                        </Button>
+                      </>
+                    )}
+                    {row.reviewStatus === 'approved' && row.reviewComment && (
+                      <Button
+                        type="link"
+                        onClick={() =>
+                          Modal.info({
+                            title: '审核意见',
+                            content: row.reviewComment,
+                          })
+                        }
+                      >
+                        意见
+                      </Button>
+                    )}
+                  </Space>
+                ),
+              },
+            ]}
+          />
+          <Modal
+            open={!!action}
+            title={action === 'approve' ? '通过结算审核' : '驳回结算审核'}
+            okText="确认"
+            cancelText="取消"
+            onCancel={() => {
+              setAction(undefined);
+              setCurrent(undefined);
+              form.resetFields();
+            }}
+            onOk={() => void submit()}
+          >
+            <Form form={form} layout="vertical">
+              {action === 'reject' && (
+                <Form.Item
+                  name="reason"
+                  label="原因"
+                  rules={[{ required: true, message: '请填写原因' }]}
+                >
+                  <Input.TextArea rows={3} maxLength={500} showCount />
+                </Form.Item>
+              )}
+              {action === 'approve' && (
+                <Form.Item name="comment" label="审核意见（可选）">
+                  <Input.TextArea rows={3} />
+                </Form.Item>
+              )}
+            </Form>
+          </Modal>
+          {eventCase && eventAssignees.length > 0 && (
+            <AssessmentEventDrawer
+              open={!!eventCase}
+              onClose={() => {
+                setEventCase(undefined);
+                setEventAssignees([]);
+              }}
+              month={
+                eventCase.finishTime
+                  ? dayjs(eventCase.finishTime).format('YYYY-MM')
+                  : dayjs().format('YYYY-MM')
+              }
+              assignees={eventAssignees}
+              serviceCaseId={eventCase.id}
+              caseLabel={eventCase.gspCaseNo}
+              onChanged={() => {
+                void load();
+                void refreshPendingBadges();
+              }}
+            />
           )}
-          {action === 'approve' && (
-            <Form.Item name="comment" label="审核意见（可选）">
-              <Input.TextArea rows={3} />
-            </Form.Item>
-          )}
-        </Form>
-      </Modal>
-      {eventCase && eventAssignees.length > 0 && (
-        <AssessmentEventDrawer
-          open={!!eventCase}
-          onClose={() => {
-            setEventCase(undefined);
-            setEventAssignees([]);
-          }}
-          month={
-            eventCase.finishTime
-              ? dayjs(eventCase.finishTime).format('YYYY-MM')
-              : dayjs().format('YYYY-MM')
-          }
-          assignees={eventAssignees}
-          serviceCaseId={eventCase.id}
-          caseLabel={eventCase.gspCaseNo}
-          onChanged={() => void load()}
-        />
+          <SettlementAmountDrawer
+            open={!!amountCase}
+            caseId={amountCase?.id}
+            caseLabel={
+              amountCase ? `${amountCase.gspCaseNo} ${amountCase.projectName}` : undefined
+            }
+            onClose={() => setAmountCase(undefined)}
+          />
+        </>
       )}
-      <SettlementAmountDrawer
-        open={!!amountCase}
-        caseId={amountCase?.id}
-        caseLabel={amountCase ? `${amountCase.gspCaseNo} ${amountCase.projectName}` : undefined}
-        onClose={() => setAmountCase(undefined)}
-        onChanged={() => void load()}
-      />
     </Card>
   );
 }
