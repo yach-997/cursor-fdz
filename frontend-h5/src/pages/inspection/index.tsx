@@ -212,6 +212,8 @@ export default function InspectionPage() {
   const [loadError, setLoadError] = useState('');
   const [wizardIndex, setWizardIndex] = useState(0);
   const [tripMode, setTripMode] = useState<TripMode>('na');
+  /** 费用单行程门禁未判定完前，不渲染产品线，避免先闪检查项再出有/无选择 */
+  const [tripGateReady, setTripGateReady] = useState(false);
   const [tripForm, setTripForm] = useState<TripFormState>(emptyTripForm);
   const [tripBusy, setTripBusy] = useState(false);
   /** 单人模式旧任务可能缺 workUnitId，从案例台回填 */
@@ -357,7 +359,8 @@ export default function InspectionPage() {
   const currentEntry = record?.entries.find(
     (e) => e.templateEntryId === currentTpl?.id,
   );
-  const showTripChoice = tripMode === 'undecided';
+  const showTripChoice = tripGateReady && tripMode === 'undecided';
+  const showWorkSteps = tripGateReady && tripMode !== 'undecided';
   const caseId = task?.serviceCaseId || '';
   const unitId = tripUnitId || task?.workUnitId || '';
 
@@ -439,6 +442,7 @@ export default function InspectionPage() {
     if (!taskId) return;
     setLoading(true);
     setLoadError('');
+    setTripGateReady(false);
     try {
       let t = await fetchTask(taskId);
       if (t.status === 'pending' || t.status === 'rejected') {
@@ -498,11 +502,14 @@ export default function InspectionPage() {
           setTripUnitId(t.workUnitId || '');
           setTripMode('undecided');
           setTripForm(emptyTripForm());
+        } finally {
+          setTripGateReady(true);
         }
       } else {
         setTripMode('na');
         setTripUnitId('');
         setTripForm(emptyTripForm());
+        setTripGateReady(true);
       }
     } catch (error) {
       setLoadError(requestErrorMessage(error, '作业加载失败，请检查网络后重试'));
@@ -1302,13 +1309,18 @@ export default function InspectionPage() {
             </div>
           )}
 
-          {showTripChoice ? (
+          {!tripGateReady ? (
+            <div className="trip-wizard-card">
+              <h3>准备作业…</h3>
+              <p>正在确认行程选项，请稍候</p>
+            </div>
+          ) : showTripChoice ? (
             <TripChoiceCard
               busy={tripBusy}
               onNeed={chooseTripNeed}
               onSkip={() => void chooseTripSkip()}
             />
-          ) : (
+          ) : showWorkSteps ? (
             <>
           {tripMode === 'skip' && (
             <div className="trip-wizard-skip-bar">
@@ -1811,11 +1823,11 @@ export default function InspectionPage() {
             <Empty description="无检查条目" />
           )}
             </>
-          )}
+          ) : null}
         </div>
       )}
 
-      {task && record && !showTripChoice && currentWizard && (
+      {task && record && showWorkSteps && currentWizard && (
         <div
           className="inspection-bottom-actions"
           style={{
