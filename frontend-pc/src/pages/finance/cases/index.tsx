@@ -191,6 +191,8 @@ export default function FinanceCasesPage() {
   >([]);
   const assignLoadSeq = useRef(0);
   const assignModeTouched = useRef(false);
+  /** 点击派单/加人时先拉详情再开窗，避免先闪「0 人」空态 */
+  const [assignOpeningId, setAssignOpeningId] = useState<string>();
   const [siteModal, setSiteModal] = useState<{ mode: 'single' | 'batch'; case?: FinanceCase }>();
   const [siteId, setSiteId] = useState<string>();
   const [typeModal, setTypeModal] = useState<FinanceCase>();
@@ -676,98 +678,110 @@ export default function FinanceCasesPage() {
                         : undefined
                     }
                     icon={<UserAddOutlined />}
+                    loading={assignOpeningId === r.id}
                     disabled={
-                      !r.siteId || !hasTaskType(r) || needsProductLine(r, taskTypes)
+                      !r.siteId ||
+                      !hasTaskType(r) ||
+                      needsProductLine(r, taskTypes) ||
+                      (!!assignOpeningId && assignOpeningId !== r.id)
                     }
                     onClick={() => {
                       const seq = ++assignLoadSeq.current;
                       assignModeTouched.current = false;
-                      setAssigning(r);
-                      setAssignMode(
-                        r.status === 'pending_assign'
-                          ? 'single'
-                          : r.assignMode === 'multi'
-                            ? 'multi'
-                            : 'single',
-                      );
-                      setInspectorId(undefined);
-                      setInspectorIds([]);
-                      setActiveAssignees([]);
-                      setPlannedUnits(
-                        r.status === 'pending_assign'
-                          ? 1
-                          : Math.max(1, Number(r.plannedUnits) || 1),
-                      );
-                      setAssignReason('');
-                      setInspectors(
-                        r.inspectorId
-                          ? [
-                              {
-                                id: r.inspectorId,
-                                realName: r.inspectorName || '已派工程师',
-                                phone: '',
-                                region: '',
-                                available: true,
-                              },
-                            ]
-                          : [],
-                      );
+                      setAssignOpeningId(r.id);
                       void Promise.all([
                         fetchFinanceInspectors(r.id),
                         fetchFinanceCase(r.id).catch(() => null),
-                      ]).then(([list, detail]) => {
-                        // 弹窗已换案/关闭：勿用异步结果覆盖
-                        if (seq !== assignLoadSeq.current) return;
-                        const assigns = (detail?.assignments || []).filter(
-                          (a) => a.status !== 'withdrawn',
-                        );
-                        const active = assigns
-                          .filter((a) => a.inspectorId)
-                          .map((a) => ({
-                            id: a.inspectorId!,
-                            realName: a.inspectorName || a.username || a.inspectorId!,
-                            completedUnits: Number(a.completedUnits || 0),
-                          }));
-                        setActiveAssignees(active);
-                        // 仅在用户未切换模式、且仍为单人换人流程时，预填当前工程师
-                        if (
-                          !assignModeTouched.current &&
-                          (detail?.assignMode || r.assignMode) === 'single' &&
-                          active[0]
-                        ) {
-                          setInspectorId(active[0].id);
-                          setInspectorIds([active[0].id]);
-                        } else if (!assignModeTouched.current) {
-                          setInspectorId(undefined);
-                          setInspectorIds([]);
-                        } else {
-                          // 用户已切多人：清掉不在可选项里的 id，避免出现 UUID 乱码
-                          setInspectorIds((prev) =>
-                            prev.filter((id) => !active.some((a) => a.id === id)),
+                      ])
+                        .then(([list, detail]) => {
+                          if (seq !== assignLoadSeq.current) return;
+                          const assigns = (detail?.assignments || []).filter(
+                            (a) => a.status !== 'withdrawn',
                           );
-                        }
-                        // 用户已手动切换模式：勿用详情把多人打回单人
-                        if (!assignModeTouched.current && r.status !== 'pending_assign') {
-                          if (detail?.assignMode === 'multi' || detail?.assignMode === 'single') {
-                            setAssignMode(detail.assignMode);
+                          const active = assigns
+                            .filter((a) => a.inspectorId)
+                            .map((a) => ({
+                              id: a.inspectorId!,
+                              realName: a.inspectorName || a.username || a.inspectorId!,
+                              completedUnits: Number(a.completedUnits || 0),
+                            }));
+                          // 详情无 assignments 时，用列表姓名兜底，避免仍闪空态
+                          const fallbackActive =
+                            active.length > 0
+                              ? active
+                              : String(r.inspectorName || '')
+                                  .split(/[、,，]/)
+                                  .map((s) => s.trim())
+                                  .filter(Boolean)
+                                  .map((name, i) => ({
+                                    id:
+                                      i === 0 && r.inspectorId
+                                        ? r.inspectorId
+                                        : `name:${name}`,
+                                    realName: name,
+                                    completedUnits: 0,
+                                  }));
+
+                          const mode: 'single' | 'multi' =
+                            r.status === 'pending_assign'
+                              ? 'single'
+                              : detail?.assignMode === 'multi' ||
+                                  detail?.assignMode === 'single'
+                                ? detail.assignMode
+                                : r.assignMode === 'multi'
+                                  ? 'multi'
+                                  : 'single';
+
+                          setAssignMode(mode);
+                          setActiveAssignees(fallbackActive);
+                          setPlannedUnits(
+                            r.status === 'pending_assign'
+                              ? 1
+                              : Math.max(
+                                  1,
+                                  Number(detail?.plannedUnits ?? r.plannedUnits) || 1,
+                                ),
+                          );
+                          setAssignReason('');
+                          if (mode === 'single' && fallbackActive[0]) {
+                            setInspectorId(fallbackActive[0].id);
+                            setInspectorIds([fallbackActive[0].id]);
+                          } else {
+                            setInspectorId(undefined);
+                            setInspectorIds([]);
                           }
-                          if (detail?.plannedUnits) {
-                            setPlannedUnits(Math.max(1, Number(detail.plannedUnits) || 1));
+                          const byId = new Map(list.map((item) => [item.id, item]));
+                          for (const a of fallbackActive) {
+                            if (a.id.startsWith('name:') || byId.has(a.id)) continue;
+                            byId.set(a.id, {
+                              id: a.id,
+                              realName: a.realName,
+                              phone: '',
+                              region: '',
+                              available: true,
+                            });
                           }
-                        }
-                        const byId = new Map(list.map((item) => [item.id, item]));
-                        for (const a of active) {
-                          if (byId.has(a.id)) continue;
-                          byId.set(a.id, {
-                            id: a.id,
-                            realName: a.realName,
-                            phone: '',
-                            region: '',
-                            available: true,
+                          setInspectors([...byId.values()]);
+                          setAssigning({
+                            ...r,
+                            ...(detail
+                              ? {
+                                  assignMode: detail.assignMode || r.assignMode,
+                                  plannedUnits: detail.plannedUnits ?? r.plannedUnits,
+                                  inspectorId: detail.inspectorId ?? r.inspectorId,
+                                  inspectorName: detail.inspectorName ?? r.inspectorName,
+                                  status: detail.status || r.status,
+                                }
+                              : null),
                           });
-                        }
-                        setInspectors([...byId.values()]);
-                      });
+                        })
+                        .catch(() => {
+                          if (seq !== assignLoadSeq.current) return;
+                          message.error('加载派单信息失败，请重试');
+                        })
+                        .finally(() => {
+                          if (seq === assignLoadSeq.current) setAssignOpeningId(undefined);
+                        });
                     }}
                   >
                     {r.status === 'pending_assign'
@@ -1385,7 +1399,9 @@ export default function FinanceCasesPage() {
                         type="link"
                         danger
                         size="small"
-                        disabled={Number(a.completedUnits || 0) > 0}
+                        disabled={
+                          Number(a.completedUnits || 0) > 0 || a.id.startsWith('name:')
+                        }
                         onClick={async () => {
                           if (!assigning) return;
                           const next = activeAssignees.filter((x) => x.id !== a.id);
