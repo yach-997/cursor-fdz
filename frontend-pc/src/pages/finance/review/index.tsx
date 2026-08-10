@@ -375,29 +375,43 @@ export default function FinanceReviewPage() {
             width: tab === 'approved' ? 132 : 200,
             render: (_: unknown, row: FinanceReviewItem) => (
               <div className="finance-review-ops">
-                <Button type="link" size="small" onClick={() => setAmountCase(row)}>
-                  明细
-                </Button>
-                <Button type="link" size="small" onClick={() => openEventPenalty(row)}>
-                  扣罚
-                </Button>
-                {canAudit(row) &&
-                  row.deductionStatus === 'pending' &&
-                  user?.role === 'super_admin' && (
+                <div className="finance-review-ops-row">
+                  <Button type="link" size="small" onClick={() => setAmountCase(row)}>
+                    明细
+                  </Button>
+                  <Button type="link" size="small" onClick={() => openEventPenalty(row)}>
+                    扣罚
+                  </Button>
+                  {row.reviewStatus === 'approved' && row.reviewComment && (
                     <Button
                       type="link"
                       size="small"
-                      onClick={async () => {
-                        await reviewFinanceDeduction(row.id, true);
-                        message.success('历史特殊扣减已复核');
-                        await load();
-                      }}
+                      onClick={() =>
+                        Modal.info({
+                          title: '审核意见',
+                          content: row.reviewComment,
+                        })
+                      }
                     >
-                      复核旧扣减
+                      意见
                     </Button>
                   )}
+                </div>
                 {canAudit(row) && (
-                  <>
+                  <div className="finance-review-ops-row is-actions">
+                    {row.deductionStatus === 'pending' && user?.role === 'super_admin' && (
+                      <Button
+                        type="link"
+                        size="small"
+                        onClick={async () => {
+                          await reviewFinanceDeduction(row.id, true);
+                          message.success('历史特殊扣减已复核');
+                          await load();
+                        }}
+                      >
+                        复核旧扣减
+                      </Button>
+                    )}
                     <Button
                       size="small"
                       danger
@@ -416,21 +430,7 @@ export default function FinanceReviewPage() {
                     >
                       通过
                     </Button>
-                  </>
-                )}
-                {row.reviewStatus === 'approved' && row.reviewComment && (
-                  <Button
-                    type="link"
-                    size="small"
-                    onClick={() =>
-                      Modal.info({
-                        title: '审核意见',
-                        content: row.reviewComment,
-                      })
-                    }
-                  >
-                    意见
-                  </Button>
+                  </div>
                 )}
               </div>
             ),

@@ -135,20 +135,22 @@
 }
 .finance-review-ops {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 120px;
+}
+.finance-review-ops-row {
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 6px 4px;
-  max-width: 188px;
+  gap: 4px;
 }
-.finance-review-ops .ant-btn-sm {
+.finance-review-ops-row.is-actions .ant-btn-sm {
   height: 28px;
-  padding: 0 10px;
+  padding: 0 12px;
   line-height: 26px;
-}
-.finance-review-ops .ant-btn-primary.ant-btn-sm,
-.finance-review-ops .ant-btn-dangerous.ant-btn-sm {
   min-width: 52px;
-  padding-inline: 12px;
 }
 .finance-review-ops .ant-btn-link {
   height: 28px;
