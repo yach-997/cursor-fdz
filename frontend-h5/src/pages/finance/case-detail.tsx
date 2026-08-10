@@ -114,6 +114,14 @@ export default function FinanceCaseDetailPage() {
     () => units.filter((u) => u.status === 'completed').sort((a, b) => a.seq - b.seq),
     [units],
   );
+  /** 本人已提交/已完成且有任务的台：可查看报告 */
+  const myReportUnits = useMemo(() => {
+    return myUnitList.filter(
+      (u) =>
+        !!u.inspectionTaskId &&
+        (u.status === 'submitted' || u.status === 'completed'),
+    );
+  }, [myUnitList]);
 
   const myActive = useMemo(() => {
     if (!item) return null;
@@ -191,6 +199,14 @@ export default function FinanceCaseDetailPage() {
     }
   };
 
+  const viewUnitReport = (unit: UnitItem) => {
+    if (!unit.inspectionTaskId) {
+      Toast.fail('该台暂无报告可查看');
+      return;
+    }
+    navigate(`/m/tasks/${unit.inspectionTaskId}`);
+  };
+
   const enterInspection = async (autoStart: boolean) => {
     if (useUnitFlow) {
       await goInspectUnit(myActive, autoStart);
@@ -256,8 +272,9 @@ export default function FinanceCaseDetailPage() {
 
   const canInspect =
     ['assigned', 'working'].includes(item.status) &&
-    !item.inspectionDone &&
-    (!useUnitFlow || !!myActive);
+    (useUnitFlow
+      ? !!myActive && myActive.status === 'claimed'
+      : !item.inspectionDone);
   // 正常路径：提交报告后自动完工；仅异常卡住时才显示补救按钮
   const reportReady =
     item.inspectionDone ||
@@ -370,7 +387,7 @@ export default function FinanceCaseDetailPage() {
           </>
         )}
 
-        {(item.inspectionDone || finished) && item.inspectionTaskId && (
+        {!useUnitFlow && (item.inspectionDone || finished) && item.inspectionTaskId && (
           <button
             type="button"
             className="mobile-finance-secondary"
@@ -380,7 +397,57 @@ export default function FinanceCaseDetailPage() {
             {workActionLabel(workType, 'report')}
           </button>
         )}
+        {useUnitFlow && myReportUnits.length > 0 && (
+          <button
+            type="button"
+            className="mobile-finance-secondary"
+            style={{ width: '100%', marginTop: 12 }}
+            onClick={() => {
+              if (myReportUnits.length === 1) {
+                viewUnitReport(myReportUnits[0]);
+                return;
+              }
+              const el = document.getElementById('my-unit-reports');
+              el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              Toast.info(`共 ${myReportUnits.length} 份，在下方列表点「查看报告」`);
+            }}
+          >
+            {workActionLabel(workType, 'report')}（{myReportUnits.length}）
+          </button>
+        )}
       </section>
+
+      {useUnitFlow && myReportUnits.length > 0 && (
+        <section id="my-unit-reports" className="mobile-finance-card">
+          <h3>
+            我的{workType}报告 · {myReportUnits.length}
+          </h3>
+          <p className="mobile-finance-muted" style={{ marginTop: 4 }}>
+            每台提交后可在此回看；点「查看报告」打开对应台详情。
+          </p>
+          <ul className="unit-mine-list">
+            {myReportUnits.map((u) => (
+              <li key={u.id}>
+                <span>
+                  {unitLabel} #{u.seq}
+                  <em style={{ marginLeft: 8 }}>
+                    {UNIT_STATUS_LABEL[u.status] || u.status}
+                  </em>
+                </span>
+                <span className="unit-mine-actions">
+                  <button
+                    type="button"
+                    className="unit-enter-btn"
+                    onClick={() => viewUnitReport(u)}
+                  >
+                    查看报告
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {multiWorking && (
         <section className="mobile-finance-card unit-pool-card">
@@ -496,7 +563,10 @@ export default function FinanceCaseDetailPage() {
                 <li className="mobile-finance-muted">暂无我的{unitLabel}</li>
               ) : (
                 myUnitList.map((u) => {
-                  const canEnter = u.status === 'claimed' || u.status === 'submitted';
+                  const canEnter = u.status === 'claimed';
+                  const canViewReport =
+                    !!u.inspectionTaskId &&
+                    (u.status === 'submitted' || u.status === 'completed');
                   const isFocus = u.id === myActive?.id;
                   return (
                     <li key={u.id} className={isFocus ? 'is-focus' : ''}>
@@ -514,6 +584,15 @@ export default function FinanceCaseDetailPage() {
                             onClick={() => void goInspectUnit(u, false)}
                           >
                             进入
+                          </button>
+                        )}
+                        {canViewReport && (
+                          <button
+                            type="button"
+                            className="unit-enter-btn"
+                            onClick={() => viewUnitReport(u)}
+                          >
+                            查看报告
                           </button>
                         )}
                       </span>
@@ -587,13 +666,32 @@ export default function FinanceCaseDetailPage() {
                     <span>{showCompletedAll ? '收起' : '展开'}</span>
                   </button>
                   {showCompletedAll && (
-                    <div className="unit-grid is-done">
-                      {completedUnits.map((u) => (
-                        <span key={u.id} className="unit-chip is-done">
-                          #{u.seq}
-                        </span>
-                      ))}
-                    </div>
+                    <ul className="unit-mine-list">
+                      {completedUnits.map((u) => {
+                        const mine = !!userId && u.inspectorId === userId;
+                        const canView = !!u.inspectionTaskId && mine;
+                        return (
+                          <li key={u.id}>
+                            <span>
+                              {unitLabel} #{u.seq}
+                              {mine ? ' · 我的' : ''}
+                            </span>
+                            <span className="unit-mine-actions">
+                              <em>已完成</em>
+                              {canView ? (
+                                <button
+                                  type="button"
+                                  className="unit-enter-btn"
+                                  onClick={() => viewUnitReport(u)}
+                                >
+                                  查看报告
+                                </button>
+                              ) : null}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
                   )}
                 </div>
               )}
