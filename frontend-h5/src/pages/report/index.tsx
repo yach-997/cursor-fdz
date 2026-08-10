@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { NavBar, Cell, Empty, Tag, Image, PullRefresh, Button } from 'react-vant';
 import { fetchRecord, type RecordItem } from '../../api/record';
 import { displayPhotoUrl } from '../../utils/photo-url';
-import { RECORD_STATUS_LABEL } from '../../utils/displayLabels';
+import { RECORD_STATUS_LABEL, formatDateTime } from '../../utils/displayLabels';
 import { resolveWorkTypeLabel, workActionLabel } from '../../utils/workTypeLabels';
 import './report.css';
 
