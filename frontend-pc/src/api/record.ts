@@ -91,6 +91,12 @@ export interface RecordCaseGroup {
   unitLabel: string | null;
   assignMode: string | null;
   siteId: string | null;
+  /** 计划台数（案例总台数） */
+  plannedUnits?: number | null;
+  /** 案例已完成台数 */
+  completedUnits?: number | null;
+  /** 案例状态 */
+  caseStatus?: string | null;
   recordCount: number;
   pendingCount: number;
   approvedCount: number;

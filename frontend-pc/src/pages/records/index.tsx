@@ -12,6 +12,7 @@ import {
   Table,
   Tag,
   Timeline,
+  Tooltip,
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -355,9 +356,54 @@ export default function RecordsPage() {
       render: (_, row) => row.projectName || '-',
     },
     {
-      title: '报告数',
-      width: 90,
-      render: (_, row) => row.recordCount,
+      title: '报告进度',
+      width: 160,
+      render: (_, row) => {
+        const planned = Math.max(1, Number(row.plannedUnits) || 0) || null;
+        const unit = row.unitLabel || '台';
+        const submitted = Number(row.recordCount) || 0;
+        const completed =
+          row.completedUnits != null ? Math.max(0, Number(row.completedUnits) || 0) : null;
+        const doneByPlan =
+          planned != null &&
+          (completed != null ? completed >= planned : submitted >= planned);
+        const caseDone = ['finished', 'settle_review', 'settled', 'month_locked'].includes(
+          String(row.caseStatus || ''),
+        );
+        return (
+          <div style={{ lineHeight: 1.35 }}>
+            <Tooltip title="当前筛选下已提交报告数 / 案例计划台数">
+              <span>
+                {planned != null ? (
+                  <>
+                    <span style={{ fontWeight: 600 }}>{submitted}</span>
+                    <span style={{ color: '#8c8c8c' }}> / {planned} {unit}</span>
+                  </>
+                ) : (
+                  <span style={{ fontWeight: 600 }}>{submitted}</span>
+                )}
+              </span>
+            </Tooltip>
+            {caseDone ? (
+              <div>
+                <Tag color="success" style={{ marginTop: 4 }}>
+                  案例已结案
+                </Tag>
+              </div>
+            ) : doneByPlan ? (
+              <div>
+                <Tag color="blue" style={{ marginTop: 4 }}>
+                  台数已齐
+                </Tag>
+              </div>
+            ) : planned != null && submitted < planned ? (
+              <div style={{ marginTop: 2, color: '#8c8c8c', fontSize: 12 }}>
+                未交 {planned - submitted} {unit}
+              </div>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
       title: '状态汇总',
@@ -574,7 +620,13 @@ export default function RecordsPage() {
       <Drawer
         title={
           activeGroup
-            ? `${activeGroup.gspCaseNo || '独立任务'} · ${activeGroup.projectName || ''}`
+            ? `${activeGroup.gspCaseNo || '独立任务'} · ${
+                activeGroup.plannedUnits
+                  ? `${activeGroup.recordCount}/${activeGroup.plannedUnits}${
+                      activeGroup.unitLabel || '台'
+                    }`
+                  : `${activeGroup.recordCount}份报告`
+              } · ${activeGroup.projectName || ''}`
             : '案例报告'
         }
         width={920}

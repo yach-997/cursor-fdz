@@ -235,6 +235,9 @@ export class RecordService {
       unitLabel: string | null;
       assignMode: string | null;
       siteId: string | null;
+      plannedUnits: number | null;
+      completedUnits: number | null;
+      caseStatus: string | null;
       recordCount: number;
       pendingCount: number;
       approvedCount: number;
@@ -254,6 +257,11 @@ export class RecordService {
           unitLabel: d.unitLabel || null,
           assignMode: d.assignMode || null,
           siteId: d.task?.siteId || null,
+          plannedUnits:
+            d.plannedUnits != null ? Math.max(1, Number(d.plannedUnits) || 1) : null,
+          completedUnits:
+            d.completedUnits != null ? Math.max(0, Number(d.completedUnits) || 0) : null,
+          caseStatus: d.caseStatus || null,
           recordCount: 0,
           pendingCount: 0,
           approvedCount: 0,
@@ -1182,6 +1190,9 @@ export class RecordService {
     let projectName: string | null = null;
     let unitLabel: string | null = null;
     let assignMode: string | null = null;
+    let plannedUnits: number | null = null;
+    let completedUnits: number | null = null;
+    let caseStatus: string | null = null;
     let workUnit: { id: string; seq: number; title: string | null } | null = null;
     let inspectorName: string | null = null;
 
@@ -1194,6 +1205,9 @@ export class RecordService {
         projectName = sc.projectName;
         unitLabel = sc.unitLabel;
         assignMode = sc.assignMode;
+        plannedUnits = Math.max(1, Number(sc.plannedUnits) || 1);
+        completedUnits = Math.max(0, Number(sc.completedUnits) || 0);
+        caseStatus = sc.status || null;
       }
     }
     if (t?.workUnitId) {
@@ -1239,6 +1253,9 @@ export class RecordService {
       projectName,
       unitLabel,
       assignMode,
+      plannedUnits,
+      completedUnits,
+      caseStatus,
       workUnit,
       inspectorName,
       task: t
