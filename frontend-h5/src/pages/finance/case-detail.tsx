@@ -70,6 +70,14 @@ export default function FinanceCaseDetailPage() {
   }, [unitFilter, id]);
 
   useEffect(() => {
+    if (!item) return;
+    // 结案后默认看「我的」，便于回看报告
+    if (!['assigned', 'working'].includes(item.status)) {
+      setUnitFilter('mine');
+    }
+  }, [item?.status]);
+
+  useEffect(() => {
     if (!item || !id || !userId) return;
     if (!['assigned', 'working'].includes(item.status)) return;
     const planned = Math.max(1, Number(item.plannedUnits) || 1);
@@ -463,9 +471,12 @@ export default function FinanceCaseDetailPage() {
                 viewUnitReport(myReportUnits[0]);
                 return;
               }
-              const el = document.getElementById('my-unit-reports');
-              el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              Toast.info(`共 ${myReportUnits.length} 份，在下方列表点「查看报告」`);
+              setUnitFilter('mine');
+              requestAnimationFrame(() => {
+                document
+                  .getElementById('unit-pool-card')
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              });
             }}
           >
             {workActionLabel(workType, 'report')}（{myReportUnits.length}）
@@ -473,40 +484,8 @@ export default function FinanceCaseDetailPage() {
         )}
       </section>
 
-      {useUnitFlow && myReportUnits.length > 0 && (
-        <section id="my-unit-reports" className="mobile-finance-card">
-          <h3>
-            我的{workType}报告 · {myReportUnits.length}
-          </h3>
-          <p className="mobile-finance-muted" style={{ marginTop: 4 }}>
-            每台提交后可在此回看；点「查看报告」打开对应台详情。
-          </p>
-          <ul className="unit-mine-list">
-            {myReportUnits.map((u) => (
-              <li key={u.id}>
-                <span>
-                  {unitLabel} #{u.seq}
-                  <em style={{ marginLeft: 8 }}>
-                    {UNIT_STATUS_LABEL[u.status] || u.status}
-                  </em>
-                </span>
-                <span className="unit-mine-actions">
-                  <button
-                    type="button"
-                    className="unit-enter-btn"
-                    onClick={() => viewUnitReport(u)}
-                  >
-                    查看报告
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {multiWorking && (
-        <section className="mobile-finance-card unit-pool-card">
+      {useUnitFlow && (multiWorking || (finished && myUnitList.length > 0)) && (
+        <section id="unit-pool-card" className="mobile-finance-card unit-pool-card">
           <div className="unit-progress-head">
             <div>
               <strong>
@@ -514,16 +493,22 @@ export default function FinanceCaseDetailPage() {
               </strong>
               <span>
                 {' '}
-                {unitLabel}已完成 · 可认领 {openUnits.length}
-                {myInProgress.length > 0 ? ` · 我进行中 ${myInProgress.length}` : ''}
+                {unitLabel}已完成
+                {multiWorking
+                  ? ` · 可认领 ${openUnits.length}${
+                      myInProgress.length > 0 ? ` · 我进行中 ${myInProgress.length}` : ''
+                    }`
+                  : ''}
               </span>
             </div>
           </div>
-          <div className="unit-progress-bar" aria-hidden>
-            <i style={{ width: `${progressPct}%` }} />
-          </div>
+          {multiWorking ? (
+            <div className="unit-progress-bar" aria-hidden>
+              <i style={{ width: `${progressPct}%` }} />
+            </div>
+          ) : null}
 
-          {myActive && (
+          {multiWorking && myActive && (
             <div className="unit-now">
               <div className="unit-now-info">
                 <span className="unit-now-label">当前作业</span>
@@ -548,7 +533,7 @@ export default function FinanceCaseDetailPage() {
             </div>
           )}
 
-          {openUnits.length > 0 ? (
+          {multiWorking && openUnits.length > 0 ? (
             <button
               type="button"
               className={`mobile-finance-primary unit-claim-next ${
@@ -561,13 +546,13 @@ export default function FinanceCaseDetailPage() {
                 ? `认领下一${unitLabel}（#${openUnits[0].seq}）`
                 : `认领第 ${openUnits[0].seq} ${unitLabel}`}
             </button>
-          ) : !myActive ? (
+          ) : multiWorking && !myActive ? (
             <p className="mobile-finance-muted unit-empty-tip">
               暂无可认领{unitLabel}，请等待他人完成或结案。
             </p>
           ) : null}
 
-          {myActive && openUnits.length > 0 && (
+          {multiWorking && myActive && openUnits.length > 0 && (
             <p className="mobile-finance-muted unit-hint">
               当前{unitLabel}可先放着，继续认领其他{unitLabel}；在「我的」里可切换进入任一台作业。
             </p>
@@ -575,11 +560,16 @@ export default function FinanceCaseDetailPage() {
 
           <div className="unit-filter-row">
             {(
-              [
-                ['open', `可认领 ${openUnits.length}`],
-                ['mine', `我的 ${myUnitList.length}`],
-                ['all', `全部 ${units.length}`],
-              ] as const
+              (multiWorking
+                ? ([
+                    ['open', `可认领 ${openUnits.length}`],
+                    ['mine', `我的 ${myUnitList.length}`],
+                    ['all', `全部 ${units.length}`],
+                  ] as const)
+                : ([
+                    ['mine', `我的 ${myUnitList.length}`],
+                    ['all', `全部 ${units.length}`],
+                  ] as const))
             ).map(([key, label]) => (
               <button
                 key={key}
@@ -592,7 +582,7 @@ export default function FinanceCaseDetailPage() {
             ))}
           </div>
 
-          {unitFilter === 'open' && (
+          {multiWorking && unitFilter === 'open' && (
             <>
               {openUnits.length === 0 ? (
                 <p className="mobile-finance-muted">没有可认领的{unitLabel}</p>
