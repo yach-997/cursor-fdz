@@ -5,6 +5,7 @@ import { fetchRecord, type RecordItem } from '../../api/record';
 import { displayPhotoUrl } from '../../utils/photo-url';
 import { RECORD_STATUS_LABEL, formatDateTime } from '../../utils/displayLabels';
 import { resolveWorkTypeLabel, workActionLabel } from '../../utils/workTypeLabels';
+import PhotoViewerOverlay from '../../components/PhotoViewerOverlay';
 import './report.css';
 
 const AI_LABEL: Record<string, string> = {
@@ -27,6 +28,10 @@ export default function ReportPage() {
   const navigate = useNavigate();
   const [record, setRecord] = useState<RecordItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const [photoPreview, setPhotoPreview] = useState<{
+    urls: string[];
+    index: number;
+  } | null>(null);
 
   const load = useCallback(async () => {
     if (!recordId) return;
@@ -230,15 +235,23 @@ export default function ReportPage() {
                     {(entry.photos || []).length > 0 && (
                       <Cell title="现场照片">
                         <div className="report-photos">
-                          {entry.photos.map((url) => (
-                            <Image
+                          {entry.photos.map((url, photoIdx) => (
+                            <button
                               key={url}
-                              src={displayPhotoUrl(url)}
-                              width={72}
-                              height={72}
-                              fit="cover"
-                              radius={10}
-                            />
+                              type="button"
+                              className="report-photo-btn"
+                              onClick={() =>
+                                setPhotoPreview({ urls: entry.photos, index: photoIdx })
+                              }
+                            >
+                              <Image
+                                src={displayPhotoUrl(url)}
+                                width={72}
+                                height={72}
+                                fit="cover"
+                                radius={10}
+                              />
+                            </button>
                           ))}
                         </div>
                       </Cell>
@@ -256,6 +269,13 @@ export default function ReportPage() {
             </div>
           </div>
         </PullRefresh>
+      )}
+      {photoPreview && (
+        <PhotoViewerOverlay
+          urls={photoPreview.urls}
+          initialIndex={photoPreview.index}
+          onClose={() => setPhotoPreview(null)}
+        />
       )}
     </div>
   );

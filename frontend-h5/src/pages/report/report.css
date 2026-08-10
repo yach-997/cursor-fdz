@@ -105,6 +105,15 @@
   margin-top: 8px;
 }
 
+.report-photo-btn {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  line-height: 0;
+  border-radius: 10px;
+}
+
 .report-photos .rv-image {
   border-radius: 10px;
   overflow: hidden;
