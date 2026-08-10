@@ -73,28 +73,45 @@ export default function FinanceCaseDetailPage() {
     if (!item || !id || !userId) return;
     if (!['assigned', 'working'].includes(item.status)) return;
     const planned = Math.max(1, Number(item.plannedUnits) || 1);
-    if (planned <= 1 && item.assignMode !== 'multi') return;
-    const stuck = (item.units || []).filter(
-      (u) =>
-        u.inspectorId === userId &&
-        u.status === 'submitted' &&
-        !!u.inspectionTaskId &&
-        !autoCompleteTried.current.has(u.id),
-    );
-    if (!stuck.length) return;
+    const unitFlow = item.assignMode === 'multi' || planned > 1;
     let cancelled = false;
     void (async () => {
-      for (const u of stuck) {
-        autoCompleteTried.current.add(u.id);
-        try {
-          const next = await completeFinanceUnit(id, u.id, { skipErrorToast: true });
-          if (cancelled) return;
-          setItem(next);
-          setFocusUnitId(next.myActiveUnits?.[0]?.id || next.activeUnit?.id || null);
-        } catch {
-          // 缺结束里程等：保留补救入口，允许稍后重试
-          autoCompleteTried.current.delete(u.id);
+      if (unitFlow) {
+        const stuck = (item.units || []).filter(
+          (u) =>
+            u.inspectorId === userId &&
+            u.status === 'submitted' &&
+            !!u.inspectionTaskId &&
+            !autoCompleteTried.current.has(u.id),
+        );
+        for (const u of stuck) {
+          autoCompleteTried.current.add(u.id);
+          try {
+            const next = await completeFinanceUnit(id, u.id, { skipErrorToast: true });
+            if (cancelled) return;
+            setItem(next);
+            setFocusUnitId(next.myActiveUnits?.[0]?.id || next.activeUnit?.id || null);
+          } catch {
+            autoCompleteTried.current.delete(u.id);
+          }
         }
+        return;
+      }
+      // 单人：报告已交且未结案时静默确认完工（与提交成功页一致）
+      const key = `case:${id}`;
+      if (autoCompleteTried.current.has(key)) return;
+      const ready =
+        item.inspectionDone ||
+        item.inspectionTaskStatus === 'submitted' ||
+        item.inspectionTaskStatus === 'approved';
+      if (!ready) return;
+      autoCompleteTried.current.add(key);
+      try {
+        const next = await finishFinanceCase(id, { skipErrorToast: true });
+        if (cancelled) return;
+        setItem(next);
+      } catch {
+        autoCompleteTried.current.delete(key);
       }
     })();
     return () => {
@@ -310,13 +327,12 @@ export default function FinanceCaseDetailPage() {
     (useUnitFlow
       ? !!myActive && myActive.status === 'claimed'
       : !item.inspectionDone);
-  // 分台：只针对「本人仍卡在已提交、未完结」的那一台；不要用整案 inspectionDone 误判
+  // 分台：只针对「本人仍卡在已提交」的台（用于引导补结束里程 / 后台自动完结）
   const finishTargetUnit = useUnitFlow
     ? myInProgress.find((u) => u.status === 'submitted') ||
       (myActive?.status === 'submitted' ? myActive : null) ||
       null
     : null;
-  // 正常路径：提交报告后自动完成本台；仅异常卡住时才显示补救按钮
   const reportReady = useUnitFlow
     ? !!finishTargetUnit
     : item.inspectionDone ||
@@ -326,6 +342,7 @@ export default function FinanceCaseDetailPage() {
   const tripEndUnitId = useUnitFlow
     ? finishTargetUnit?.id || null
     : myActive?.id || item.units?.[0]?.id || null;
+  // 有开始行程却缺结束里程时才提示；完结动作由提交成功页 / 进页自动补完，不再提供「完成本台」
   const needsTripEndAfterSubmit =
     item.status === 'working' &&
     !!tripEndUnitId &&
@@ -333,16 +350,6 @@ export default function FinanceCaseDetailPage() {
     hasTripStartFilled(tripEndUnitId) &&
     !isTripSkipped(tripEndUnitId) &&
     !hasTripEnd(tripEndUnitId);
-  const tripEndReadyForFinish =
-    !tripEndUnitId ||
-    isTripSkipped(tripEndUnitId) ||
-    !hasTripStartFilled(tripEndUnitId) ||
-    hasTripEnd(tripEndUnitId);
-  const needsManualFinish =
-    item.status === 'working' &&
-    reportReady &&
-    !!tripEndUnitId &&
-    tripEndReadyForFinish;
   const finished = !['assigned', 'working'].includes(item.status);
   const workType = resolveWorkTypeLabel(item);
   const multiWorking = useUnitFlow && ['assigned', 'working'].includes(item.status);
@@ -779,57 +786,6 @@ export default function FinanceCaseDetailPage() {
             }
           >
             去填结束里程（自动完工）
-          </button>
-        </section>
-      )}
-
-      {needsManualFinish && (
-        <section className="mobile-finance-card">
-          <h3>
-            {useUnitFlow
-              ? `${unitLabel} #${finishTargetUnit?.seq ?? myActive?.seq ?? ''} ${workActionLabel(workType, 'submitted')}`
-              : workActionLabel(workType, 'submitted')}
-          </h3>
-          <p className="mobile-finance-muted">
-            {useUnitFlow
-              ? `本${unitLabel}报告与结束行程已齐，点下方完结本台（提交成功后一般会自动完成）。整案需全部 ${item.plannedUnits || 1} ${unitLabel}完成后才会自动结案。`
-              : '报告与结束行程已齐，点下方完结（正常应已自动完工）。'}
-          </p>
-          <button
-            type="button"
-            className="mobile-finance-secondary"
-            style={{ width: '100%', marginTop: 12 }}
-            disabled={busy}
-            onClick={() => {
-              const unitId = finishTargetUnit?.id || myActive?.id || item.units?.[0]?.id;
-              void (async () => {
-                setBusy(true);
-                try {
-                  const next =
-                    useUnitFlow && unitId
-                      ? await completeFinanceUnit(id, unitId)
-                      : await finishFinanceCase(id);
-                  setItem(next);
-                  if (useUnitFlow && ['assigned', 'working'].includes(next.status)) {
-                    Toast.success(`本${unitLabel}已完成`);
-                    setFocusUnitId(next.myActiveUnits?.[0]?.id || next.activeUnit?.id || null);
-                  } else {
-                    Toast.success('案例已完工');
-                    navigate('/m/tasks', { replace: true });
-                  }
-                } finally {
-                  setBusy(false);
-                }
-              })();
-            }}
-          >
-            {useUnitFlow
-              ? `完成本${unitLabel}${
-                  finishTargetUnit || myActive
-                    ? ` #${(finishTargetUnit || myActive)!.seq}`
-                    : ''
-                }`
-              : '确认完工'}
           </button>
         </section>
       )}
