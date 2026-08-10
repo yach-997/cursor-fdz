@@ -127,7 +127,7 @@ export async function applyDemandTypeIfMissing(
       serviceCase.unitLabel = '台';
       serviceCase.expenseEnabled = true;
       if (!serviceCase.assignMode) serviceCase.assignMode = 'single';
-      if (serviceCase.assignMode === 'single') serviceCase.plannedUnits = 1;
+      if (!serviceCase.plannedUnits || serviceCase.plannedUnits < 1) serviceCase.plannedUnits = 1;
       changed = true;
     }
   } else {

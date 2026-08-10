@@ -150,10 +150,6 @@ export class FinanceMultiService {
       if (!Number.isFinite(n) || n < 1 || n > 500) {
         throw new BadRequestException('计划单元数须在 1～500');
       }
-      if ((serviceCase.assignMode || 'single') === 'single' && n !== 1) {
-        throw new BadRequestException('单人模式计划单元数固定为 1');
-      }
-
       const completed = await this.units.count({
         where: { serviceCaseId: caseId, status: 'completed' },
       });
@@ -315,10 +311,11 @@ export class FinanceMultiService {
     serviceCase.unitLabel = '台';
     serviceCase.expenseEnabled = true;
     const fromPlanned = serviceCase.plannedUnits;
-    if (nextMode === 'single') {
-      serviceCase.plannedUnits = 1;
-    } else if (dto.plannedUnits != null) {
+    if (dto.plannedUnits != null) {
       serviceCase.plannedUnits = Math.max(1, Math.min(500, Number(dto.plannedUnits) || 1));
+    } else if (nextMode === 'single') {
+      // 单人也可多台：未传台数时保留原计划，至少 1
+      serviceCase.plannedUnits = Math.max(1, Number(serviceCase.plannedUnits) || 1);
     } else if (!serviceCase.plannedUnits || serviceCase.plannedUnits < 1) {
       serviceCase.plannedUnits = Math.max(ids.length, 1);
     }

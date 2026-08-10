@@ -777,8 +777,7 @@ export default function FinanceCasesPage() {
                         : '换人'}
                   </Button>
                 )}
-                {r.assignMode === 'multi' &&
-                  ['assigned', 'working', 'finished', 'settle_review'].includes(r.status) && (
+                {['assigned', 'working', 'finished', 'settle_review'].includes(r.status) && (
                     <Button
                       type="link"
                       onClick={() => {
@@ -1292,7 +1291,7 @@ export default function FinanceCasesPage() {
             }
             await assignFinanceCase(assigning.id, keepId, assignReason || undefined, {
               assignMode: 'single',
-              plannedUnits: 1,
+              plannedUnits: Math.max(1, plannedUnits || 1),
             });
             message.success(
               isFirst
@@ -1325,7 +1324,8 @@ export default function FinanceCasesPage() {
                 const keepId = activeAssignees[0]?.id || inspectorId;
                 setInspectorId(keepId);
                 setInspectorIds(keepId ? [keepId] : []);
-                setPlannedUnits(1);
+                // 单人也可多台，保留已填台数
+                setPlannedUnits((n) => Math.max(1, n || 1));
               } else if (
                 assigning?.status !== 'pending_assign' &&
                 (assigning?.assignMode || 'single') === 'single'
@@ -1358,7 +1358,7 @@ export default function FinanceCasesPage() {
             </div>
           ) : (assigning?.assignMode || 'single') === 'single' ? (
             <div style={{ marginTop: 6, color: '#8c8c8c', fontSize: 12 }}>
-              可改为多人模式：设置计划台数后确认即可；也可顺带追加工程师，原工程师保留。
+              单人也可设多台（同一人依次做完）。需要多人协作时再切换多人模式。
             </div>
           ) : null}
         </div>
@@ -1506,8 +1506,19 @@ export default function FinanceCasesPage() {
                 message="单人换人：原工程师将被撤回；未提交的认领台会释放回可认领。报告已交或已有完成台则不能换。"
               />
             ) : (
-              <p>仅显示该网格已入职工程师；同一工程师可同时负责多个案例。</p>
+              <p>仅显示该网格已入职工程师；同一工程师可同时负责多个案例。单人也可设置多台，由同一人依次完成。</p>
             )}
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ marginBottom: 6 }}>
+                计划台数（作业台）
+              </div>
+              <Input
+                type="number"
+                min={1}
+                value={plannedUnits}
+                onChange={(e) => setPlannedUnits(Number(e.target.value) || 1)}
+              />
+            </div>
             <Select
               style={{ width: '100%' }}
               showSearch

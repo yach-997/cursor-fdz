@@ -70,6 +70,8 @@ export default function FinanceCaseDetailPage() {
   const isMulti = item?.assignMode === 'multi';
   const unitLabel = item?.unitLabel || '台';
   const plannedCap = Math.max(1, Number(item?.plannedUnits) || 1);
+  // 单人多台与多人一样走分台认领；多人特有的加人/分账仍用 isMulti
+  const useUnitFlow = isMulti || plannedCap > 1;
   const units = useMemo(() => {
     const raw = item?.units || [];
     // 计划缩减后，超出计划且仍 open 的不展示；有进展的历史行仍可见
@@ -174,7 +176,7 @@ export default function FinanceCaseDetailPage() {
         current.activeUnit?.inspectionTaskId;
       if (!taskId) {
         Toast.fail(
-          isMulti
+          useUnitFlow
             ? '请先认领一个作业单元'
             : `未找到${workActionLabel(resolveWorkTypeLabel(current), 'task_noun')}，请联系网格长确认服务类型`,
         );
@@ -190,7 +192,7 @@ export default function FinanceCaseDetailPage() {
   };
 
   const enterInspection = async (autoStart: boolean) => {
-    if (isMulti) {
+    if (useUnitFlow) {
       await goInspectUnit(myActive, autoStart);
       return;
     }
@@ -255,7 +257,7 @@ export default function FinanceCaseDetailPage() {
   const canInspect =
     ['assigned', 'working'].includes(item.status) &&
     !item.inspectionDone &&
-    (!isMulti || !!myActive);
+    (!useUnitFlow || !!myActive);
   // 正常路径：提交报告后自动完工；仅异常卡住时才显示补救按钮
   const reportReady =
     item.inspectionDone ||
@@ -277,7 +279,7 @@ export default function FinanceCaseDetailPage() {
     item.status === 'working' && reportReady && tripEndReadyForFinish;
   const finished = !['assigned', 'working'].includes(item.status);
   const workType = resolveWorkTypeLabel(item);
-  const multiWorking = isMulti && ['assigned', 'working'].includes(item.status);
+  const multiWorking = useUnitFlow && ['assigned', 'working'].includes(item.status);
 
   const primaryLabel =
     item.status === 'assigned'
@@ -341,7 +343,7 @@ export default function FinanceCaseDetailPage() {
             <dt>服务类型</dt>
             <dd>{item.taskTypeName || item.taskType || '未设置'}</dd>
           </div>
-          {!isMulti && item.inspectionTaskStatus && (
+          {!useUnitFlow && item.inspectionTaskStatus && (
             <div>
               <dt>{workActionLabel(workType, 'progress')}</dt>
               <dd>
@@ -354,7 +356,7 @@ export default function FinanceCaseDetailPage() {
           )}
         </dl>
 
-        {!isMulti && canInspect && (
+        {!useUnitFlow && canInspect && (
           <>
             <button
               type="button"
@@ -604,7 +606,7 @@ export default function FinanceCaseDetailPage() {
         <section className="mobile-finance-card mobile-finance-tip">
           <h3>现场说明</h3>
           <p className="mobile-finance-muted">
-            {isMulti
+            {useUnitFlow
               ? workActionLabel(workType, 'tip_unit')
               : workActionLabel(workType, 'tip_photo')}
           </p>
@@ -637,12 +639,12 @@ export default function FinanceCaseDetailPage() {
       {needsManualFinish && (
         <section className="mobile-finance-card">
           <h3>
-            {isMulti
+            {useUnitFlow
               ? `本单元${workActionLabel(workType, 'submitted')}`
               : workActionLabel(workType, 'submitted')}
           </h3>
           <p className="mobile-finance-muted">
-            {isMulti
+            {useUnitFlow
               ? `本${unitLabel}报告与结束行程已齐，点下方完结（正常应已自动完成）。`
               : '报告与结束行程已齐，点下方完结（正常应已自动完工）。'}
           </p>
@@ -657,11 +659,11 @@ export default function FinanceCaseDetailPage() {
                 setBusy(true);
                 try {
                   const next =
-                    isMulti && unitId
+                    useUnitFlow && unitId
                       ? await completeFinanceUnit(id, unitId)
                       : await finishFinanceCase(id);
                   setItem(next);
-                  if (isMulti && ['assigned', 'working'].includes(next.status)) {
+                  if (useUnitFlow && ['assigned', 'working'].includes(next.status)) {
                     Toast.success(`本${unitLabel}已完成`);
                     setFocusUnitId(next.myActiveUnits?.[0]?.id || next.activeUnit?.id || null);
                   } else {
@@ -674,7 +676,7 @@ export default function FinanceCaseDetailPage() {
               })();
             }}
           >
-            {isMulti
+            {useUnitFlow
               ? `完成本${unitLabel}${myActive ? ` #${myActive.seq}` : ''}`
               : '确认完工'}
           </button>

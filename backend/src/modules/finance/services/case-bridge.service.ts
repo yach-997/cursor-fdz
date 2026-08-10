@@ -190,7 +190,7 @@ export class CaseBridgeService {
     // 派单模式在派单时选择；报销由工程师按需填写
     item.expenseEnabled = true;
     if (!item.assignMode) item.assignMode = 'single';
-    if (item.assignMode === 'single') item.plannedUnits = 1;
+    if (!item.plannedUnits || item.plannedUnits < 1) item.plannedUnits = 1;
     await this.cases.save(item);
     await this.logs.write(
       'service_case',
