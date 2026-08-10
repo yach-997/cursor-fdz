@@ -3,28 +3,44 @@ const KNOWN_SERVICE_TYPES = ['故障恢复', '整改', '维护', '交付', '巡�
 
 /**
  * 解析当前作业的服务类型展示名。
- * 优先用案例上的 taskTypeName；否则从任务名/代码推断；没有则退回「作业」。
+ * 优先用案例/任务上的 taskTypeName、serviceType；不要仅因底层 taskType=inspection 就显示「巡检」。
  */
 export function resolveWorkTypeLabel(input?: {
   taskTypeName?: string | null;
   serviceType?: string | null;
   taskType?: string | null;
   taskName?: string | null;
+  serviceCaseId?: string | null;
 } | null): string {
   const direct = String(input?.taskTypeName || input?.serviceType || '').trim();
-  if (direct) return direct;
-
-  const code = String(input?.taskType || '').trim().toLowerCase();
-  if (code === 'inspection') return '巡检';
-  if (code === 'service' || code === 'maintenance') return '维护';
-  if (code === 'repair' || code === 'fault') return '故障恢复';
-  if (code === 'rectify') return '整改';
-  if (code === 'delivery') return '交付';
+  if (direct) {
+    // 兼容误存英文 code
+    const lower = direct.toLowerCase();
+    if (lower === 'inspection') return '巡检';
+    if (lower === 'service' || lower === 'maintenance') return '维护';
+    if (lower === 'repair' || lower === 'fault') return '故障恢复';
+    if (lower === 'rectify') return '整改';
+    if (lower === 'delivery') return '交付';
+    return direct;
+  }
 
   const name = String(input?.taskName || '').trim();
   for (const k of KNOWN_SERVICE_TYPES) {
-    if (name === k || name.startsWith(`${k}`) || name.includes(k)) return k;
+    if (name === k || name.startsWith(`${k}`) || name.includes(`【${k}`) || name.includes(k)) {
+      return k;
+    }
   }
+
+  // 仅无独立任务（非费用案例）时，才用 taskType 代码推断
+  if (!input?.serviceCaseId) {
+    const code = String(input?.taskType || '').trim().toLowerCase();
+    if (code === 'inspection') return '巡检';
+    if (code === 'service' || code === 'maintenance') return '维护';
+    if (code === 'repair' || code === 'fault') return '故障恢复';
+    if (code === 'rectify') return '整改';
+    if (code === 'delivery') return '交付';
+  }
+
   return '作业';
 }
 

@@ -508,6 +508,18 @@ export default function InspectionPage() {
           setTripForm(tripFormFromClaim(claim));
           // 有费用案例就走有/无行程选择（不再因缺 workUnitId 跳过）
           setTripMode(resolveTripMode(claim));
+          // 用案例服务类型覆盖任务上的 inspection 默认文案
+          if (c.taskTypeName || c.serviceType) {
+            setTask((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    taskTypeName: c.taskTypeName || prev.taskTypeName,
+                    serviceType: c.serviceType || prev.serviceType,
+                  }
+                : prev,
+            );
+          }
         } catch {
           setTripUnitId(t.workUnitId || '');
           setTripMode('undecided');

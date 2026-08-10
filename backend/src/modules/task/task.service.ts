@@ -50,6 +50,8 @@ export class TaskService {
     private readonly memberRepo: Repository<SiteMember>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(ServiceCase)
+    private readonly caseRepo: Repository<ServiceCase>,
     private readonly templateService: TemplateService,
   ) {}
 
@@ -242,8 +244,12 @@ export class TaskService {
       record?.rejectReason ||
       records.find((r) => r.rejectReason?.reason)?.rejectReason ||
       null;
+    const caseMeta = await this.resolveCaseWorkType(task.serviceCaseId);
     return {
       ...this.toSafe(task, record?.status, !!rejectReason?.reason),
+      workUnitId: task.workUnitId || null,
+      taskTypeName: caseMeta.taskTypeName,
+      serviceType: caseMeta.serviceType,
       templateSnapshot: task.templateSnapshot,
       record: record
         ? {
@@ -254,6 +260,39 @@ export class TaskService {
           }
         : null,
     };
+  }
+
+  /** 费用案例：用服务类型模板名展示，避免一律显示「巡检」 */
+  private async resolveCaseWorkType(serviceCaseId?: string | null) {
+    if (!serviceCaseId) {
+      return { taskTypeName: null as string | null, serviceType: null as string | null };
+    }
+    const sc = await this.caseRepo.findOne({ where: { id: serviceCaseId } });
+    if (!sc) {
+      return { taskTypeName: null, serviceType: null };
+    }
+    let taskTypeName: string | null = null;
+    if (sc.taskTemplateId) {
+      const rows = await this.caseRepo.manager.query(
+        `SELECT name FROM inspection_templates WHERE id = $1 LIMIT 1`,
+        [sc.taskTemplateId],
+      );
+      taskTypeName = rows?.[0]?.name || null;
+    }
+    if (!taskTypeName) {
+      const legacy: Record<string, string> = {
+        inspection: '巡检',
+        service: '维护',
+        maintenance: '维护',
+        repair: '故障恢复',
+        fault: '故障恢复',
+        rectify: '整改',
+        delivery: '交付',
+      };
+      taskTypeName =
+        legacy[String(sc.taskType || '').toLowerCase()] || sc.taskType || sc.serviceType || null;
+    }
+    return { taskTypeName, serviceType: sc.serviceType || null };
   }
 
   /** 创建任务：管理员/工程师均可；按网格+序列号关联设备，存模板快照 */
