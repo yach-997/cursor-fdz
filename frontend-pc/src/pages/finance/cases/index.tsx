@@ -608,7 +608,7 @@ export default function FinanceCasesPage() {
               return (
                 <div style={{ lineHeight: 1.35 }}>
                   <Tag color={s.color}>{s.text}</Tag>
-                  {r.assignMode === 'multi' ? (
+                  {r.assignMode === 'multi' || Number(r.plannedUnits || 1) > 1 ? (
                     <div style={{ marginTop: 2, fontSize: 12, color: '#8c8c8c' }}>
                       {r.completedUnits || 0}/{r.plannedUnits || 1}
                       {r.unitLabel || '台'}
