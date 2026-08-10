@@ -82,13 +82,6 @@ export const menuConfig: MenuConfig[] = [
         roles: ['super_admin', 'site_manager'],
       },
       {
-        key: 'finance-expenses',
-        path: '/finance/expenses',
-        label: '报销审核',
-        icon: 'AccountBookOutlined',
-        roles: ['super_admin', 'site_manager'],
-      },
-      {
         key: 'finance-assessment',
         path: '/finance/assessment',
         label: '考核管理',

@@ -29,7 +29,6 @@ const FinanceCasesPage = lazy(() => import('../pages/finance/cases'));
 const FinancePoOrdersPage = lazy(() => import('../pages/finance/po-orders'));
 const FinancePricesPage = lazy(() => import('../pages/finance/prices'));
 const FinanceReviewPage = lazy(() => import('../pages/finance/review'));
-const FinanceExpensesPage = lazy(() => import('../pages/finance/expenses'));
 const FinanceAssessmentPage = lazy(() => import('../pages/finance/assessment'));
 const FinanceMonthlyPage = lazy(() => import('../pages/finance/monthly'));
 
@@ -248,11 +247,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'expenses',
-            element: (
-              <Lazy>
-                <FinanceExpensesPage />
-              </Lazy>
-            ),
+            element: <Navigate to="/finance/review?scope=expense" replace />,
           },
           {
             path: 'assessment',
