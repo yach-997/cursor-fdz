@@ -155,11 +155,18 @@
   padding-inline: 4px;
   margin-inline: 0;
 }
-.finance-review-tip {
-  color: #61756b;
-  margin: 0 0 12px;
-  font-size: 13px;
-  line-height: 1.5;
+.finance-missing-price-link {
+  display: inline-flex;
+  text-decoration: none;
+}
+.finance-missing-price-link .ant-tag {
+  cursor: pointer;
+  margin-inline-end: 0;
+  transition: filter 0.15s ease;
+}
+.finance-missing-price-link:hover .ant-tag {
+  filter: brightness(0.96);
+  outline: 1px solid #d48806;
 }
 .settle-amount-link:hover {
   color: #087b59;

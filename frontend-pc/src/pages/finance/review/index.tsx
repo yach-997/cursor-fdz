@@ -15,6 +15,7 @@ import {
 } from 'antd';
 import { QuestionCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { Link } from 'react-router-dom';
 import {
   approveFinanceReview,
   fetchFinanceCase,
@@ -292,10 +293,14 @@ export default function FinanceReviewPage() {
             render: (_, row) =>
               row.approvalReady ? (
                 <Tag color="green">可结算</Tag>
+              ) : !row.inspectorName ? (
+                <Tag color="orange">未派工</Tag>
               ) : (
-                <Tag color="orange">
-                  {!row.inspectorName ? '未派工' : `缺价 ${row.missingPerf}`}
-                </Tag>
+                <Tooltip title="点击前往价格库补内部绩效价；补齐后刷新本页即可通过结算">
+                  <Link to="/finance/prices?type=perf" className="finance-missing-price-link">
+                    <Tag color="orange">缺价 {row.missingPerf}</Tag>
+                  </Link>
+                </Tooltip>
               ),
           },
           {
@@ -323,7 +328,10 @@ export default function FinanceReviewPage() {
               ]
             : [
                 {
-                  title: '审核时限',
+                  title: colTip(
+                    '审核时限',
+                    '完工后 7 天内建议完成结算审核。超时仅标红提醒，不自动驳回，仍可正常审核通过。',
+                  ),
                   width: 108,
                   render: (_: unknown, row: FinanceReviewItem) =>
                     row.reviewStatus === 'approved' ? (

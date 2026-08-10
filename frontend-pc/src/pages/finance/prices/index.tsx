@@ -34,11 +34,14 @@ import { useAuthStore } from '../../../stores/auth';
 import ImportDialog from '../components/ImportDialog';
 import ItemMappingDialog from './ItemMappingDialog';
 import { canUseDangerousClear, confirmDangerousClear } from '../../../utils/finance-clear';
+import { useSearchParams } from 'react-router-dom';
 
 const scenes = ['平地', '水上', '山地', '高原', '屋顶'];
 export default function PricesPage() {
-  const user = useAuthStore((s) => s.user),
-    [type, setType] = useState<'settle' | 'perf'>('settle'),
+  const user = useAuthStore((s) => s.user);
+  const [searchParams] = useSearchParams();
+  const initialType = searchParams.get('type') === 'perf' ? 'perf' : 'settle';
+  const [type, setType] = useState<'settle' | 'perf'>(initialType),
     [data, setData] = useState<PriceItem[]>([]),
     [total, setTotal] = useState(0),
     [page, setPage] = useState(1),
@@ -51,6 +54,12 @@ export default function PricesPage() {
     [perfImportOpen, setPerfImportOpen] = useState(false),
     [mappingOpen, setMappingOpen] = useState(false),
     [form] = Form.useForm();
+
+  useEffect(() => {
+    const next = searchParams.get('type') === 'perf' ? 'perf' : 'settle';
+    setType(next);
+    setPage(1);
+  }, [searchParams]);
   const admin = user?.role === 'super_admin';
   const canClear = admin && canUseDangerousClear();
   const typeLabel = type === 'perf' ? '内部绩效价' : '甲方结算价';
