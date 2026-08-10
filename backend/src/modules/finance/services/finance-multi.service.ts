@@ -346,30 +346,46 @@ export class FinanceMultiService {
     const existing = await this.assignments.find({ where: { serviceCaseId: caseId } });
     const activeExisting = existing.filter((a) => a.status !== 'withdrawn');
 
-    // 单人改派：原工程师无已提交/完成单元时可替换
+    // 多人模式至少 2 人（含已在派 + 本次追加）
+    if (mode === 'multi') {
+      const projected = new Set([
+        ...activeExisting.map((a) => a.inspectorId).filter(Boolean),
+        ...ids,
+      ]);
+      if (projected.size < 2) {
+        throw new BadRequestException(
+          '多人模式至少需要 2 名工程师；只需 1 人请使用单人模式',
+        );
+      }
+    }
+
+    // 单人改派 / 多人改单人：只保留目标工程师，其余无进度则可撤回
     if (mode === 'single') {
       const target = ids[0];
-      if (activeExisting.length && activeExisting[0].inspectorId !== target) {
+      const toWithdraw = activeExisting.filter((a) => a.inspectorId !== target);
+      const keepingExisting = activeExisting.some((a) => a.inspectorId === target);
+      if (toWithdraw.length > 0 || !keepingExisting) {
         await this.workflow.assertInspectionTransferable(caseId);
-        for (const a of activeExisting) {
-          if (a.completedUnits > 0) {
-            throw new BadRequestException('已有完成单元，不能改派');
-          }
-          a.status = 'withdrawn';
-          await this.assignments.save(a);
+      }
+      for (const a of toWithdraw) {
+        if (Number(a.completedUnits || 0) > 0) {
+          throw new BadRequestException('已有完成单元，不能改派');
         }
-        // 释放已认领未完成单元
-        const claimed = await this.units.find({
-          where: { serviceCaseId: caseId, status: In(['claimed', 'submitted']) },
-        });
-        for (const u of claimed) {
-          u.status = 'open';
-          u.inspectorId = null;
-          u.claimedAt = null;
-          u.submittedAt = null;
-          u.inspectionTaskId = null;
-          await this.units.save(u);
-        }
+        a.status = 'withdrawn';
+        await this.assignments.save(a);
+      }
+      // 释放被撤回工程师的认领台；整案换人时释放全部认领
+      const claimed = await this.units.find({
+        where: { serviceCaseId: caseId, status: In(['claimed', 'submitted']) },
+      });
+      for (const u of claimed) {
+        if (keepingExisting && u.inspectorId === target) continue;
+        u.status = 'open';
+        u.inspectorId = null;
+        u.claimedAt = null;
+        u.submittedAt = null;
+        u.inspectionTaskId = null;
+        await this.units.save(u);
       }
     }
 
@@ -1176,6 +1192,19 @@ export class FinanceMultiService {
       },
     });
     if (!assignment) throw new BadRequestException('该工程师不在本案例派单中');
+
+    const siblings = await this.assignments.find({
+      where: {
+        serviceCaseId: caseId,
+        status: In(['assigned', 'working', 'done']),
+      },
+    });
+    // 多人模式不能只剩 1 人；撤到 0 人（清空待重派）允许
+    if (siblings.length === 2) {
+      throw new BadRequestException(
+        '多人模式至少保留 2 名工程师；若只需 1 人，请先切换为「单人模式」并确认（将自动撤回其余人）',
+      );
+    }
 
     const progressed = await this.units.count({
       where: {

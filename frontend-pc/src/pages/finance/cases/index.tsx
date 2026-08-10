@@ -1154,7 +1154,7 @@ export default function FinanceCasesPage() {
             (id) => !activeAssignees.some((a) => a.id === id),
           );
           const convertingFromSingle = (assigning?.assignMode || 'single') !== 'multi';
-          if (convertingFromSingle) return adding.length || activeAssignees.length ? '确认改多人' : '确认';
+          if (convertingFromSingle) return '确认改多人';
           // 已是多人：撤回已即时生效；有新人则确认加人，否则点完成关闭
           return adding.length ? '确认加人' : '完成';
         })()}
@@ -1163,24 +1163,21 @@ export default function FinanceCasesPage() {
           disabled: (() => {
             if (assignMode === 'multi') {
               if (assigning?.status === 'pending_assign') {
-                return inspectorIds.length === 0;
+                return inspectorIds.length < 2;
               }
               const adding = inspectorIds.filter(
                 (id) => !activeAssignees.some((a) => a.id === id),
               );
               const convertingFromSingle =
                 (assigning?.assignMode || 'single') !== 'multi';
-              // 单人改多人：至少保留/选一人；已是多人：可不加人，直接「完成」（撤回已即时生效）
+              // 单人改多人：合计至少 2 人；已是多人：可不加人，直接「完成」
               if (convertingFromSingle) {
-                return activeAssignees.length === 0 && adding.length === 0;
+                return activeAssignees.length + adding.length < 2;
               }
               return false;
             }
-            // 单人 / 多人改单人
+            // 单人 / 多人改单人：选定保留的一人即可（多人改单人时后端会撤回其余人）
             const keepId = inspectorId || activeAssignees[0]?.id;
-            if ((assigning?.assignMode || 'single') === 'multi' && assignMode === 'single') {
-              return !keepId || activeAssignees.length > 1;
-            }
             return !keepId;
           })(),
         }}
@@ -1204,6 +1201,15 @@ export default function FinanceCasesPage() {
             );
             // 已是多人且未选新人：撤回已即时生效，这里只关窗并刷新（顺带可保存台数）
             if (!isFirst && !convertingFromSingle && !added.length) {
+              // 历史数据：多人却只剩 1 人 → 提醒改单人，不允许「完成」固化该状态
+              if (activeAssignees.length === 1) {
+                message.warning('多人模式至少 2 人；请切换为「单人模式」后确认，或再追加工程师');
+                return;
+              }
+              if (activeAssignees.length === 0) {
+                message.warning('当前无人在派，请选择至少 2 名工程师后确认派单');
+                return;
+              }
               const nextPlan = Math.max(1, plannedUnits || 1);
               if (nextPlan !== Math.max(1, Number(assigning.plannedUnits) || 1)) {
                 await setFinanceCaseWorkPlan(assigning.id, { plannedUnits: nextPlan });
@@ -1225,11 +1231,20 @@ export default function FinanceCasesPage() {
             if (!toSend.length) {
               message.warning(
                 isFirst
-                  ? '请选择工程师'
+                  ? '请选择至少 2 名工程师'
                   : convertingFromSingle
-                    ? '请选择要派的工程师（可先撤回不想保留的原工程师）'
+                    ? '多人模式至少 2 人：请保留原工程师并再选至少 1 人，或撤回后重选 2 人及以上'
                     : '请选择要追加的工程师',
               );
+              return;
+            }
+            const totalAfter = convertingFromSingle
+              ? new Set([...existingIds, ...added]).size
+              : isFirst
+                ? toSend.length
+                : activeAssignees.length + toSend.length;
+            if (totalAfter < 2) {
+              message.warning('多人模式至少需要 2 名工程师；只需 1 人请使用单人模式');
               return;
             }
             // 单人改多人且本地已撤回部分原人：记下待服务端撤回的人
@@ -1269,26 +1284,12 @@ export default function FinanceCasesPage() {
           } else {
             const keepId = inspectorId || activeAssignees[0]?.id;
             if (!keepId) {
-              message.warning('请先保留一名工程师再改回单人');
+              message.warning('请选择要保留的工程师');
               return;
             }
             const convertingToSingle =
               !isFirst && (assigning.assignMode || 'single') === 'multi';
-            if (convertingToSingle && activeAssignees.length > 1) {
-              message.warning('请先撤回多余工程师，只留 1 人后再改回单人');
-              return;
-            }
-            // 多人改单人：先撤回非保留人员（若仍有残留）
-            if (convertingToSingle) {
-              for (const a of activeAssignees) {
-                if (a.id === keepId) continue;
-                try {
-                  await withdrawFinanceAssignee(assigning.id, a.id);
-                } catch {
-                  /* ignore */
-                }
-              }
-            }
+            // 多人改单人：后端在 assignMode=single 时自动撤回其余人，无需先撤到 1 人
             await assignFinanceCase(assigning.id, keepId, assignReason || undefined, {
               assignMode: 'single',
               plannedUnits: Math.max(1, plannedUnits || 1),
@@ -1311,12 +1312,6 @@ export default function FinanceCasesPage() {
           <Select
             style={{ width: '100%' }}
             value={assignMode}
-            disabled={
-              // 多人且仍有超过1人在派：须先撤回多余人，才能改回单人
-              assigning?.status !== 'pending_assign' &&
-              (assigning?.assignMode || 'single') === 'multi' &&
-              activeAssignees.length > 1
-            }
             onChange={(v: 'single' | 'multi') => {
               assignModeTouched.current = true;
               setAssignMode(v);
@@ -1337,24 +1332,24 @@ export default function FinanceCasesPage() {
             }}
             options={[
               { value: 'single', label: '单人模式（1 人负责）' },
-              { value: 'multi', label: '多人模式（可设台数、加人）' },
+              { value: 'multi', label: '多人模式（至少 2 人）' },
             ]}
           />
           {assigning?.status === 'pending_assign' ? (
             <div style={{ marginTop: 6, color: '#8c8c8c', fontSize: 12 }}>
-              默认单人；需要多人作业时在此切换，并自行填写计划台数。
+              默认单人；需要多人协作时切换多人（至少派 2 人），并填写计划台数。
             </div>
-          ) : (assigning?.assignMode || 'single') === 'multi' && activeAssignees.length > 1 ? (
+          ) : (assigning?.assignMode || 'single') === 'multi' && assignMode === 'single' ? (
             <div style={{ marginTop: 6, color: '#8c8c8c', fontSize: 12 }}>
-              多人改回单人：请先「撤回」到只剩 1 人，再切换为单人模式并确认。
+              改为单人：下方选择保留的 1 人，确认后其余工程师将自动撤回。
             </div>
-          ) : (assigning?.assignMode || 'single') === 'multi' && activeAssignees.length <= 1 ? (
+          ) : (assigning?.assignMode || 'single') === 'multi' ? (
             <div style={{ marginTop: 6, color: '#8c8c8c', fontSize: 12 }}>
-              当前仅剩 1 人，可改回「单人模式」后点确认；有提交/完成台时不可切换。
+              多人模式至少 2 人。若只需 1 人，请切换为「单人模式」后确认。
             </div>
           ) : (assigning?.assignMode || 'single') === 'single' && assignMode === 'multi' ? (
             <div style={{ marginTop: 6, color: '#8c8c8c', fontSize: 12 }}>
-              改为多人后可设台数；不想保留原工程师请先点「撤回」，再选其他人确认。
+              改为多人须合计至少 2 人：默认保留原工程师，请再选至少 1 人；也可先撤回原人后重选。
             </div>
           ) : (assigning?.assignMode || 'single') === 'single' ? (
             <div style={{ marginTop: 6, color: '#8c8c8c', fontSize: 12 }}>
@@ -1403,6 +1398,32 @@ export default function FinanceCasesPage() {
                             );
                             return;
                           }
+                          // 多人至少 2 人：撤到只剩 1 人时引导改为单人
+                          if (next.length === 1) {
+                            const keep = next[0];
+                            Modal.confirm({
+                              title: '多人模式至少 2 人',
+                              content: `撤回「${a.realName}」后将只剩「${keep.realName}」。是否改为单人模式并保留「${keep.realName}」？`,
+                              okText: '改为单人并保留',
+                              cancelText: '取消',
+                              onOk: async () => {
+                                await assignFinanceCase(
+                                  assigning.id,
+                                  keep.id,
+                                  assignReason || undefined,
+                                  {
+                                    assignMode: 'single',
+                                    plannedUnits: Math.max(1, plannedUnits || 1),
+                                  },
+                                );
+                                message.success(`已改为单人模式，保留 ${keep.realName}`);
+                                setAssigning(undefined);
+                                setActiveAssignees([]);
+                                await load();
+                              },
+                            });
+                            return;
+                          }
                           try {
                             await withdrawFinanceAssignee(assigning.id, a.id);
                             message.success(`已撤回 ${a.realName}`);
@@ -1436,7 +1457,7 @@ export default function FinanceCasesPage() {
                   type="info"
                   showIcon
                   style={{ marginTop: 8 }}
-                  message="「撤回」点一下立即生效，用来减少人员；下方加人后点「确认加人」。若不加人，点「完成」关闭即可。"
+                  message="「撤回」立即生效，且多人至少保留 2 人。若只需 1 人请改「单人模式」。加人后点「确认加人」；不加人点「完成」关闭。"
                 />
               </div>
             )}
@@ -1446,10 +1467,12 @@ export default function FinanceCasesPage() {
               style={{ marginBottom: 12 }}
               message={
                 (assigning?.assignMode || 'single') !== 'multi' && activeAssignees.length > 0
-                  ? '正在改为多人模式：默认保留原工程师。若要换成别人，先点「撤回」再选择新人。'
-                  : activeAssignees.length
-                    ? '减少人：点「撤回」立即生效。增加人：下方选择后点「确认加人」。'
-                    : '请选择工程师（可多选），确认后生效。'
+                  ? '正在改为多人模式：须合计至少 2 人。默认保留原工程师，请再选至少 1 人；也可先撤回原人后重选。'
+                  : activeAssignees.length === 1
+                    ? '当前多人模式仅 1 人（异常状态）：请切换为单人模式，或再追加至少 1 人。'
+                    : activeAssignees.length
+                      ? '减少人：点「撤回」（至少留 2 人）。增加人：下方选择后点「确认加人」。'
+                      : '请选择至少 2 名工程师，确认后生效。'
               }
             />
             <div style={{ marginBottom: 12 }}>
@@ -1482,7 +1505,11 @@ export default function FinanceCasesPage() {
               value={inspectorIds.filter(
                 (id) => !activeAssignees.some((a) => a.id === id),
               )}
-              placeholder={activeAssignees.length ? '选择要追加的工程师' : '选择工程师（可多选）'}
+              placeholder={
+                activeAssignees.length
+                  ? '选择要追加的工程师'
+                  : '选择至少 2 名工程师（可多选）'
+              }
               onChange={(ids) =>
                 setInspectorIds(
                   ids.filter((id) => !activeAssignees.some((a) => a.id === id)),
@@ -1498,7 +1525,21 @@ export default function FinanceCasesPage() {
           </>
         ) : (
           <>
-            {assigning && assigning.status !== 'pending_assign' ? (
+            {assigning &&
+            assigning.status !== 'pending_assign' &&
+            (assigning.assignMode || 'single') === 'multi' &&
+            assignMode === 'single' ? (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 12 }}
+                message={
+                  activeAssignees.length > 1
+                    ? `将保留下方所选的 1 人，其余 ${activeAssignees.length - 1} 人确认后自动撤回。`
+                    : '确认为单人模式后，由下方所选工程师单独负责。'
+                }
+              />
+            ) : assigning && assigning.status !== 'pending_assign' ? (
               <Alert
                 type="info"
                 showIcon
@@ -1508,6 +1549,21 @@ export default function FinanceCasesPage() {
             ) : (
               <p>仅显示该网格已入职工程师；同一工程师可同时负责多个案例。单人也可设置多台，由同一人依次完成。</p>
             )}
+            {(assigning?.assignMode || 'single') === 'multi' &&
+            assignMode === 'single' &&
+            activeAssignees.length > 0 ? (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ marginBottom: 6 }}>当前在派（确认后仅保留所选 1 人）</div>
+                <Space wrap>
+                  {activeAssignees.map((a) => (
+                    <Tag key={a.id} color={inspectorId === a.id ? 'green' : undefined}>
+                      {a.realName}
+                      {inspectorId === a.id ? ' · 保留' : ' · 将撤回'}
+                    </Tag>
+                  ))}
+                </Space>
+              </div>
+            ) : null}
             <div style={{ marginBottom: 12 }}>
               <div style={{ marginBottom: 6 }}>
                 计划台数（作业台）
@@ -1524,15 +1580,35 @@ export default function FinanceCasesPage() {
               showSearch
               optionFilterProp="label"
               value={inspectorId}
-              placeholder="选择工程师"
+              placeholder={
+                (assigning?.assignMode || 'single') === 'multi' && assignMode === 'single'
+                  ? '选择要保留的工程师'
+                  : '选择工程师'
+              }
               onChange={(v) => {
                 setInspectorId(v);
                 setInspectorIds(v ? [v] : []);
               }}
-              options={inspectors.map((item) => ({
-                value: item.id,
-                label: inspectorOptionLabel(item),
-              }))}
+              options={
+                (assigning?.assignMode || 'single') === 'multi' && assignMode === 'single'
+                  ? // 多人改单人：优先从当前在派里选保留人，也可换成其他人
+                    [
+                      ...activeAssignees.map((a) => ({
+                        value: a.id,
+                        label: `${a.realName}（当前在派）`,
+                      })),
+                      ...inspectors
+                        .filter((item) => !activeAssignees.some((a) => a.id === item.id))
+                        .map((item) => ({
+                          value: item.id,
+                          label: inspectorOptionLabel(item),
+                        })),
+                    ]
+                  : inspectors.map((item) => ({
+                      value: item.id,
+                      label: inspectorOptionLabel(item),
+                    }))
+              }
             />
           </>
         )}
