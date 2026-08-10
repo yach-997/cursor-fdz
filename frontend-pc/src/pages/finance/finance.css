@@ -133,29 +133,13 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.finance-review-ops {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  min-width: 120px;
-}
-.finance-review-ops-row {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 4px;
-}
-.finance-review-ops-row.is-actions .ant-btn-sm {
-  height: 28px;
-  padding: 0 12px;
-  line-height: 26px;
-  min-width: 52px;
-}
-.finance-review-ops .ant-btn-link {
-  height: 28px;
-  padding-inline: 4px;
+.finance-review-ops-links .ant-btn-link {
+  padding-inline: 6px;
   margin-inline: 0;
+  height: auto;
+}
+.finance-review-ops-links .ant-btn-link:disabled {
+  color: #bfbfbf;
 }
 .finance-missing-price-link {
   display: inline-flex;
