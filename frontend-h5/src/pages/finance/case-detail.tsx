@@ -357,7 +357,7 @@ export default function FinanceCaseDetailPage() {
         {!isMulti && canInspect && (
           <>
             <p className="trip-start-hint">
-              开工前须填写开始里程表和导航截图；结束后再填结束里程与费用。
+              进入作业后先选有/无行程；有行程时在产品线首尾填写开始与结束里程及费用。
             </p>
             <button
               type="button"
