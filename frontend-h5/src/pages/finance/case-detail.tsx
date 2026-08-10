@@ -53,9 +53,6 @@ export default function FinanceCaseDetailPage() {
   const [unitFilter, setUnitFilter] = useState<UnitFilter>('mine');
   const [gridLimit, setGridLimit] = useState(GRID_PAGE);
   const [showCompletedAll, setShowCompletedAll] = useState(false);
-  /** 可认领：列表默认收起，优先「下一台 / 指定台号」 */
-  const [showOpenPicker, setShowOpenPicker] = useState(false);
-  const [pickSeq, setPickSeq] = useState('');
   /** 本地聚焦台：可在已认领多台之间切换，不必等当前台完成 */
   const [focusUnitId, setFocusUnitId] = useState<string | null>(null);
   /** 进入页时自动补完「已提交未完结」的台，避免误显示「完成本台」 */
@@ -87,8 +84,6 @@ export default function FinanceCaseDetailPage() {
   useEffect(() => {
     setGridLimit(GRID_PAGE);
     setShowCompletedAll(false);
-    setShowOpenPicker(false);
-    setPickSeq('');
   }, [unitFilter, id]);
 
   useEffect(() => {
@@ -342,21 +337,6 @@ export default function FinanceCaseDetailPage() {
     }
     // 已有未完成台时只认领不跳转，便于连续认领
     await claimUnit(next.id, myInProgress.length === 0);
-  };
-
-  const claimBySeq = async () => {
-    const seq = Math.floor(Number(pickSeq));
-    if (!seq || seq < 1) {
-      Toast.fail(`请输入${unitLabel}号`);
-      return;
-    }
-    const target = openUnits.find((u) => u.seq === seq);
-    if (!target) {
-      Toast.fail(`${unitLabel} #${seq} 不可认领或不存在`);
-      return;
-    }
-    await claimUnit(target.id, myInProgress.length === 0);
-    setPickSeq('');
   };
 
   const canInspect =
