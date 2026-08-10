@@ -343,11 +343,16 @@ export class FinanceQueryService {
        ORDER BY a.assign_time ASC NULLS LAST`,
       [id],
     );
+    const assigneeNames = (assignments || [])
+      .map((a: { inspectorName?: string }) => String(a.inspectorName || '').trim())
+      .filter(Boolean);
     return {
       ...item,
       siteName: siteRow?.name || null,
       siteManagerName: siteRow?.managerName || null,
-      inspectorName: inspectorName || null,
+      // 多人：展示全部在派姓名，避免详情只显示主工程师一人
+      inspectorName: assigneeNames.length ? assigneeNames.join('、') : inspectorName || null,
+      assigneeCount: assigneeNames.length || (inspectorName ? 1 : 0),
       taskTypeName: taskTypeName || item.taskType || null,
       assignments: assignments || [],
       orders: orders.map((order) => ({

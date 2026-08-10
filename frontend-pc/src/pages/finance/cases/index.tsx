@@ -576,9 +576,29 @@ export default function FinanceCasesPage() {
           {
             title: '工程师',
             dataIndex: 'inspectorName',
-            width: 110,
+            width: 168,
             ellipsis: { showTitle: false },
-            render: (v) => <EllipsisTip text={v} empty="-" />,
+            render: (v: string, row: FinanceCase) => {
+              const names = String(v || '')
+                .split(/[、,，]/)
+                .map((s) => s.trim())
+                .filter(Boolean);
+              if (!names.length) return '-';
+              const short =
+                names.length > 2
+                  ? `${names.slice(0, 2).join('、')}等${names.length}人`
+                  : names.join('、');
+              return (
+                <span>
+                  <EllipsisTip text={short} empty="-" />
+                  {row.assignMode === 'multi' || names.length > 1 ? (
+                    <Tag color="purple" style={{ marginLeft: 6 }}>
+                      {names.length}人
+                    </Tag>
+                  ) : null}
+                </span>
+              );
+            },
           },
           {
             title: '状态',
@@ -1390,13 +1410,26 @@ export default function FinanceCasesPage() {
               }
             />
             <div style={{ marginBottom: 12 }}>
-              <div style={{ marginBottom: 6 }}>计划台数</div>
+              <div style={{ marginBottom: 6 }}>
+                计划台数（作业台，不是人数）
+                <span style={{ marginLeft: 8, color: '#8c8c8c', fontSize: 12 }}>
+                  当前在派 {activeAssignees.length} 人
+                </span>
+              </div>
               <Input
                 type="number"
                 min={1}
                 value={plannedUnits}
                 onChange={(e) => setPlannedUnits(Number(e.target.value) || 1)}
               />
+              {activeAssignees.length > Math.max(1, plannedUnits || 1) ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginTop: 8 }}
+                  message={`在派 ${activeAssignees.length} 人已多于计划 ${Math.max(1, plannedUnits || 1)} 台。改台数不会自动减人，请点「撤回」减少工程师。`}
+                />
+              ) : null}
             </div>
             <Select
               mode="multiple"
@@ -1578,12 +1611,50 @@ export default function FinanceCasesPage() {
                 {
                   key: 'inspector',
                   label: '工程师',
-                  children: detail.inspectorName || detail.inspectorId || '-',
+                  children: (() => {
+                    const fromAssign = (detail.assignments || [])
+                      .filter((a: { status?: string }) => a.status !== 'withdrawn')
+                      .map((a: { inspectorName?: string }) => a.inspectorName)
+                      .filter(Boolean);
+                    const names = fromAssign.length
+                      ? fromAssign
+                      : String(detail.inspectorName || '')
+                          .split(/[、,，]/)
+                          .map((s: string) => s.trim())
+                          .filter(Boolean);
+                    if (!names.length) return detail.inspectorId || '-';
+                    return `${names.join('、')}（${names.length}人）`;
+                  })(),
                 },
                 {
                   key: 'status',
                   label: '派单状态',
                   children: dispatchStatus(detail as FinanceCase).text,
+                },
+                {
+                  key: 'crew',
+                  label: '在派/计划',
+                  children: (() => {
+                    const names = (detail.assignments || [])
+                      .filter((a: { status?: string }) => a.status !== 'withdrawn')
+                      .map((a: { inspectorName?: string }) => a.inspectorName)
+                      .filter(Boolean);
+                    const people =
+                      names.length ||
+                      (String(detail.inspectorName || '')
+                        .split(/[、,，]/)
+                        .map((s: string) => s.trim())
+                        .filter(Boolean).length
+                        ? String(detail.inspectorName || '')
+                            .split(/[、,，]/)
+                            .map((s: string) => s.trim())
+                            .filter(Boolean).length
+                        : detail.inspectorId
+                          ? 1
+                          : 0);
+                    const plan = Math.max(1, Number(detail.plannedUnits) || 1);
+                    return `${people} 人 / ${plan} 台`;
+                  })(),
                 },
                 {
                   key: 'revenue',
