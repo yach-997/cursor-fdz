@@ -594,11 +594,14 @@ export async function persistTripEnd(
   form: TripFormState,
   submitFee: boolean,
 ) {
+  // 开始资料可能已在开工时落库；结束保存只带非空开始字段，避免空值把已上传的开始图冲掉
   return saveUnitTripExpense(caseId, unitId, {
     tripSkipped: false,
-    startOdometerUrl: form.startOdometerUrl || null,
-    startNavUrl: form.startNavUrl || null,
-    startMileage: form.startMileage === '' ? null : Number(form.startMileage),
+    ...(form.startOdometerUrl ? { startOdometerUrl: form.startOdometerUrl } : {}),
+    ...(form.startNavUrl ? { startNavUrl: form.startNavUrl } : {}),
+    ...(form.startMileage !== ''
+      ? { startMileage: Number(form.startMileage) }
+      : {}),
     endOdometerUrl: form.endOdometerUrl || null,
     endNavUrl: form.endNavUrl || null,
     endMileage: form.endMileage === '' ? null : Number(form.endMileage),

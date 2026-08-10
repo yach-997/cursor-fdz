@@ -800,25 +800,20 @@ export class FinanceMultiService implements OnModuleInit {
       claim.tripSkipped = false;
     }
 
-    if (dto.startOdometerUrl !== undefined) claim.startOdometerUrl = dto.startOdometerUrl || null;
-    if (dto.startNavUrl !== undefined) claim.startNavUrl = dto.startNavUrl || null;
-    if (dto.startMileage !== undefined) {
-      claim.startMileage =
-        dto.startMileage == null || Number.isNaN(Number(dto.startMileage))
-          ? null
-          : Number(dto.startMileage).toFixed(1);
+    // 空值不覆盖已有开始资料，避免结束行程保存时把开始里程/导航图误清空
+    if (dto.startOdometerUrl) claim.startOdometerUrl = dto.startOdometerUrl;
+    if (dto.startNavUrl) claim.startNavUrl = dto.startNavUrl;
+    if (dto.startMileage !== undefined && dto.startMileage != null && !Number.isNaN(Number(dto.startMileage))) {
+      claim.startMileage = Number(dto.startMileage).toFixed(1);
     }
     // 一旦上传开始里程资料，视为选择「有行程」
     if (claim.startOdometerUrl || claim.startNavUrl || claim.startMileage) {
       claim.tripSkipped = false;
     }
-    if (dto.endOdometerUrl !== undefined) claim.endOdometerUrl = dto.endOdometerUrl || null;
-    if (dto.endNavUrl !== undefined) claim.endNavUrl = dto.endNavUrl || null;
-    if (dto.endMileage !== undefined) {
-      claim.endMileage =
-        dto.endMileage == null || Number.isNaN(Number(dto.endMileage))
-          ? null
-          : Number(dto.endMileage).toFixed(1);
+    if (dto.endOdometerUrl) claim.endOdometerUrl = dto.endOdometerUrl;
+    if (dto.endNavUrl) claim.endNavUrl = dto.endNavUrl;
+    if (dto.endMileage !== undefined && dto.endMileage != null && !Number.isNaN(Number(dto.endMileage))) {
+      claim.endMileage = Number(dto.endMileage).toFixed(1);
     }
     if (dto.note !== undefined) claim.note = dto.note;
 

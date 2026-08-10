@@ -110,13 +110,26 @@ function VoucherGallery({
 }
 
 function PhotoBlock({ label, urls }: { label: string; urls: string[] }) {
-  if (!urls.length) return null;
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ marginBottom: 6, fontWeight: 500 }}>{label}</div>
-      <VoucherGallery urls={urls} showAllInGrid />
+      {urls.length ? (
+        <VoucherGallery urls={urls} showAllInGrid />
+      ) : (
+        <span style={{ color: '#98a29c' }}>未上传</span>
+      )}
     </div>
   );
+}
+
+function evidenceUrls(row: ExpenseReviewItem): string[] {
+  return [
+    row.startOdometerUrl,
+    row.startNavUrl,
+    row.endOdometerUrl,
+    row.endNavUrl,
+    ...(row.voucherUrls || []),
+  ].filter((u): u is string => !!u);
 }
 
 type Props = {
@@ -244,9 +257,11 @@ export default function ExpenseReviewPanel({ onChanged }: Props) {
     },
     {
       title: '凭证',
-      dataIndex: 'voucherUrls',
-      width: 160,
-      render: (urls?: string[]) => (urls?.length ? <VoucherGallery urls={urls} /> : '-'),
+      width: 180,
+      render: (_, r) => {
+        const urls = evidenceUrls(r);
+        return urls.length ? <VoucherGallery urls={urls} /> : '-';
+      },
     },
     {
       title: '状态',
