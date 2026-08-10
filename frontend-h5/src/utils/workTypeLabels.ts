@@ -55,6 +55,7 @@ export type WorkActionKind =
   | 'submitted'
   | 'doing'
   | 'task_noun'
+  | 'history'
   | 'tip_photo'
   | 'tip_unit';
 
@@ -85,6 +86,10 @@ export function workActionLabel(
       return `${work}中`;
     case 'task_noun':
       return `${work}任务`;
+    case 'history':
+      // 故障恢复习惯叫「历史故障」；其余用「历史{服务类型}记录」
+      if (work === '故障恢复') return '历史故障记录';
+      return `历史${work}记录`;
     case 'tip_photo':
       return `按检查条目现场拍照完成${work}；提交后系统辅助分析生成报告，并自动完工（若未填结束里程会先引导补填）。`;
     case 'tip_unit':

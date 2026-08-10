@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { NavBar, Cell, Button, Empty, Toast, Tag, Collapse, Dialog } from 'react-vant';
 import { fetchTask, startTask, deleteTask, type TaskItem } from '../../api/task';
 import { fetchDeviceHistory, type DeviceHistory } from '../../api/device';
+import { formatDateMinute, formatDateSecond } from '../../utils/datetime';
 import { resolveWorkTypeLabel, workActionLabel } from '../../utils/workTypeLabels';
 
 const STATUS_TEXT: Record<string, string> = {
@@ -138,10 +139,7 @@ export default function TaskDetailPage() {
               }
             />
             <Cell title="所属区域/现场" value={task.site?.name || '-'} />
-            <Cell
-              title="创建时间"
-              value={task.createdAt ? String(task.createdAt).slice(0, 16) : '-'}
-            />
+            <Cell title="创建时间" value={formatDateMinute(task.createdAt)} />
           </Cell.Group>
 
           {reject?.reason && (
@@ -196,7 +194,10 @@ export default function TaskDetailPage() {
               title={task.serviceCaseId ? '服务类型' : '设备类型'}
               value={
                 task.serviceCaseId
-                  ? task.device?.model || DEVICE_TYPE[task.device?.deviceType || ''] || '-'
+                  ? workType ||
+                    task.device?.model ||
+                    DEVICE_TYPE[task.device?.deviceType || ''] ||
+                    '-'
                   : DEVICE_TYPE[task.device?.deviceType || ''] || '未知设备类型'
               }
             />
@@ -235,7 +236,7 @@ export default function TaskDetailPage() {
                   })
                 )}
               </Collapse.Item>
-              <Collapse.Item title="历史故障 / 巡检记录" name="2">
+              <Collapse.Item title={workActionLabel(workType, 'history')} name="2">
                 {!history?.records?.length ? (
                   <Empty description="暂无历史记录" imageSize={64} />
                 ) : (
@@ -250,11 +251,13 @@ export default function TaskDetailPage() {
                           fontSize: 13,
                         }}
                       >
-                        <div style={{ fontWeight: 600 }}>{related?.taskName || '巡检任务'}</div>
+                        <div style={{ fontWeight: 600 }}>
+                          {related?.taskName || workActionLabel(workType, 'task_noun')}
+                        </div>
                         <div style={{ color: '#888', marginTop: 4 }}>
                           状态 {RECORD_STATUS[r.status] || '未知状态'}
                           {r.submittedAt
-                            ? ` · 提交 ${new Date(r.submittedAt).toLocaleDateString()}`
+                            ? ` · 提交 ${formatDateSecond(r.submittedAt)}`
                             : ''}
                         </div>
                       </div>
