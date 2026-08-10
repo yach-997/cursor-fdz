@@ -54,10 +54,10 @@ function inspectorOptionLabel(item: {
 }) {
   const name = String(item.realName || '').trim() || String(item.username || '').trim() || '未命名';
   const username = String(item.username || '').trim();
-  const user =
-    username && username !== name ? ` · ${username}` : '';
   const phone = String(item.phone || '').trim();
   const phonePart = phone && phone !== '-' ? `（${phone}）` : '';
+  const user =
+    username && username !== name && username !== phone ? ` · ${username}` : '';
   const busy = item.activeCaseCount ? ` · 在办 ${item.activeCaseCount} 单` : '';
   return `${name}${user}${phonePart}${busy}`;
 }
@@ -709,12 +709,22 @@ export default function FinanceCasesPage() {
                             completedUnits: Number(a.completedUnits || 0),
                           }));
                         setActiveAssignees(active);
-                        if ((detail?.assignMode || r.assignMode) === 'single' && active[0]) {
+                        // 仅在用户未切换模式、且仍为单人换人流程时，预填当前工程师
+                        if (
+                          !assignModeTouched.current &&
+                          (detail?.assignMode || r.assignMode) === 'single' &&
+                          active[0]
+                        ) {
                           setInspectorId(active[0].id);
                           setInspectorIds([active[0].id]);
                         } else if (!assignModeTouched.current) {
                           setInspectorId(undefined);
                           setInspectorIds([]);
+                        } else {
+                          // 用户已切多人：清掉不在可选项里的 id，避免出现 UUID 乱码
+                          setInspectorIds((prev) =>
+                            prev.filter((id) => !active.some((a) => a.id === id)),
+                          );
                         }
                         // 用户已手动切换模式：勿用详情把多人打回单人
                         if (!assignModeTouched.current && r.status !== 'pending_assign') {
@@ -1157,8 +1167,10 @@ export default function FinanceCasesPage() {
             const existing = new Set(existingIds);
             const convertingFromSingle =
               !isFirst && (assigning.assignMode || 'single') !== 'multi';
-            const added = inspectorIds.filter((id) => !existing.has(id));
-            // 首次派单：用所选；单人改多人：原人+新人；多人加人：仅新人
+            const added = inspectorIds.filter(
+              (id) => !existing.has(id) && !activeAssignees.some((a) => a.id === id),
+            );
+            // 首次派单：用所选；单人改多人：本地保留的原人 + 新人；多人加人：仅新人
             const toSend = isFirst
               ? inspectorIds
               : convertingFromSingle
@@ -1169,22 +1181,43 @@ export default function FinanceCasesPage() {
                 isFirst
                   ? '请选择工程师'
                   : convertingFromSingle
-                    ? '请保留原工程师或选择要派的工程师'
+                    ? '请选择要派的工程师（可先撤回不想保留的原工程师）'
                     : '请选择要追加的工程师',
               );
               return;
             }
+            // 单人改多人且本地已撤回部分原人：记下待服务端撤回的人
+            const serverActiveIds = convertingFromSingle
+              ? (
+                  await fetchFinanceCase(assigning.id).catch(() => null)
+                )?.assignments
+                  ?.filter((a) => a.status !== 'withdrawn' && a.inspectorId)
+                  .map((a) => a.inspectorId!) || existingIds
+              : [];
+            const toWithdraw = convertingFromSingle
+              ? serverActiveIds.filter((id) => !toSend.includes(id))
+              : [];
+
             await assignFinanceCase(assigning.id, toSend, assignReason || undefined, {
               assignMode: 'multi',
               plannedUnits: Math.max(1, plannedUnits || 1),
             });
+            for (const wid of toWithdraw) {
+              try {
+                await withdrawFinanceAssignee(assigning.id, wid);
+              } catch {
+                /* 已无进度则可撤；失败不阻断主流程 */
+              }
+            }
             message.success(
               isFirst
                 ? `已派给 ${toSend.length} 名工程师`
                 : convertingFromSingle
-                  ? added.length
-                    ? `已改为多人模式，并追加 ${added.length} 名工程师`
-                    : '已改为多人模式'
+                  ? toWithdraw.length
+                    ? `已改为多人模式，并完成换人`
+                    : added.length
+                      ? `已改为多人模式，并追加 ${added.length} 名工程师`
+                      : '已改为多人模式'
                   : `已追加 ${toSend.length} 名工程师`,
             );
           } else {
@@ -1237,6 +1270,10 @@ export default function FinanceCasesPage() {
             <div style={{ marginTop: 6, color: '#8c8c8c', fontSize: 12 }}>
               默认单人；需要多人作业时在此切换，并自行填写计划台数。
             </div>
+          ) : (assigning?.assignMode || 'single') === 'single' && assignMode === 'multi' ? (
+            <div style={{ marginTop: 6, color: '#8c8c8c', fontSize: 12 }}>
+              改为多人后可设台数；不想保留原工程师请先点「撤回」，再选其他人确认。
+            </div>
           ) : (assigning?.assignMode || 'single') === 'single' ? (
             <div style={{ marginTop: 6, color: '#8c8c8c', fontSize: 12 }}>
               可改为多人模式：设置计划台数后确认即可；也可顺带追加工程师，原工程师保留。
@@ -1274,14 +1311,30 @@ export default function FinanceCasesPage() {
                         disabled={Number(a.completedUnits || 0) > 0}
                         onClick={async () => {
                           if (!assigning) return;
+                          const next = activeAssignees.filter((x) => x.id !== a.id);
+                          // 案例仍是单人、弹窗里刚切多人：仅本地移除，确认时再生效
+                          if ((assigning.assignMode || 'single') === 'single') {
+                            setActiveAssignees(next);
+                            setInspectorIds((ids) => ids.filter((id) => id !== a.id));
+                            message.success(
+                              `已去掉 ${a.realName}，请选择其他人后点确认`,
+                            );
+                            return;
+                          }
                           try {
                             await withdrawFinanceAssignee(assigning.id, a.id);
                             message.success(`已撤回 ${a.realName}`);
-                            const next = activeAssignees.filter((x) => x.id !== a.id);
                             setActiveAssignees(next);
+                            setInspectorIds((ids) => ids.filter((id) => id !== a.id));
+                            // 撤光后保持弹窗，便于立刻改派新人
                             if (!next.length) {
-                              setAssigning(undefined);
-                              await load();
+                              setAssigning({
+                                ...assigning,
+                                status: 'pending_assign',
+                                assignMode: 'multi',
+                                inspectorId: undefined,
+                                inspectorName: undefined,
+                              });
                             }
                           } catch (err: unknown) {
                             const msg =
@@ -1300,7 +1353,7 @@ export default function FinanceCasesPage() {
                   type="info"
                   showIcon
                   style={{ marginTop: 8 }}
-                  message="有完成台数的工程师不能撤回；下方仅用于追加新人。"
+                  message="有完成台数的工程师不能撤回。不想保留某人可点「撤回」，再在下方选其他人。"
                 />
               </div>
             )}
@@ -1310,10 +1363,10 @@ export default function FinanceCasesPage() {
               style={{ marginBottom: 12 }}
               message={
                 (assigning?.assignMode || 'single') !== 'multi' && activeAssignees.length > 0
-                  ? '正在改为多人模式：原工程师保留。可设置计划台数，也可顺带追加其他人。'
+                  ? '正在改为多人模式：默认保留原工程师。若要换成别人，先点「撤回」再选择新人。'
                   : activeAssignees.length
-                    ? '多人模式：选择要追加的工程师（不会踢掉现有人）。'
-                    : '多人模式：可同时派多名工程师，按完成的作业台数分绩效。'
+                    ? '多人模式：下方选择要追加的工程师（不会踢掉现有人）；要换掉某人请先点「撤回」。'
+                    : '请选择工程师（可多选），确认后生效。'
               }
             />
             <div style={{ marginBottom: 12 }}>
@@ -1330,9 +1383,15 @@ export default function FinanceCasesPage() {
               style={{ width: '100%' }}
               showSearch
               optionFilterProp="label"
-              value={inspectorIds}
+              value={inspectorIds.filter(
+                (id) => !activeAssignees.some((a) => a.id === id),
+              )}
               placeholder={activeAssignees.length ? '选择要追加的工程师' : '选择工程师（可多选）'}
-              onChange={setInspectorIds}
+              onChange={(ids) =>
+                setInspectorIds(
+                  ids.filter((id) => !activeAssignees.some((a) => a.id === id)),
+                )
+              }
               options={inspectors
                 .filter((item) => !activeAssignees.some((a) => a.id === item.id))
                 .map((item) => ({
