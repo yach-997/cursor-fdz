@@ -3,8 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { NavBar, Cell, Button, Empty, Toast, Tag, Collapse, Dialog } from 'react-vant';
 import { fetchTask, startTask, deleteTask, type TaskItem } from '../../api/task';
 import { fetchDeviceHistory, type DeviceHistory } from '../../api/device';
-import { formatDateMinute, formatDateSecond } from '../../utils/datetime';
-import { resolveWorkTypeLabel, workActionLabel } from '../../utils/workTypeLabels';
+import { formatDateTime } from '../../utils/displayLabels';
+import {
+  historyRecordsTitle,
+  resolveWorkTypeLabel,
+  workActionLabel,
+} from '../../utils/workTypeLabels';
 
 const STATUS_TEXT: Record<string, string> = {
   pending: '未开始',
@@ -139,7 +143,7 @@ export default function TaskDetailPage() {
               }
             />
             <Cell title="所属区域/现场" value={task.site?.name || '-'} />
-            <Cell title="创建时间" value={formatDateMinute(task.createdAt)} />
+            <Cell title="创建时间" value={formatDateTime(task.createdAt)} />
           </Cell.Group>
 
           {reject?.reason && (
@@ -194,10 +198,7 @@ export default function TaskDetailPage() {
               title={task.serviceCaseId ? '服务类型' : '设备类型'}
               value={
                 task.serviceCaseId
-                  ? workType ||
-                    task.device?.model ||
-                    DEVICE_TYPE[task.device?.deviceType || ''] ||
-                    '-'
+                  ? task.device?.model || DEVICE_TYPE[task.device?.deviceType || ''] || '-'
                   : DEVICE_TYPE[task.device?.deviceType || ''] || '未知设备类型'
               }
             />
@@ -236,7 +237,7 @@ export default function TaskDetailPage() {
                   })
                 )}
               </Collapse.Item>
-              <Collapse.Item title={workActionLabel(workType, 'history')} name="2">
+              <Collapse.Item title={historyRecordsTitle(workType)} name="2">
                 {!history?.records?.length ? (
                   <Empty description="暂无历史记录" imageSize={64} />
                 ) : (
@@ -256,9 +257,7 @@ export default function TaskDetailPage() {
                         </div>
                         <div style={{ color: '#888', marginTop: 4 }}>
                           状态 {RECORD_STATUS[r.status] || '未知状态'}
-                          {r.submittedAt
-                            ? ` · 提交 ${formatDateSecond(r.submittedAt)}`
-                            : ''}
+                          {r.submittedAt ? ` · 提交 ${formatDateTime(r.submittedAt)}` : ''}
                         </div>
                       </div>
                     );

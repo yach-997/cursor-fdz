@@ -1,3 +1,18 @@
+/** 统一展示时间：YYYY-MM-DD HH:mm:ss（本地时区） */
+export function formatDateTime(value?: string | Date | null): string {
+  if (!value) return '-';
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) {
+    const raw = String(value).trim();
+    // 兜底：把 ISO 的 T 换成空格，尽量补到秒
+    const m = raw.match(/^(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2})(?::(\d{2}))?/);
+    if (m) return `${m[1]} ${m[2]}:${m[3] || '00'}`;
+    return raw || '-';
+  }
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 export const TASK_STATUS_LABEL: Record<string, string> = {
   draft: '草稿',
   pending: '未开始',

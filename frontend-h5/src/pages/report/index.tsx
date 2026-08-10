@@ -96,7 +96,7 @@ export default function ReportPage() {
                 }
                 label={`状态：${RECORD_STATUS_LABEL[record.status] || '未知状态'}${
                   record.submittedAt
-                    ? ` · 提交 ${String(record.submittedAt).slice(0, 16)}`
+                    ? ` · 提交 ${formatDateTime(record.submittedAt)}`
                     : ''
                 }`}
               />
