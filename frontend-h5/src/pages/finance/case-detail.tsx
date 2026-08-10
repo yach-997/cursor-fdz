@@ -174,14 +174,6 @@ export default function FinanceCaseDetailPage() {
     () => units.filter((u) => u.status === 'completed').sort((a, b) => a.seq - b.seq),
     [units],
   );
-  /** 本人已提交/已完成且有任务的台：可查看报告 */
-  const myReportUnits = useMemo(() => {
-    return myUnitList.filter(
-      (u) =>
-        !!u.inspectionTaskId &&
-        (u.status === 'submitted' || u.status === 'completed'),
-    );
-  }, [myUnitList]);
 
   const myActive = useMemo(() => {
     if (!item) return null;
@@ -459,27 +451,6 @@ export default function FinanceCaseDetailPage() {
             onClick={() => navigate(`/m/tasks/${item.inspectionTaskId}`)}
           >
             {workActionLabel(workType, 'report')}
-          </button>
-        )}
-        {useUnitFlow && myReportUnits.length > 0 && (
-          <button
-            type="button"
-            className="mobile-finance-secondary"
-            style={{ width: '100%', marginTop: 12 }}
-            onClick={() => {
-              if (myReportUnits.length === 1) {
-                viewUnitReport(myReportUnits[0]);
-                return;
-              }
-              setUnitFilter('mine');
-              requestAnimationFrame(() => {
-                document
-                  .getElementById('unit-pool-card')
-                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              });
-            }}
-          >
-            {workActionLabel(workType, 'report')}（{myReportUnits.length}）
           </button>
         )}
       </section>
