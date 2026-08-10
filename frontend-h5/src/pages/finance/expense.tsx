@@ -49,10 +49,10 @@ export default function FinanceExpensePage() {
   const [showStartForm, setShowStartForm] = useState(search.get('fix') === '1');
 
   const [startOdometerUrl, setStartOdometerUrl] = useState('');
-  const [startNavUrl, setStartNavUrl] = useState('');
+  const [startNavUrls, setStartNavUrls] = useState<string[]>([]);
   const [startMileage, setStartMileage] = useState('');
   const [endOdometerUrl, setEndOdometerUrl] = useState('');
-  const [endNavUrl, setEndNavUrl] = useState('');
+  const [endNavUrls, setEndNavUrls] = useState<string[]>([]);
   const [endMileage, setEndMileage] = useState('');
   const [amount, setAmount] = useState('');
   const [voucherUrls, setVoucherUrls] = useState<string[]>([]);
@@ -87,10 +87,22 @@ export default function FinanceExpensePage() {
     }
     setTripSkipped(!!claim.tripSkipped);
     setStartOdometerUrl(claim.startOdometerUrl || '');
-    setStartNavUrl(claim.startNavUrl || '');
+    setStartNavUrls(
+      Array.isArray(claim.startNavUrls) && claim.startNavUrls.length
+        ? claim.startNavUrls.filter(Boolean)
+        : claim.startNavUrl
+          ? [claim.startNavUrl]
+          : [],
+    );
     setStartMileage(claim.startMileage != null ? String(claim.startMileage) : '');
     setEndOdometerUrl(claim.endOdometerUrl || '');
-    setEndNavUrl(claim.endNavUrl || '');
+    setEndNavUrls(
+      Array.isArray(claim.endNavUrls) && claim.endNavUrls.length
+        ? claim.endNavUrls.filter(Boolean)
+        : claim.endNavUrl
+          ? [claim.endNavUrl]
+          : [],
+    );
     setEndMileage(claim.endMileage != null ? String(claim.endMileage) : '');
     const declared = claim.claimAmount ?? claim.amount;
     setAmount(declared != null && Number(declared) ? String(Number(declared)) : '');
@@ -102,7 +114,7 @@ export default function FinanceExpensePage() {
     setApprovedAmount(claim.status === 'approved' ? claim.amount : null);
     const hasStart = !!(
       claim.startOdometerUrl &&
-      claim.startNavUrl &&
+      ((claim.startNavUrls && claim.startNavUrls.length) || claim.startNavUrl) &&
       claim.startMileage != null &&
       claim.startMileage !== ''
     );
@@ -137,10 +149,10 @@ export default function FinanceExpensePage() {
     else {
       setTripSkipped(false);
       setStartOdometerUrl('');
-      setStartNavUrl('');
+      setStartNavUrls([]);
       setStartMileage('');
       setEndOdometerUrl('');
-      setEndNavUrl('');
+      setEndNavUrls([]);
       setEndMileage('');
       setAmount('');
       setVoucherUrls([]);
@@ -204,12 +216,14 @@ export default function FinanceExpensePage() {
         if (pickTarget === 'startOdo') {
           setStartOdometerUrl(url);
           await runOcr(url, 'start');
-        } else if (pickTarget === 'startNav') setStartNavUrl(url);
-        else if (pickTarget === 'endOdo') {
+        } else if (pickTarget === 'startNav') {
+          setStartNavUrls((p) => [...p, url].slice(0, 12));
+        } else if (pickTarget === 'endOdo') {
           setEndOdometerUrl(url);
           await runOcr(url, 'end');
-        } else if (pickTarget === 'endNav') setEndNavUrl(url);
-        else if (pickTarget === 'voucher') {
+        } else if (pickTarget === 'endNav') {
+          setEndNavUrls((p) => [...p, url].slice(0, 12));
+        } else if (pickTarget === 'voucher') {
           setVoucherUrls((p) => [...p, url].slice(0, 20));
         }
       }
@@ -245,10 +259,12 @@ export default function FinanceExpensePage() {
 
   const payload = (extra?: { tripSkipped?: boolean }) => ({
     startOdometerUrl: startOdometerUrl || null,
-    startNavUrl: startNavUrl || null,
+    startNavUrls,
+    startNavUrl: startNavUrls[0] || null,
     startMileage: startMileage === '' ? null : Number(startMileage),
     endOdometerUrl: endOdometerUrl || null,
-    endNavUrl: endNavUrl || null,
+    endNavUrls,
+    endNavUrl: endNavUrls[0] || null,
     endMileage: endMileage === '' ? null : Number(endMileage),
     amount: Number(amount) || 0,
     voucherUrls,
@@ -279,7 +295,7 @@ export default function FinanceExpensePage() {
 
   const saveStart = async () => {
     if (!unitId) return Toast.fail(`请先选择${unitLabel}`);
-    if (!startOdometerUrl || !startNavUrl) {
+    if (!startOdometerUrl || !startNavUrls.length) {
       return Toast.fail('请上传开始里程表和导航截图');
     }
     if (startMileage === '' || !Number.isFinite(Number(startMileage))) {
@@ -303,7 +319,7 @@ export default function FinanceExpensePage() {
 
   const saveEnd = async (submitFee: boolean) => {
     if (!unitId) return Toast.fail(`请先选择${unitLabel}`);
-    if (!endOdometerUrl || !endNavUrl) {
+    if (!endOdometerUrl || !endNavUrls.length) {
       return Toast.fail('请上传结束里程表和导航截图');
     }
     if (endMileage === '' || !Number.isFinite(Number(endMileage))) {
@@ -349,12 +365,12 @@ export default function FinanceExpensePage() {
     }
   };
 
-  const thumb = (url: string, onClear?: () => void) => (
-    <div className="trip-thumb" key={url}>
+  const thumb = (url: string, onClear?: () => void, previewUrls?: string[], index = 0) => (
+    <div className="trip-thumb" key={`${url}-${index}`}>
       <button
         type="button"
         className="trip-thumb-img"
-        onClick={() => setViewer({ urls: [url], index: 0 })}
+        onClick={() => setViewer({ urls: previewUrls?.length ? previewUrls : [url], index })}
       >
         <img src={displayPhotoUrl(url)} alt="" />
       </button>
@@ -517,18 +533,24 @@ export default function FinanceExpensePage() {
               onChange={(e) => setStartMileage(e.target.value)}
             />
           </label>
-          <h3 style={{ marginTop: 16 }}>导航截图</h3>
+          <h3 style={{ marginTop: 16 }}>导航截图（可多张）</h3>
           <div className="trip-upload-row">
-            {startNavUrl ? (
-              thumb(startNavUrl, () => setStartNavUrl(''))
-            ) : (
+            {startNavUrls.map((u, idx) =>
+              thumb(
+                u,
+                () => setStartNavUrls(startNavUrls.filter((_, i) => i !== idx)),
+                startNavUrls,
+                idx,
+              ),
+            )}
+            {!readonly && startNavUrls.length < 12 && (
               <button
                 type="button"
                 className="trip-upload-btn"
-                disabled={readonly || uploading}
-                onClick={() => openPick('startNav')}
+                disabled={uploading}
+                onClick={() => openPick('startNav', true)}
               >
-                上传导航截图
+                批量上传导航
               </button>
             )}
           </div>
@@ -595,18 +617,24 @@ export default function FinanceExpensePage() {
               里程差 <strong>{mileageDiff}</strong> km（审核参考）
             </p>
           )}
-          <h3 style={{ marginTop: 16 }}>导航截图</h3>
+          <h3 style={{ marginTop: 16 }}>导航截图（可多张）</h3>
           <div className="trip-upload-row">
-            {endNavUrl ? (
-              thumb(endNavUrl, () => setEndNavUrl(''))
-            ) : (
+            {endNavUrls.map((u, idx) =>
+              thumb(
+                u,
+                () => setEndNavUrls(endNavUrls.filter((_, i) => i !== idx)),
+                endNavUrls,
+                idx,
+              ),
+            )}
+            {!readonly && endNavUrls.length < 12 && (
               <button
                 type="button"
                 className="trip-upload-btn"
-                disabled={readonly || uploading}
-                onClick={() => openPick('endNav')}
+                disabled={uploading}
+                onClick={() => openPick('endNav', true)}
               >
-                上传导航截图
+                批量上传导航
               </button>
             )}
           </div>
@@ -623,8 +651,13 @@ export default function FinanceExpensePage() {
             />
           </label>
           <div className="trip-upload-row">
-            {voucherUrls.map((u) =>
-              thumb(u, () => setVoucherUrls(voucherUrls.filter((x) => x !== u))),
+            {voucherUrls.map((u, idx) =>
+              thumb(
+                u,
+                () => setVoucherUrls(voucherUrls.filter((_, i) => i !== idx)),
+                voucherUrls,
+                idx,
+              ),
             )}
             {!readonly && voucherUrls.length < 20 && (
               <button

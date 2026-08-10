@@ -33,9 +33,11 @@ export type ExpenseReviewItem = {
   voucherUrls?: string[];
   startOdometerUrl?: string | null;
   startNavUrl?: string | null;
+  startNavUrls?: string[];
   startMileage?: string | null;
   endOdometerUrl?: string | null;
   endNavUrl?: string | null;
+  endNavUrls?: string[];
   endMileage?: string | null;
   mileageKm?: string | null;
   tripSkipped?: boolean;
@@ -123,11 +125,19 @@ function PhotoBlock({ label, urls }: { label: string; urls: string[] }) {
 }
 
 function evidenceUrls(row: ExpenseReviewItem): string[] {
+  const startNav =
+    row.startNavUrls?.length
+      ? row.startNavUrls
+      : row.startNavUrl
+        ? [row.startNavUrl]
+        : [];
+  const endNav =
+    row.endNavUrls?.length ? row.endNavUrls : row.endNavUrl ? [row.endNavUrl] : [];
   return [
     row.startOdometerUrl,
-    row.startNavUrl,
+    ...startNav,
     row.endOdometerUrl,
-    row.endNavUrl,
+    ...endNav,
     ...(row.voucherUrls || []),
   ].filter((u): u is string => !!u);
 }
@@ -454,13 +464,28 @@ export default function ExpenseReviewPanel({ onChanged }: Props) {
             />
             <PhotoBlock
               label="开始导航"
-              urls={current.startNavUrl ? [current.startNavUrl] : []}
+              urls={
+                current.startNavUrls?.length
+                  ? current.startNavUrls
+                  : current.startNavUrl
+                    ? [current.startNavUrl]
+                    : []
+              }
             />
             <PhotoBlock
               label="结束里程表"
               urls={current.endOdometerUrl ? [current.endOdometerUrl] : []}
             />
-            <PhotoBlock label="结束导航" urls={current.endNavUrl ? [current.endNavUrl] : []} />
+            <PhotoBlock
+              label="结束导航"
+              urls={
+                current.endNavUrls?.length
+                  ? current.endNavUrls
+                  : current.endNavUrl
+                    ? [current.endNavUrl]
+                    : []
+              }
+            />
             <PhotoBlock label="费用凭证" urls={current.voucherUrls || []} />
             {action !== 'view' && (
               <Form form={form} layout="vertical">

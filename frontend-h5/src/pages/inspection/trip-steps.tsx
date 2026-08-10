@@ -13,10 +13,10 @@ export type TripMode = 'undecided' | 'skip' | 'need' | 'na';
 
 export type TripFormState = {
   startOdometerUrl: string;
-  startNavUrl: string;
+  startNavUrls: string[];
   startMileage: string;
   endOdometerUrl: string;
-  endNavUrl: string;
+  endNavUrls: string[];
   endMileage: string;
   amount: string;
   voucherUrls: string[];
@@ -25,24 +25,33 @@ export type TripFormState = {
 
 export const emptyTripForm = (): TripFormState => ({
   startOdometerUrl: '',
-  startNavUrl: '',
+  startNavUrls: [],
   startMileage: '',
   endOdometerUrl: '',
-  endNavUrl: '',
+  endNavUrls: [],
   endMileage: '',
   amount: '',
   voucherUrls: [],
   note: '',
 });
 
+function navUrlsFromClaim(
+  urls?: string[] | null,
+  legacy?: string | null,
+): string[] {
+  const list = Array.isArray(urls) ? urls.filter(Boolean) : [];
+  if (list.length) return list;
+  return legacy ? [legacy] : [];
+}
+
 export function tripFormFromClaim(claim?: TripExpenseClaim | null): TripFormState {
   if (!claim) return emptyTripForm();
   return {
     startOdometerUrl: claim.startOdometerUrl || '',
-    startNavUrl: claim.startNavUrl || '',
+    startNavUrls: navUrlsFromClaim(claim.startNavUrls, claim.startNavUrl),
     startMileage: claim.startMileage != null ? String(claim.startMileage) : '',
     endOdometerUrl: claim.endOdometerUrl || '',
-    endNavUrl: claim.endNavUrl || '',
+    endNavUrls: navUrlsFromClaim(claim.endNavUrls, claim.endNavUrl),
     endMileage: claim.endMileage != null ? String(claim.endMileage) : '',
     amount:
       claim.claimAmount != null && Number(claim.claimAmount)
@@ -58,9 +67,10 @@ export function tripFormFromClaim(claim?: TripExpenseClaim | null): TripFormStat
 export function resolveTripMode(claim?: TripExpenseClaim | null): TripMode {
   if (!claim) return 'undecided';
   if (claim.tripSkipped) return 'skip';
+  const nav = navUrlsFromClaim(claim.startNavUrls, claim.startNavUrl);
   const hasStart = !!(
     claim.startOdometerUrl &&
-    claim.startNavUrl &&
+    nav.length &&
     claim.startMileage != null &&
     claim.startMileage !== ''
   );
@@ -71,14 +81,14 @@ export function resolveTripMode(claim?: TripExpenseClaim | null): TripMode {
 export function isStartTripReady(form: TripFormState) {
   return !!(
     form.startOdometerUrl &&
-    form.startNavUrl &&
+    form.startNavUrls.length &&
     form.startMileage !== '' &&
     Number.isFinite(Number(form.startMileage))
   );
 }
 
 export function isEndTripReady(form: TripFormState) {
-  if (!form.endOdometerUrl || !form.endNavUrl) return false;
+  if (!form.endOdometerUrl || !form.endNavUrls.length) return false;
   if (form.endMileage === '' || !Number.isFinite(Number(form.endMileage))) return false;
   if (Number(form.amount) > 0 && !form.voucherUrls.length) return false;
   return true;
@@ -297,7 +307,7 @@ export function TripStartPanel({
       <p>上传开始里程表与导航截图，确认里程后再进入产品线检查项。</p>
 
       <div className="trip-wizard-block">
-        <strong>开始里程表</strong>
+        <strong>开始里程表（单张）</strong>
         <div className="inspection-photo-grid">
           {form.startOdometerUrl ? (
             <TripThumb
@@ -351,28 +361,42 @@ export function TripStartPanel({
       </div>
 
       <div className="trip-wizard-block">
-        <strong>导航截图</strong>
+        <strong>导航截图（可多张）</strong>
         <div className="inspection-photo-grid">
-          {form.startNavUrl ? (
+          {form.startNavUrls.map((u, idx) => (
             <TripThumb
-              url={form.startNavUrl}
-              onPreview={() => onPreview([form.startNavUrl], 0)}
+              key={`${u}-${idx}`}
+              url={u}
+              onPreview={() => onPreview(form.startNavUrls, idx)}
               onRemove={
-                readonly ? undefined : () => setForm((p) => ({ ...p, startNavUrl: '' }))
+                readonly
+                  ? undefined
+                  : () =>
+                      setForm((p) => ({
+                        ...p,
+                        startNavUrls: p.startNavUrls.filter((_, i) => i !== idx),
+                      }))
               }
             />
-          ) : (
+          ))}
+          {!form.startNavUrls.length && (
             <div className="inspection-photo-placeholder">
               <strong>＋</strong>
               <span>导航</span>
             </div>
           )}
         </div>
-        {!readonly && (
+        {!readonly && form.startNavUrls.length < 12 && (
           <SlotUploadBar
             caseId={caseId}
             slot="startNav"
-            onUploaded={(urls) => setForm((p) => ({ ...p, startNavUrl: urls[0] }))}
+            multi
+            onUploaded={(urls) =>
+              setForm((p) => ({
+                ...p,
+                startNavUrls: [...p.startNavUrls, ...urls].slice(0, 12),
+              }))
+            }
           />
         )}
       </div>
@@ -417,7 +441,7 @@ export function TripEndPanel({
       <p>结束里程与申报费用同屏填写；有金额请上传凭证。完成后提交报告。</p>
 
       <div className="trip-wizard-block">
-        <strong>结束里程表</strong>
+        <strong>结束里程表（单张）</strong>
         <div className="inspection-photo-grid">
           {form.endOdometerUrl ? (
             <TripThumb
@@ -476,28 +500,42 @@ export function TripEndPanel({
       </div>
 
       <div className="trip-wizard-block">
-        <strong>导航截图</strong>
+        <strong>导航截图（可多张）</strong>
         <div className="inspection-photo-grid">
-          {form.endNavUrl ? (
+          {form.endNavUrls.map((u, idx) => (
             <TripThumb
-              url={form.endNavUrl}
-              onPreview={() => onPreview([form.endNavUrl], 0)}
+              key={`${u}-${idx}`}
+              url={u}
+              onPreview={() => onPreview(form.endNavUrls, idx)}
               onRemove={
-                readonly ? undefined : () => setForm((p) => ({ ...p, endNavUrl: '' }))
+                readonly
+                  ? undefined
+                  : () =>
+                      setForm((p) => ({
+                        ...p,
+                        endNavUrls: p.endNavUrls.filter((_, i) => i !== idx),
+                      }))
               }
             />
-          ) : (
+          ))}
+          {!form.endNavUrls.length && (
             <div className="inspection-photo-placeholder">
               <strong>＋</strong>
               <span>导航</span>
             </div>
           )}
         </div>
-        {!readonly && (
+        {!readonly && form.endNavUrls.length < 12 && (
           <SlotUploadBar
             caseId={caseId}
             slot="endNav"
-            onUploaded={(urls) => setForm((p) => ({ ...p, endNavUrl: urls[0] }))}
+            multi
+            onUploaded={(urls) =>
+              setForm((p) => ({
+                ...p,
+                endNavUrls: [...p.endNavUrls, ...urls].slice(0, 12),
+              }))
+            }
           />
         )}
       </div>
@@ -583,7 +621,8 @@ export async function persistTripStart(
   return saveUnitTripExpense(caseId, unitId, {
     tripSkipped: false,
     startOdometerUrl: form.startOdometerUrl || null,
-    startNavUrl: form.startNavUrl || null,
+    startNavUrls: form.startNavUrls,
+    startNavUrl: form.startNavUrls[0] || null,
     startMileage: form.startMileage === '' ? null : Number(form.startMileage),
   });
 }
@@ -598,12 +637,15 @@ export async function persistTripEnd(
   return saveUnitTripExpense(caseId, unitId, {
     tripSkipped: false,
     ...(form.startOdometerUrl ? { startOdometerUrl: form.startOdometerUrl } : {}),
-    ...(form.startNavUrl ? { startNavUrl: form.startNavUrl } : {}),
+    ...(form.startNavUrls.length
+      ? { startNavUrls: form.startNavUrls, startNavUrl: form.startNavUrls[0] }
+      : {}),
     ...(form.startMileage !== ''
       ? { startMileage: Number(form.startMileage) }
       : {}),
     endOdometerUrl: form.endOdometerUrl || null,
-    endNavUrl: form.endNavUrl || null,
+    endNavUrls: form.endNavUrls,
+    endNavUrl: form.endNavUrls[0] || null,
     endMileage: form.endMileage === '' ? null : Number(form.endMileage),
     amount: Number(form.amount) || 0,
     voucherUrls: form.voucherUrls,

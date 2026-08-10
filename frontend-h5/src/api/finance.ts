@@ -29,9 +29,11 @@ export interface TripExpenseClaim {
   voucherUrls?: string[];
   startOdometerUrl?: string | null;
   startNavUrl?: string | null;
+  startNavUrls?: string[];
   startMileage?: string | null;
   endOdometerUrl?: string | null;
   endNavUrl?: string | null;
+  endNavUrls?: string[];
   endMileage?: string | null;
   mileageKm?: string | null;
   /** 开工选择无行程 */
@@ -45,9 +47,11 @@ export interface TripExpenseClaim {
 export interface TripExpensePayload {
   startOdometerUrl?: string | null;
   startNavUrl?: string | null;
+  startNavUrls?: string[];
   startMileage?: number | null;
   endOdometerUrl?: string | null;
   endNavUrl?: string | null;
+  endNavUrls?: string[];
   endMileage?: number | null;
   amount?: number;
   voucherUrls?: string[];

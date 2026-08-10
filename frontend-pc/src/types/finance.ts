@@ -274,9 +274,11 @@ export interface ReviewCaseExpense {
   voucherUrls?: string[];
   startOdometerUrl?: string | null;
   startNavUrl?: string | null;
+  startNavUrls?: string[];
   startMileage?: string | null;
   endOdometerUrl?: string | null;
   endNavUrl?: string | null;
+  endNavUrls?: string[];
   endMileage?: string | null;
   mileageKm?: string | null;
   tripSkipped?: boolean;

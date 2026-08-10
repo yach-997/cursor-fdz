@@ -175,10 +175,14 @@ export class SaveExpenseClaimDto {
 
 export class SaveTripExpenseDto {
   @IsOptional() @IsString() startOdometerUrl?: string;
+  /** @deprecated 用 startNavUrls；仍接受单张 */
   @IsOptional() @IsString() startNavUrl?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) startNavUrls?: string[];
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) startMileage?: number;
   @IsOptional() @IsString() endOdometerUrl?: string;
+  /** @deprecated 用 endNavUrls */
   @IsOptional() @IsString() endNavUrl?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) endNavUrls?: string[];
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) endMileage?: number;
   /** 工程师自算申报金额 */
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) amount?: number;

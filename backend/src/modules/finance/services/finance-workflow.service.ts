@@ -883,6 +883,12 @@ export class FinanceWorkflowService {
     );
     const parseUrls = (v: unknown) =>
       Array.isArray(v) ? v : typeof v === 'string' ? JSON.parse(v || '[]') : [];
+    const navUrls = (urls: unknown, legacy?: string | null) => {
+      const list = (parseUrls(urls) as unknown[])
+        .filter((u): u is string => typeof u === 'string' && !!u);
+      if (list.length) return [...new Set(list)].slice(0, 12);
+      return legacy ? [legacy] : [];
+    };
     const expenses = expenseRows
       .filter(
         (e) =>
@@ -891,6 +897,8 @@ export class FinanceWorkflowService {
       )
       .map((e) => {
         const unit = e.workUnitId ? unitMap.get(e.workUnitId) : undefined;
+        const startNavUrls = navUrls(e.startNavUrls, e.startNavUrl);
+        const endNavUrls = navUrls(e.endNavUrls, e.endNavUrl);
         return {
           id: e.id,
           serviceCaseId: e.serviceCaseId,
@@ -904,10 +912,12 @@ export class FinanceWorkflowService {
           note: e.note,
           voucherUrls: parseUrls(e.voucherUrls),
           startOdometerUrl: e.startOdometerUrl,
-          startNavUrl: e.startNavUrl,
+          startNavUrl: startNavUrls[0] || null,
+          startNavUrls,
           startMileage: e.startMileage,
           endOdometerUrl: e.endOdometerUrl,
-          endNavUrl: e.endNavUrl,
+          endNavUrl: endNavUrls[0] || null,
+          endNavUrls,
           endMileage: e.endMileage,
           mileageKm: e.mileageKm,
           tripSkipped: !!e.tripSkipped,

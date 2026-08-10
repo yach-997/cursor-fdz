@@ -246,9 +246,11 @@ export default function FinanceCaseDetailPage() {
   /** 实际填了开始里程（非无行程） */
   const hasTripStartFilled = (unitId?: string | null) => {
     const claim = tripClaim(unitId);
+    const navOk =
+      (claim?.startNavUrls && claim.startNavUrls.length > 0) || !!claim?.startNavUrl;
     return !!(
       claim?.startOdometerUrl &&
-      claim?.startNavUrl &&
+      navOk &&
       claim?.startMileage != null &&
       claim.startMileage !== ''
     );
@@ -256,9 +258,11 @@ export default function FinanceCaseDetailPage() {
 
   const hasTripEnd = (unitId?: string | null) => {
     const claim = tripClaim(unitId);
+    const navOk =
+      (claim?.endNavUrls && claim.endNavUrls.length > 0) || !!claim?.endNavUrl;
     return !!(
       claim?.endOdometerUrl &&
-      claim?.endNavUrl &&
+      navOk &&
       claim?.endMileage != null &&
       claim.endMileage !== ''
     );

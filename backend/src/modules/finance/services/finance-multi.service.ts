@@ -32,9 +32,11 @@ import { FinanceSettlementService } from './finance-settlement.service';
 type TripExpenseInput = {
   startOdometerUrl?: string;
   startNavUrl?: string;
+  startNavUrls?: string[];
   startMileage?: number;
   endOdometerUrl?: string;
   endNavUrl?: string;
+  endNavUrls?: string[];
   endMileage?: number;
   amount?: number;
   voucherUrls?: string[];
@@ -655,8 +657,14 @@ export class FinanceMultiService implements OnModuleInit {
       })),
       expenses: expenses.map((e) => {
         const unit = units.find((u) => u.id === e.workUnitId);
+        const startNavUrls = this.normalizeNavUrls(e.startNavUrls, e.startNavUrl);
+        const endNavUrls = this.normalizeNavUrls(e.endNavUrls, e.endNavUrl);
         return {
           ...e,
+          startNavUrls,
+          endNavUrls,
+          startNavUrl: startNavUrls[0] || e.startNavUrl || null,
+          endNavUrl: endNavUrls[0] || e.endNavUrl || null,
           unitSeq: unit?.seq ?? null,
           unitTitle: unit?.title ?? null,
           inspectorName: nameMap.get(e.inspectorId) || e.inspectorId,
@@ -782,6 +790,8 @@ export class FinanceMultiService implements OnModuleInit {
       tollVoucherUrls: [],
       fuelVoucherUrls: [],
       otherVoucherUrls: [],
+      startNavUrls: [],
+      endNavUrls: [],
       tripSkipped: false,
       status: 'draft',
     });
@@ -791,9 +801,11 @@ export class FinanceMultiService implements OnModuleInit {
       // 明确无行程：清空开始资料，避免半填状态
       claim.startOdometerUrl = null;
       claim.startNavUrl = null;
+      claim.startNavUrls = [];
       claim.startMileage = null;
       claim.endOdometerUrl = null;
       claim.endNavUrl = null;
+      claim.endNavUrls = [];
       claim.endMileage = null;
       claim.mileageKm = null;
     } else if (dto.tripSkipped === false) {
@@ -802,16 +814,20 @@ export class FinanceMultiService implements OnModuleInit {
 
     // 空值不覆盖已有开始资料，避免结束行程保存时把开始里程/导航图误清空
     if (dto.startOdometerUrl) claim.startOdometerUrl = dto.startOdometerUrl;
-    if (dto.startNavUrl) claim.startNavUrl = dto.startNavUrl;
+    this.applyNavUrls(claim, 'start', dto.startNavUrls, dto.startNavUrl);
     if (dto.startMileage !== undefined && dto.startMileage != null && !Number.isNaN(Number(dto.startMileage))) {
       claim.startMileage = Number(dto.startMileage).toFixed(1);
     }
     // 一旦上传开始里程资料，视为选择「有行程」
-    if (claim.startOdometerUrl || claim.startNavUrl || claim.startMileage) {
+    if (
+      claim.startOdometerUrl ||
+      this.navUrlList(claim, 'start').length ||
+      claim.startMileage
+    ) {
       claim.tripSkipped = false;
     }
     if (dto.endOdometerUrl) claim.endOdometerUrl = dto.endOdometerUrl;
-    if (dto.endNavUrl) claim.endNavUrl = dto.endNavUrl;
+    this.applyNavUrls(claim, 'end', dto.endNavUrls, dto.endNavUrl);
     if (dto.endMileage !== undefined && dto.endMileage != null && !Number.isNaN(Number(dto.endMileage))) {
       claim.endMileage = Number(dto.endMileage).toFixed(1);
     }
@@ -862,13 +878,13 @@ export class FinanceMultiService implements OnModuleInit {
 
     if (dto.submit) {
       const hasMoney = Number(claim.claimAmount || claim.amount) > 0;
+      const navUrls = [...this.navUrlList(claim, 'start'), ...this.navUrlList(claim, 'end')];
       const feeVouchers = (claim.voucherUrls || []).filter(
         (u) =>
           u &&
           u !== claim.startOdometerUrl &&
-          u !== claim.startNavUrl &&
           u !== claim.endOdometerUrl &&
-          u !== claim.endNavUrl,
+          !navUrls.includes(u),
       );
       if (hasMoney && !feeVouchers.length) {
         throw new BadRequestException('有报销金额时请上传费用凭证');
@@ -904,9 +920,9 @@ export class FinanceMultiService implements OnModuleInit {
     if (claim?.tripSkipped) return claim;
     const hasStart =
       !!claim?.startOdometerUrl &&
-      !!claim?.startNavUrl &&
-      claim.startMileage != null &&
-      claim.startMileage !== '';
+      this.navUrlList(claim!, 'start').length > 0 &&
+      claim!.startMileage != null &&
+      claim!.startMileage !== '';
     if (hasStart) return claim!;
     throw new BadRequestException('请先选择无行程或填写开始里程后再开工');
   }
@@ -922,11 +938,11 @@ export class FinanceMultiService implements OnModuleInit {
     if (!claim || claim.tripSkipped) return claim;
     const hasStart =
       !!claim.startOdometerUrl &&
-      !!claim.startNavUrl &&
+      this.navUrlList(claim, 'start').length > 0 &&
       claim.startMileage != null &&
       claim.startMileage !== '';
     if (!hasStart) return claim;
-    if (!claim.endOdometerUrl || !claim.endNavUrl) {
+    if (!claim.endOdometerUrl || this.navUrlList(claim, 'end').length === 0) {
       throw new BadRequestException('已填写开始行程，请补填结束里程表和导航截图');
     }
     if (claim.endMileage == null || claim.endMileage === '') {
@@ -1125,9 +1141,11 @@ export class FinanceMultiService implements OnModuleInit {
         'e.other_voucher_urls AS "otherVoucherUrls"',
         'e.start_odometer_url AS "startOdometerUrl"',
         'e.start_nav_url AS "startNavUrl"',
+        'e.start_nav_urls AS "startNavUrls"',
         'e.start_mileage AS "startMileage"',
         'e.end_odometer_url AS "endOdometerUrl"',
         'e.end_nav_url AS "endNavUrl"',
+        'e.end_nav_urls AS "endNavUrls"',
         'e.end_mileage AS "endMileage"',
         'e.mileage_km AS "mileageKm"',
         'e.trip_skipped AS "tripSkipped"',
@@ -1166,7 +1184,10 @@ export class FinanceMultiService implements OnModuleInit {
     }
     const parseUrls = (v: unknown) =>
       Array.isArray(v) ? v : typeof v === 'string' ? JSON.parse(v || '[]') : [];
-    return raw.map((row) => ({
+    return raw.map((row) => {
+      const startNavUrls = this.normalizeNavUrls(row.startNavUrls, row.startNavUrl);
+      const endNavUrls = this.normalizeNavUrls(row.endNavUrls, row.endNavUrl);
+      return {
       ...row,
       tripSkipped:
         row.tripSkipped === true ||
@@ -1178,9 +1199,14 @@ export class FinanceMultiService implements OnModuleInit {
       tollVoucherUrls: parseUrls(row.tollVoucherUrls),
       fuelVoucherUrls: parseUrls(row.fuelVoucherUrls),
       otherVoucherUrls: parseUrls(row.otherVoucherUrls),
+      startNavUrls,
+      endNavUrls,
+      startNavUrl: startNavUrls[0] || row.startNavUrl || null,
+      endNavUrl: endNavUrls[0] || row.endNavUrl || null,
       inspectorName: nameMap.get(row.inspectorId) || row.inspectorId,
       caseExpenseTotal: (caseTotals.get(String(row.serviceCaseId)) || 0).toFixed(2),
-    }));
+    };
+    });
   }
 
   /** @deprecated 使用 listExpenses；保留兼容旧客户端 */
@@ -1189,6 +1215,62 @@ export class FinanceMultiService implements OnModuleInit {
   }
 
   // —— helpers ——
+  private normalizeNavUrls(urls: unknown, legacy?: string | null): string[] {
+    const fromArr = Array.isArray(urls)
+      ? urls.filter((u): u is string => typeof u === 'string' && !!u)
+      : typeof urls === 'string'
+        ? (() => {
+            try {
+              const parsed = JSON.parse(urls);
+              return Array.isArray(parsed)
+                ? parsed.filter((u): u is string => typeof u === 'string' && !!u)
+                : [];
+            } catch {
+              return [];
+            }
+          })()
+        : [];
+    if (fromArr.length) return [...new Set(fromArr)].slice(0, 12);
+    return legacy ? [legacy] : [];
+  }
+
+  private navUrlList(claim: CaseExpenseClaim, kind: 'start' | 'end'): string[] {
+    return kind === 'start'
+      ? this.normalizeNavUrls(claim.startNavUrls, claim.startNavUrl)
+      : this.normalizeNavUrls(claim.endNavUrls, claim.endNavUrl);
+  }
+
+  /** 数组优先；仅传单张时在已有列表为空时写入，避免结束保存冲掉开始导航 */
+  private applyNavUrls(
+    claim: CaseExpenseClaim,
+    kind: 'start' | 'end',
+    urls?: string[],
+    legacy?: string,
+  ) {
+    if (urls !== undefined) {
+      const list = [...new Set((urls || []).filter(Boolean))].slice(0, 12);
+      if (kind === 'start') {
+        claim.startNavUrls = list;
+        claim.startNavUrl = list[0] || null;
+      } else {
+        claim.endNavUrls = list;
+        claim.endNavUrl = list[0] || null;
+      }
+      return;
+    }
+    if (!legacy) return;
+    const existing = this.navUrlList(claim, kind);
+    if (existing.includes(legacy)) return;
+    if (existing.length) return; // 已有多图时，忽略旧单张字段，避免误覆盖
+    if (kind === 'start') {
+      claim.startNavUrls = [legacy];
+      claim.startNavUrl = legacy;
+    } else {
+      claim.endNavUrls = [legacy];
+      claim.endNavUrl = legacy;
+    }
+  }
+
   private async claimUnitInternal(
     serviceCase: ServiceCase,
     unit: CaseWorkUnit,

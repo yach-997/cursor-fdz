@@ -125,8 +125,20 @@ ALTER TABLE case_expense_claim
   ADD COLUMN IF NOT EXISTS end_mileage numeric(12, 1) NULL,
   ADD COLUMN IF NOT EXISTS mileage_km numeric(12, 1) NULL,
   ADD COLUMN IF NOT EXISTS claim_amount numeric(12, 2) NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS trip_skipped boolean NOT NULL DEFAULT false;
+  ADD COLUMN IF NOT EXISTS trip_skipped boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS start_nav_urls jsonb NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS end_nav_urls jsonb NOT NULL DEFAULT '[]'::jsonb;
 UPDATE case_expense_claim SET claim_amount = amount WHERE claim_amount = 0 AND amount > 0;
+UPDATE case_expense_claim
+SET start_nav_urls = jsonb_build_array(start_nav_url)
+WHERE start_nav_url IS NOT NULL
+  AND start_nav_url <> ''
+  AND (start_nav_urls IS NULL OR start_nav_urls = '[]'::jsonb);
+UPDATE case_expense_claim
+SET end_nav_urls = jsonb_build_array(end_nav_url)
+WHERE end_nav_url IS NOT NULL
+  AND end_nav_url <> ''
+  AND (end_nav_urls IS NULL OR end_nav_urls = '[]'::jsonb);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_case_expense_work_unit
   ON case_expense_claim (work_unit_id)
   WHERE work_unit_id IS NOT NULL;

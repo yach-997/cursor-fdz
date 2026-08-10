@@ -51,13 +51,17 @@ export class CaseExpenseClaim {
 
   @Column({ name: 'start_odometer_url', type: 'text', nullable: true })
   startOdometerUrl: string | null;
+  /** @deprecated 兼容单张；新流程用 startNavUrls，首张同步到此字段 */
   @Column({ name: 'start_nav_url', type: 'text', nullable: true }) startNavUrl: string | null;
+  @Column({ name: 'start_nav_urls', type: 'jsonb', default: () => "'[]'" }) startNavUrls: string[];
   @Column({ name: 'start_mileage', type: 'numeric', precision: 12, scale: 1, nullable: true })
   startMileage: string | null;
 
   @Column({ name: 'end_odometer_url', type: 'text', nullable: true })
   endOdometerUrl: string | null;
+  /** @deprecated 兼容单张；新流程用 endNavUrls */
   @Column({ name: 'end_nav_url', type: 'text', nullable: true }) endNavUrl: string | null;
+  @Column({ name: 'end_nav_urls', type: 'jsonb', default: () => "'[]'" }) endNavUrls: string[];
   @Column({ name: 'end_mileage', type: 'numeric', precision: 12, scale: 1, nullable: true })
   endMileage: string | null;
   /** 结束−开始，仅审核参考 */
