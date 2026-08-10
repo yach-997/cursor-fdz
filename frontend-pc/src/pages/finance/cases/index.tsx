@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import {
   Alert,
   Button,
@@ -186,6 +186,7 @@ export default function FinanceCasesPage() {
   const [activeAssignees, setActiveAssignees] = useState<
     Array<{ id: string; realName: string; completedUnits?: number }>
   >([]);
+  const assignLoadSeq = useRef(0);
   const [siteModal, setSiteModal] = useState<{ mode: 'single' | 'batch'; case?: FinanceCase }>();
   const [siteId, setSiteId] = useState<string>();
   const [typeModal, setTypeModal] = useState<FinanceCase>();
@@ -655,6 +656,7 @@ export default function FinanceCasesPage() {
                       !r.siteId || !hasTaskType(r) || needsProductLine(r, taskTypes)
                     }
                     onClick={() => {
+                      const seq = ++assignLoadSeq.current;
                       setAssigning(r);
                       setAssignMode(
                         r.status === 'pending_assign'
@@ -689,6 +691,8 @@ export default function FinanceCasesPage() {
                         fetchFinanceInspectors(r.id),
                         fetchFinanceCase(r.id).catch(() => null),
                       ]).then(([list, detail]) => {
+                        // 弹窗已换案/关闭，或用户已切换模式：勿用异步结果覆盖
+                        if (seq !== assignLoadSeq.current) return;
                         const assigns = (detail?.assignments || []).filter(
                           (a) => a.status !== 'withdrawn',
                         );
@@ -707,10 +711,8 @@ export default function FinanceCasesPage() {
                           setInspectorId(undefined);
                           setInspectorIds([]);
                         }
-                        if (r.status === 'pending_assign') {
-                          setAssignMode('single');
-                          setPlannedUnits(1);
-                        } else {
+                        // pending_assign：模式/台数以弹窗初值 + 用户切换为准，异步勿强制改回单人
+                        if (r.status !== 'pending_assign') {
                           if (detail?.assignMode === 'multi' || detail?.assignMode === 'single') {
                             setAssignMode(detail.assignMode);
                           }
@@ -1126,6 +1128,7 @@ export default function FinanceCasesPage() {
               : !inspectorId,
         }}
         onCancel={() => {
+          assignLoadSeq.current += 1;
           setAssigning(undefined);
           setActiveAssignees([]);
         }}
