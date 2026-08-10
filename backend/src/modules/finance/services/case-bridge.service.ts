@@ -97,7 +97,7 @@ export class CaseBridgeService {
       try {
         this.assertCaseSiteTransferable(item);
         if (item.siteId === site.id) {
-          updated += 1;
+          // 已在目标网格：跳过，不当作改派成功
           continue;
         }
         if (item.inspectorId || item.status !== 'pending_assign') {

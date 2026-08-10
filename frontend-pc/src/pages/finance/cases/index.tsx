@@ -787,7 +787,13 @@ export default function FinanceCasesPage() {
         }
         okText="确认"
         cancelText="取消"
-        okButtonProps={{ disabled: !siteId }}
+        okButtonProps={{
+          disabled:
+            !siteId ||
+            (siteModal?.mode === 'single' &&
+              !!siteModal.case?.siteId &&
+              siteId === siteModal.case.siteId),
+        }}
         onCancel={() => setSiteModal(undefined)}
         onOk={async () => {
           if (!siteId || !siteModal) return;
@@ -812,8 +818,15 @@ export default function FinanceCasesPage() {
             }
             setSelectedRowKeys([]);
           } else if (siteModal.case) {
-            const wasAssigned = !!siteModal.case.siteId;
-            const hadDispatch = siteModal.case.status !== 'pending_assign' || !!siteModal.case.inspectorId;
+            const prevSiteId = siteModal.case.siteId || '';
+            if (prevSiteId && prevSiteId === siteId) {
+              message.info('未更换网格，无需改派');
+              setSiteModal(undefined);
+              return;
+            }
+            const wasAssigned = !!prevSiteId;
+            const hadDispatch =
+              siteModal.case.status !== 'pending_assign' || !!siteModal.case.inspectorId;
             await setFinanceCaseSite(siteModal.case.id, siteId);
             message.success(
               wasAssigned
@@ -827,12 +840,20 @@ export default function FinanceCasesPage() {
           await load();
         }}
       >
-        {!!siteModal?.case?.siteId && (
+        {!!siteModal?.case?.siteId && siteId && siteId !== siteModal.case.siteId && (
           <Alert
             type="warning"
             showIcon
             style={{ marginBottom: 12 }}
             message="改派到其他网格后，原工程师派单与未提交巡检将清空，需由新网格网格长重新派单。"
+          />
+        )}
+        {!!siteModal?.case?.siteId && siteId === siteModal.case.siteId && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="当前已是该网格。请选择其他网格后再确认改派。"
           />
         )}
         <Select
