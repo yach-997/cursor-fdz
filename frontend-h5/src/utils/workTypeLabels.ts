@@ -11,6 +11,7 @@ export function resolveWorkTypeLabel(input?: {
   taskType?: string | null;
   taskName?: string | null;
   serviceCaseId?: string | null;
+  device?: { model?: string | null } | null;
 } | null): string {
   const direct = String(input?.taskTypeName || input?.serviceType || '').trim();
   if (direct) {
@@ -22,6 +23,14 @@ export function resolveWorkTypeLabel(input?: {
     if (lower === 'rectify') return '整改';
     if (lower === 'delivery') return '交付';
     return direct;
+  }
+
+  // 案例详情页常把服务类型放在 device.model 展示
+  const model = String(input?.device?.model || '').trim();
+  if (model && KNOWN_SERVICE_TYPES.some((k) => model === k || model.includes(k))) {
+    for (const k of KNOWN_SERVICE_TYPES) {
+      if (model === k || model.startsWith(k) || model.includes(k)) return k;
+    }
   }
 
   const name = String(input?.taskName || '').trim();
