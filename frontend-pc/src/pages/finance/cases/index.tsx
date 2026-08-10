@@ -753,7 +753,7 @@ export default function FinanceCasesPage() {
                     {r.status === 'pending_assign'
                       ? '派单'
                       : r.assignMode === 'multi'
-                        ? '加人'
+                        ? '加人/撤回'
                         : '换人'}
                   </Button>
                 )}
@@ -1125,13 +1125,17 @@ export default function FinanceCasesPage() {
                 ? '加人 / 撤回工程师'
                 : '换人'
         } · ${assigning?.gspCaseNo || ''}`}
-        okText={
-          assigning?.status === 'pending_assign'
-            ? '确认派单'
-            : assignMode === 'multi'
-              ? '确认加人'
-              : '确认换人'
-        }
+        okText={(() => {
+          if (assigning?.status === 'pending_assign') return '确认派单';
+          if (assignMode !== 'multi') return '确认换人';
+          const adding = inspectorIds.filter(
+            (id) => !activeAssignees.some((a) => a.id === id),
+          );
+          const convertingFromSingle = (assigning?.assignMode || 'single') !== 'multi';
+          if (convertingFromSingle) return adding.length || activeAssignees.length ? '确认改多人' : '确认';
+          // 已是多人：撤回已即时生效；有新人则确认加人，否则点完成关闭
+          return adding.length ? '确认加人' : '完成';
+        })()}
         cancelText="取消"
         okButtonProps={{
           disabled: (() => {
@@ -1144,11 +1148,11 @@ export default function FinanceCasesPage() {
               );
               const convertingFromSingle =
                 (assigning?.assignMode || 'single') !== 'multi';
-              // 单人改多人：可只改模式/台数（保留原人）；已是多人则必须选新人
+              // 单人改多人：至少保留/选一人；已是多人：可不加人，直接「完成」（撤回已即时生效）
               if (convertingFromSingle) {
                 return activeAssignees.length === 0 && adding.length === 0;
               }
-              return adding.length === 0;
+              return false;
             }
             return !inspectorId;
           })(),
@@ -1157,6 +1161,7 @@ export default function FinanceCasesPage() {
           assignLoadSeq.current += 1;
           setAssigning(undefined);
           setActiveAssignees([]);
+          void load();
         }}
         onOk={async () => {
           if (!assigning) return;
@@ -1170,6 +1175,20 @@ export default function FinanceCasesPage() {
             const added = inspectorIds.filter(
               (id) => !existing.has(id) && !activeAssignees.some((a) => a.id === id),
             );
+            // 已是多人且未选新人：撤回已即时生效，这里只关窗并刷新（顺带可保存台数）
+            if (!isFirst && !convertingFromSingle && !added.length) {
+              const nextPlan = Math.max(1, plannedUnits || 1);
+              if (nextPlan !== Math.max(1, Number(assigning.plannedUnits) || 1)) {
+                await setFinanceCaseWorkPlan(assigning.id, { plannedUnits: nextPlan });
+                message.success('计划台数已更新');
+              } else {
+                message.success('已更新派单人员');
+              }
+              setAssigning(undefined);
+              setActiveAssignees([]);
+              await load();
+              return;
+            }
             // 首次派单：用所选；单人改多人：本地保留的原人 + 新人；多人加人：仅新人
             const toSend = isFirst
               ? inspectorIds
@@ -1326,6 +1345,7 @@ export default function FinanceCasesPage() {
                             message.success(`已撤回 ${a.realName}`);
                             setActiveAssignees(next);
                             setInspectorIds((ids) => ids.filter((id) => id !== a.id));
+                            await load();
                             // 撤光后保持弹窗，便于立刻改派新人
                             if (!next.length) {
                               setAssigning({
@@ -1353,7 +1373,7 @@ export default function FinanceCasesPage() {
                   type="info"
                   showIcon
                   style={{ marginTop: 8 }}
-                  message="有完成台数的工程师不能撤回。不想保留某人可点「撤回」，再在下方选其他人。"
+                  message="「撤回」点一下立即生效，用来减少人员；下方加人后点「确认加人」。若不加人，点「完成」关闭即可。"
                 />
               </div>
             )}
@@ -1365,7 +1385,7 @@ export default function FinanceCasesPage() {
                 (assigning?.assignMode || 'single') !== 'multi' && activeAssignees.length > 0
                   ? '正在改为多人模式：默认保留原工程师。若要换成别人，先点「撤回」再选择新人。'
                   : activeAssignees.length
-                    ? '多人模式：下方选择要追加的工程师（不会踢掉现有人）；要换掉某人请先点「撤回」。'
+                    ? '减少人：点「撤回」立即生效。增加人：下方选择后点「确认加人」。'
                     : '请选择工程师（可多选），确认后生效。'
               }
             />
