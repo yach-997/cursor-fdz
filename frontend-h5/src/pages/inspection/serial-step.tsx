@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { Button, Field, Toast } from 'react-vant';
 import {
   ocrUnitDeviceSerial,
@@ -15,25 +15,22 @@ type Props = {
   initialSerial?: string | null;
   initialPhotoUrl?: string | null;
   readonly?: boolean;
-  onConfirmed: (serial: string, photoUrl?: string | null) => void;
   onPreview?: (urls: string[], index: number) => void;
 };
 
-/** 分台作业：拍照识别设备序列号（可手改后确认） */
-export function SerialStepPanel({
-  caseId,
-  unitId,
-  unitSeq,
-  initialSerial,
-  initialPhotoUrl,
-  readonly,
-  onConfirmed,
-  onPreview,
-}: Props) {
+export type SerialStepHandle = {
+  /** 校验并落库；成功返回序列号，失败返回 null */
+  confirmAndSave: () => Promise<{ serial: string; photoUrl?: string | null } | null>;
+};
+
+/** 分台作业：拍照识别设备序列号（可手改；点底部「下一步」保存并继续） */
+export const SerialStepPanel = forwardRef<SerialStepHandle, Props>(function SerialStepPanel(
+  { caseId, unitId, unitSeq, initialSerial, initialPhotoUrl, readonly, onPreview },
+  ref,
+) {
   const [photoUrl, setPhotoUrl] = useState(initialPhotoUrl || '');
   const [serial, setSerial] = useState(initialSerial || '');
   const [ocrBusy, setOcrBusy] = useState(false);
-  const [saveBusy, setSaveBusy] = useState(false);
   const [upBusy, setUpBusy] = useState(false);
   const camRef = useRef<HTMLInputElement>(null);
   const galRef = useRef<HTMLInputElement>(null);
@@ -74,31 +71,32 @@ export function SerialStepPanel({
     }
   };
 
-  const confirm = async () => {
-    const value = serial.trim().replace(/\s+/g, '').toUpperCase();
-    if (value.length < 4) {
-      Toast.fail('请填写至少 4 位的设备序列号');
-      return;
-    }
-    setSaveBusy(true);
-    try {
-      const saved = await saveUnitDeviceSerial(caseId, unitId, {
-        deviceSerial: value,
-        serialPhotoUrl: photoUrl || undefined,
-      });
-      Toast.success('本台序列号已确认');
-      onConfirmed(saved.deviceSerial, saved.serialPhotoUrl);
-    } catch {
-      /* toast by interceptor */
-    } finally {
-      setSaveBusy(false);
-    }
-  };
+  useImperativeHandle(ref, () => ({
+    confirmAndSave: async () => {
+      const value = serial.trim().replace(/\s+/g, '').toUpperCase();
+      if (value.length < 4) {
+        Toast.fail('请填写至少 4 位的设备序列号');
+        return null;
+      }
+      try {
+        const saved = await saveUnitDeviceSerial(caseId, unitId, {
+          deviceSerial: value,
+          serialPhotoUrl: photoUrl || undefined,
+        });
+        return {
+          serial: saved.deviceSerial,
+          photoUrl: saved.serialPhotoUrl,
+        };
+      } catch {
+        return null;
+      }
+    },
+  }));
 
   return (
     <div className="trip-wizard-card">
       <h3>识别设备序列号{unitSeq ? ` · 台 #${unitSeq}` : ''}</h3>
-      <p>拍摄设备铭牌或机身序列号，识别不对可手动修改，确认后进入检查项。</p>
+      <p>拍摄设备铭牌或机身序列号，识别不对可手改，点下方「下一步」保存并进入检查项。</p>
 
       <div className="trip-wizard-block">
         <strong>铭牌 / 序列号照片</strong>
@@ -191,20 +189,6 @@ export function SerialStepPanel({
           onChange={setSerial}
         />
       </div>
-
-      {!readonly && (
-        <Button
-          type="primary"
-          round
-          block
-          loading={saveBusy}
-          disabled={saveBusy}
-          style={{ marginTop: 12 }}
-          onClick={() => void confirm()}
-        >
-          确认本台序列号
-        </Button>
-      )}
     </div>
   );
-}
+});
