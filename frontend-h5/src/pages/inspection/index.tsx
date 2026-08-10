@@ -1332,11 +1332,22 @@ export default function InspectionPage() {
             />
           ) : showWorkSteps ? (
             <>
-          {tripMode === 'skip' && (
-            <div className="trip-wizard-skip-bar">
-              <span>本台已选：无行程</span>
-              <button type="button" onClick={switchToNeedFromSkip}>
-                改选有行程
+          {(tripMode === 'skip' || tripMode === 'need') && (
+            <div
+              className={
+                tripMode === 'skip' ? 'trip-wizard-skip-bar' : 'trip-wizard-skip-bar is-need'
+              }
+            >
+              <span>{tripMode === 'skip' ? '本台已选：无行程' : '本台已选：有行程'}</span>
+              <button
+                type="button"
+                disabled={tripBusy}
+                onClick={() => {
+                  if (tripMode === 'skip') switchToNeedFromSkip();
+                  else void switchToSkipFromStart();
+                }}
+              >
+                {tripMode === 'skip' ? '改选有行程' : '改为无行程'}
               </button>
             </div>
           )}
@@ -1507,23 +1518,13 @@ export default function InspectionPage() {
           </div>
 
           {currentWizard?.kind === 'start' && caseId && unitId && (
-            <>
-              <TripStartPanel
-                caseId={caseId}
-                unitId={unitId}
-                form={tripForm}
-                setForm={setTripForm}
-                onPreview={(urls, index) => setPhotoPreview({ urls, index })}
-              />
-              <button
-                type="button"
-                className="trip-wizard-switch-skip"
-                disabled={tripBusy}
-                onClick={() => void switchToSkipFromStart()}
-              >
-                改为无行程
-              </button>
-            </>
+            <TripStartPanel
+              caseId={caseId}
+              unitId={unitId}
+              form={tripForm}
+              setForm={setTripForm}
+              onPreview={(urls, index) => setPhotoPreview({ urls, index })}
+            />
           )}
 
           {currentWizard?.kind === 'end' && caseId && unitId && (

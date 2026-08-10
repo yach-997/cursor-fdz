@@ -537,6 +537,10 @@
   font-size: 13px;
   color: #b86a00;
 }
+.trip-wizard-skip-bar.is-need {
+  background: #e8f7f1;
+  color: #087b59;
+}
 .trip-wizard-skip-bar button {
   border: none;
   border-radius: 999px;
@@ -546,16 +550,8 @@
   font-size: 12px;
   font-weight: 650;
 }
-.trip-wizard-switch-skip {
-  display: block;
-  width: 100%;
-  margin: 8px 0 12px;
-  border: 1px solid #d5e5de;
-  border-radius: 12px;
-  padding: 12px;
-  background: #fff;
-  color: #3f6559;
-  font-size: 14px;
+.trip-wizard-skip-bar button:disabled {
+  opacity: 0.55;
 }
 .trip-inline-thumb-btn {
   display: block;
