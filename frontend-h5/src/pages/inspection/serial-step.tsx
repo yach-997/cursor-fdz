@@ -102,14 +102,16 @@ export function SerialStepPanel({
 
       <div className="trip-wizard-block">
         <strong>铭牌 / 序列号照片</strong>
-        <div className="inspection-photo-grid">
+        <div className="inspection-photo-grid serial-photo-grid">
           {photoUrl ? (
-            <div className="inspection-photo-item">
-              <img
-                src={displayPhotoUrl(photoUrl)}
-                alt="序列号"
+            <div className="inspection-photo-thumb trip-inline-thumb">
+              <button
+                type="button"
+                className="trip-inline-thumb-btn"
                 onClick={() => onPreview?.([photoUrl], 0)}
-              />
+              >
+                <img src={displayPhotoUrl(photoUrl)} alt="序列号" />
+              </button>
               {!readonly && (
                 <button
                   type="button"

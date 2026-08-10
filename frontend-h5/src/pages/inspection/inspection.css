@@ -577,3 +577,12 @@
   font-weight: 650;
   letter-spacing: 0.02em;
 }
+/* 序列号步骤只展示 1 张缩略图，避免原图撑满整屏 */
+.serial-photo-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 100%;
+}
+.serial-photo-grid .inspection-photo-thumb,
+.serial-photo-grid .inspection-photo-placeholder {
+  max-width: 120px;
+}
