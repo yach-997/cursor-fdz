@@ -4,7 +4,7 @@ import { In, IsNull, Repository } from 'typeorm';
 import { Site, SiteMember } from '../../entities';
 import { CommonStatus, SiteMemberRole } from '../../common/enums';
 
-/** 解析用户在站点侧的正/副网格长站点与巡检站点 */
+/** 解析用户在网格侧的正/副网格长网格与巡检网格 */
 @Injectable()
 export class SiteScopeService {
   constructor(
@@ -14,7 +14,7 @@ export class SiteScopeService {
     private readonly siteMemberRepo: Repository<SiteMember>,
   ) {}
 
-  /** 正网格长站点 + 副网格长站点（去重） */
+  /** 正网格长网格 + 副网格长网格（去重） */
   async getManagedSiteIds(userId: string): Promise<string[]> {
     const primary = await this.siteRepo
       .createQueryBuilder('site')
@@ -36,7 +36,7 @@ export class SiteScopeService {
     return [...new Set([...primary.map((s) => s.id), ...deputies.map((d) => d.siteId)])];
   }
 
-  /** 作为工程师加入的站点（可多站） */
+  /** 作为工程师加入的网格（可多站） */
   async getInspectorSiteIds(userId: string): Promise<string[]> {
     const memberships = await this.siteMemberRepo.find({
       where: {

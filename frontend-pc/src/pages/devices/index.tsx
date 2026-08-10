@@ -37,7 +37,7 @@ import type { DeviceItem, SiteItem, DeviceType } from '../../types';
 import { DEVICE_TYPE_LABEL } from '../../types';
 import { RECORD_STATUS_LABEL, TASK_STATUS_LABEL } from '../../utils/displayLabels';
 
-/** 设备管理：表格 + 站点筛选 + 批量导入 Excel + 历史 */
+/** 设备管理：表格 + 网格筛选 + 批量导入 Excel + 历史 */
 export default function DevicesPage() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<DeviceItem[]>([]);
@@ -154,7 +154,7 @@ export default function DevicesPage() {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('设备');
     worksheet.addRows([
-      ['站点编码', '序列号', '设备类型', '型号', '制造商', '安装日期'],
+      ['网格编码', '序列号', '设备类型', '型号', '制造商', '安装日期'],
       ['SITE001', 'SN20260001', '组串式逆变器', 'SG110CX', '阳光电源', '2026-01-01'],
     ]);
     worksheet.getRow(1).font = { bold: true };
@@ -192,7 +192,7 @@ export default function DevicesPage() {
       render: (v: DeviceType) => DEVICE_TYPE_LABEL[v] || '未知设备类型',
     },
     {
-      title: '所属站点',
+      title: '所属网格',
       dataIndex: ['site', 'name'],
       width: 140,
       render: (v, r) => v || r.siteId,
@@ -246,7 +246,7 @@ export default function DevicesPage() {
       <Space style={{ marginBottom: 16 }} wrap>
         <Select
           allowClear
-          placeholder="所属站点"
+          placeholder="所属网格"
           style={{ width: 180 }}
           value={siteId}
           onChange={(v) => {
@@ -306,7 +306,7 @@ export default function DevicesPage() {
         destroyOnClose
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="siteId" label="所属站点" rules={[{ required: true }]}>
+          <Form.Item name="siteId" label="所属网格" rules={[{ required: true }]}>
             <Select
               options={sites.map((s) => ({ value: s.id, label: `${s.name}（${s.code}）` }))}
             />

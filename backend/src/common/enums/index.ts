@@ -2,13 +2,13 @@
 export enum UserRole {
   /** 超级管理员 */
   SUPER_ADMIN = 'super_admin',
-  /** 网格长（可作为正网格长/副网格长任职，具体以站点任命为准） */
+  /** 网格长（可作为正网格长/副网格长任职，具体以网格任命为准） */
   SITE_MANAGER = 'site_manager',
-  /** 工程师（可同时加入多个站点） */
+  /** 工程师（可同时加入多个网格） */
   INSPECTOR = 'inspector',
 }
 
-/** 站点成员任职类型（正网格长仍记在 sites.manager_id） */
+/** 网格成员任职类型（正网格长仍记在 sites.manager_id） */
 export enum SiteMemberRole {
   /** 副网格长 */
   DEPUTY_MANAGER = 'deputy_manager',

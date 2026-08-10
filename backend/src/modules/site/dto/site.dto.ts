@@ -15,14 +15,14 @@ import { CommonStatus } from '../../../common/enums';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 import { IsPostgresUuid } from '../../../common/decorators/postgres-uuid.decorator';
 
-/** 创建站点 DTO */
+/** 创建网格 DTO */
 export class CreateSiteDto {
   @IsString()
-  @IsNotEmpty({ message: '站点名称不能为空' })
+  @IsNotEmpty({ message: '网格名称不能为空' })
   name: string;
 
   @IsString()
-  @IsNotEmpty({ message: '站点编码不能为空' })
+  @IsNotEmpty({ message: '网格编码不能为空' })
   code: string;
 
   @IsString()
@@ -54,8 +54,8 @@ export class CreateSiteDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(50, { message: '巡检范围不能小于50米' })
-  @Max(5000, { message: '巡检范围不能大于5000米' })
+  @Min(0, { message: '巡检范围不能小于0米' })
+  @Max(50000, { message: '巡检范围不能大于50公里（50000米）' })
   inspectionRadiusMeters?: number;
 
   @IsOptional()
@@ -63,7 +63,7 @@ export class CreateSiteDto {
   managerId?: string;
 }
 
-/** 更新站点 DTO */
+/** 更新网格 DTO */
 export class UpdateSiteDto {
   @IsOptional()
   @IsString()
@@ -104,8 +104,8 @@ export class UpdateSiteDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(50, { message: '巡检范围不能小于50米' })
-  @Max(5000, { message: '巡检范围不能大于5000米' })
+  @Min(0, { message: '巡检范围不能小于0米' })
+  @Max(50000, { message: '巡检范围不能大于50公里（50000米）' })
   inspectionRadiusMeters?: number;
 
   @IsOptional()
@@ -117,7 +117,7 @@ export class UpdateSiteDto {
   status?: CommonStatus;
 }
 
-/** 站点查询 DTO */
+/** 网格查询 DTO */
 export class QuerySiteDto extends PaginationDto {
   @IsOptional()
   @IsString()
@@ -154,7 +154,7 @@ export class AppointDeputyDto {
   userId: string;
 }
 
-/** 聘用工程师 DTO（同一工程师可加入多个站点） */
+/** 聘用工程师 DTO（同一工程师可加入多个网格） */
 export class AddMemberDto {
   @IsPostgresUuid({ message: '用户ID格式不正确' })
   @IsNotEmpty()

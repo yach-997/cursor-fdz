@@ -6,7 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThanOrEqual, Repository } from 'typeorm';
+import { In, LessThanOrEqual, Repository } from 'typeorm';
 import { Interval } from '@nestjs/schedule';
 import {
   InspectionRecord,
@@ -15,6 +15,10 @@ import {
   RecordEntry,
   TemplateEntry,
   AuditTrailEvent,
+  RecordLocation,
+  ServiceCase,
+  CaseWorkUnit,
+  User,
 } from '../../entities';
 import {
   UserRole,
@@ -32,6 +36,7 @@ import {
 } from './dto/record.dto';
 import { LocationGuardService } from '../upload/location-guard.service';
 import { AlertService } from '../alert/alert.service';
+import { GeocodeService } from '../geocode/geocode.service';
 
 // AI 分析是异步体验，但不能无限等待。超过此时间仍未回写的条目
 // 自动转为“AI 异常/待人工判断”，保证报告流程可以闭环。
@@ -48,7 +53,15 @@ export class RecordService {
     private readonly taskRepo: Repository<InspectionTask>,
     @InjectRepository(Device)
     private readonly deviceRepo: Repository<Device>,
+    @InjectRepository(ServiceCase)
+    private readonly cases: Repository<ServiceCase>,
+    @InjectRepository(CaseWorkUnit)
+    private readonly units: Repository<CaseWorkUnit>,
+    @InjectRepository(User)
+    private readonly users: Repository<User>,
     private readonly locationGuard: LocationGuardService,
+    @Optional()
+    private readonly geocodeService?: GeocodeService,
     @Optional()
     private readonly alertService?: AlertService,
   ) {}
@@ -86,9 +99,18 @@ export class RecordService {
       });
     }
     if (query.keyword?.trim()) {
-      taskQb.andWhere('task.task_name ILIKE :kw', {
-        kw: `%${query.keyword.trim()}%`,
-      });
+      const kw = `%${query.keyword.trim()}%`;
+      taskQb.andWhere(
+        `(
+          task.task_name ILIKE :kw
+          OR EXISTS (
+            SELECT 1 FROM service_case sc
+            WHERE sc.id = task.service_case_id
+              AND (sc.gsp_case_no ILIKE :kw OR sc.project_name ILIKE :kw)
+          )
+        )`,
+        { kw },
+      );
     }
     if (query.region?.trim()) {
       taskQb.andWhere(
@@ -127,7 +149,6 @@ export class RecordService {
       .where('record.task_id IN (:...taskIds)', { taskIds });
 
     if (query.scope === 'history') {
-      // 已提交链路：待审/通过/驳回/归档（归档后仍可查，满足≥3个月检索）
       qb.andWhere('record.submitted_at IS NOT NULL');
       if (query.status) {
         qb.andWhere('record.status = :status', { status: query.status });
@@ -158,14 +179,20 @@ export class RecordService {
       });
     }
 
-    qb.orderBy('record.submitted_at', 'DESC')
-      .addOrderBy('record.createdAt', 'DESC');
+    qb.orderBy('record.submitted_at', 'DESC').addOrderBy('record.createdAt', 'DESC');
 
-    // 审核队列：在结果集上再筛不合格；历史用数据库分页
     if (query.scope === 'audit') {
       const all = await qb.getMany();
+      const taskIdsForCache = [...new Set(all.map((r) => r.taskId))];
+      const cache = await this.buildMetaCache(
+        taskIdsForCache.length
+          ? await this.taskRepo.find({ where: { id: In(taskIdsForCache) } })
+          : [],
+      );
       const details = await Promise.all(
-        all.map(async (r) => this.toDetail(await this.resolveStalePending(r))),
+        all.map(async (r) =>
+          this.toDetail(await this.resolveStalePending(r), undefined, cache),
+        ),
       );
       const pendingAudit = details.filter(
         (r) =>
@@ -181,10 +208,299 @@ export class RecordService {
     qb.skip((page - 1) * limit).take(limit);
     const total = await qb.getCount();
     const list = await qb.getMany();
+    const taskIdsForCache = [...new Set(list.map((r) => r.taskId))];
+    const cache = await this.buildMetaCache(
+      taskIdsForCache.length
+        ? await this.taskRepo.find({ where: { id: In(taskIdsForCache) } })
+        : [],
+    );
     const enriched = await Promise.all(
-      list.map(async (r) => this.toDetail(await this.resolveStalePending(r))),
+      list.map(async (r) =>
+        this.toDetail(await this.resolveStalePending(r), undefined, cache),
+      ),
     );
     return { list: enriched, total, page, limit };
+  }
+
+  /** 按案例（或无案例时按任务）聚合的报告列表 */
+  async findCaseGroups(query: QueryRecordDto, currentUser: CurrentUserContext) {
+    const page = query.page || 1;
+    const limit = query.limit || 10;
+    const details = await this.collectScopedDetails(query, currentUser);
+    type GroupAcc = {
+      groupKey: string;
+      serviceCaseId: string | null;
+      gspCaseNo: string | null;
+      projectName: string | null;
+      unitLabel: string | null;
+      assignMode: string | null;
+      siteId: string | null;
+      recordCount: number;
+      pendingCount: number;
+      approvedCount: number;
+      rejectedCount: number;
+      latestSubmittedAt: string | null;
+    };
+    const map = new Map<string, GroupAcc>();
+    for (const d of details) {
+      const key = d.groupKey as string;
+      let g = map.get(key);
+      if (!g) {
+        g = {
+          groupKey: key,
+          serviceCaseId: d.serviceCaseId || null,
+          gspCaseNo: d.gspCaseNo || null,
+          projectName: d.projectName || d.task?.taskName || null,
+          unitLabel: d.unitLabel || null,
+          assignMode: d.assignMode || null,
+          siteId: d.task?.siteId || null,
+          recordCount: 0,
+          pendingCount: 0,
+          approvedCount: 0,
+          rejectedCount: 0,
+          latestSubmittedAt: null,
+        };
+        map.set(key, g);
+      }
+      g.recordCount += 1;
+      if (d.needsAudit) g.pendingCount += 1;
+      if (d.status === RecordStatus.APPROVED || d.status === RecordStatus.ARCHIVED) {
+        g.approvedCount += 1;
+      }
+      if (d.status === RecordStatus.REJECTED) g.rejectedCount += 1;
+      const submitted = d.submittedAt ? String(d.submittedAt) : null;
+      if (
+        submitted &&
+        (!g.latestSubmittedAt || new Date(submitted) > new Date(g.latestSubmittedAt))
+      ) {
+        g.latestSubmittedAt = submitted;
+      }
+    }
+    const sorted = [...map.values()].sort((a, b) => {
+      const ta = a.latestSubmittedAt ? new Date(a.latestSubmittedAt).getTime() : 0;
+      const tb = b.latestSubmittedAt ? new Date(b.latestSubmittedAt).getTime() : 0;
+      return tb - ta;
+    });
+    const total = sorted.length;
+    const list = sorted.slice((page - 1) * limit, page * limit);
+    return { list, total, page, limit };
+  }
+
+  /** 某一案例（或独立任务）下的报告列表 */
+  async findCaseRecords(
+    groupKey: string,
+    query: QueryRecordDto,
+    currentUser: CurrentUserContext,
+  ) {
+    const page = query.page || 1;
+    const limit = query.limit || 100;
+    const details = await this.collectScopedDetails(
+      { ...query, groupKey },
+      currentUser,
+    );
+    const total = details.length;
+    const list = details.slice((page - 1) * limit, page * limit);
+    return { list, total, page, limit, groupKey };
+  }
+
+  /** 按权限与筛选条件收集报告详情（审核 scope 再筛 needsAudit） */
+  private async collectScopedDetails(
+    query: QueryRecordDto,
+    currentUser: CurrentUserContext,
+  ) {
+    const taskQb = this.taskRepo.createQueryBuilder('task');
+
+    if (currentUser.role === UserRole.SITE_MANAGER) {
+      if (!currentUser.managedSiteIds.length) return [];
+      taskQb.andWhere('task.site_id IN (:...siteIds)', {
+        siteIds: currentUser.managedSiteIds,
+      });
+    } else if (currentUser.role === UserRole.INSPECTOR) {
+      taskQb.andWhere('task.inspector_id = :inspectorId', {
+        inspectorId: currentUser.id,
+      });
+    }
+
+    if (query.siteId) {
+      this.assertSiteAccess(query.siteId, currentUser);
+      taskQb.andWhere('task.site_id = :siteId', { siteId: query.siteId });
+    }
+    if (query.deviceId) {
+      taskQb.andWhere('task.device_id = :deviceId', { deviceId: query.deviceId });
+    }
+    if (query.inspectorId && currentUser.role !== UserRole.INSPECTOR) {
+      taskQb.andWhere('task.inspector_id = :filterInspector', {
+        filterInspector: query.inspectorId,
+      });
+    }
+
+    const group = this.parseGroupKey(query.groupKey);
+    if (group?.kind === 'case') {
+      taskQb.andWhere('task.service_case_id = :caseId', { caseId: group.id });
+    } else if (group?.kind === 'task') {
+      taskQb.andWhere('task.id = :onlyTaskId', { onlyTaskId: group.id });
+    }
+
+    const kw = query.keyword?.trim();
+    if (kw) {
+      taskQb.andWhere(
+        `(
+          task.task_name ILIKE :kw
+          OR EXISTS (
+            SELECT 1 FROM service_case sc
+            WHERE sc.id = task.service_case_id
+              AND (sc.gsp_case_no ILIKE :kw OR sc.project_name ILIKE :kw)
+          )
+        )`,
+        { kw: `%${kw}%` },
+      );
+    }
+    if (query.region?.trim()) {
+      taskQb.andWhere(
+        `EXISTS (
+          SELECT 1 FROM sites s
+          WHERE s.id = task.site_id
+            AND (
+              s.name ILIKE :region
+              OR s.province ILIKE :region
+              OR s.city ILIKE :region
+              OR s.district ILIKE :region
+              OR CONCAT(s.province, s.city, s.district) ILIKE :region
+            )
+        )`,
+        { region: `%${query.region.trim()}%` },
+      );
+    }
+    if (query.serialNumber?.trim()) {
+      taskQb.andWhere(
+        `EXISTS (
+          SELECT 1 FROM devices d
+          WHERE d.id = task.device_id AND d.serial_number ILIKE :sn
+        )`,
+        { sn: `%${query.serialNumber.trim()}%` },
+      );
+    }
+
+    const tasks = await taskQb.getMany();
+    const taskIds = tasks.map((t) => t.id);
+    if (!taskIds.length) return [];
+
+    const qb = this.recordRepo
+      .createQueryBuilder('record')
+      .where('record.task_id IN (:...taskIds)', { taskIds });
+
+    if (query.scope === 'history') {
+      qb.andWhere('record.submitted_at IS NOT NULL');
+      if (query.status) {
+        qb.andWhere('record.status = :status', { status: query.status });
+      } else {
+        qb.andWhere('record.status IN (:...sts)', {
+          sts: [
+            RecordStatus.SUBMITTED,
+            RecordStatus.APPROVED,
+            RecordStatus.REJECTED,
+            RecordStatus.ARCHIVED,
+          ],
+        });
+      }
+    } else if (query.scope === 'audit') {
+      qb.andWhere('record.status = :status', { status: RecordStatus.SUBMITTED });
+    } else if (query.status) {
+      qb.andWhere('record.status = :status', { status: query.status });
+    }
+
+    if (query.startDate) {
+      qb.andWhere('record.submitted_at >= :startDate', {
+        startDate: `${query.startDate} 00:00:00`,
+      });
+    }
+    if (query.endDate) {
+      qb.andWhere('record.submitted_at <= :endDate', {
+        endDate: `${query.endDate} 23:59:59`,
+      });
+    }
+
+    qb.orderBy('record.submitted_at', 'DESC').addOrderBy('record.createdAt', 'DESC');
+    const records = await qb.getMany();
+    const cache = await this.buildMetaCache(tasks);
+    let details = await Promise.all(
+      records.map(async (r) =>
+        this.toDetail(
+          await this.resolveStalePending(r),
+          cache.tasks.get(r.taskId),
+          cache,
+        ),
+      ),
+    );
+
+    if (query.scope === 'audit') {
+      details = details.filter(
+        (r) =>
+          r.task?.aiEnabled === false ||
+          (r.aiSummary?.fail || 0) > 0 ||
+          (r.aiSummary?.error || 0) > 0,
+      );
+    }
+
+    return details;
+  }
+
+  private parseGroupKey(
+    groupKey?: string,
+  ): { kind: 'case' | 'task'; id: string } | null {
+    if (!groupKey?.trim()) return null;
+    const raw = groupKey.trim();
+    if (raw.startsWith('case-')) {
+      const id = raw.slice(5);
+      if (!id) return null;
+      return { kind: 'case', id };
+    }
+    if (raw.startsWith('task-')) {
+      const id = raw.slice(5);
+      if (!id) return null;
+      return { kind: 'task', id };
+    }
+    return null;
+  }
+
+  private async buildMetaCache(tasks: InspectionTask[]) {
+    const taskMap = new Map(tasks.map((t): [string, InspectionTask] => [t.id, t]));
+    const caseIds = [
+      ...new Set(
+        tasks
+          .map((t) => t.serviceCaseId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const unitIds = [
+      ...new Set(
+        tasks
+          .map((t) => t.workUnitId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const inspectorIds = [
+      ...new Set(
+        tasks
+          .map((t) => t.inspectorId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const cases: ServiceCase[] = caseIds.length
+      ? await this.cases.find({ where: { id: In(caseIds) } })
+      : [];
+    const units: CaseWorkUnit[] = unitIds.length
+      ? await this.units.find({ where: { id: In(unitIds) } })
+      : [];
+    const users: User[] = inspectorIds.length
+      ? await this.users.find({ where: { id: In(inspectorIds) } })
+      : [];
+    return {
+      tasks: taskMap,
+      cases: new Map(cases.map((c): [string, ServiceCase] => [c.id, c])),
+      units: new Map(units.map((u): [string, CaseWorkUnit] => [u.id, u])),
+      users: new Map(users.map((u): [string, User] => [u.id, u])),
+    };
   }
 
   async findOne(id: string, currentUser: CurrentUserContext) {
@@ -304,14 +620,65 @@ export class RecordService {
     this.assertInspectorWrite(task, currentUser);
 
     let locationSummary = '';
+    let capturedLocation: RecordLocation | null = null;
     if (currentUser.role === UserRole.INSPECTOR) {
       const verified = await this.locationGuard.assertOnSite(
         task.id,
-        dto,
+        {
+          gps: dto.gps,
+          accuracy: dto.accuracy,
+          capturedAt: dto.capturedAt,
+          locationStatus: dto.locationStatus,
+          locationReasonCode: dto.locationReasonCode,
+          locationReason: dto.locationReason,
+        },
         currentUser,
         false,
       );
-      locationSummary = `；现场定位已通过（距站点约 ${verified.distanceMeters} 米，精度约 ${verified.accuracyMeters} 米）`;
+      capturedLocation = {
+        status: verified.status,
+        latitude: verified.latitude,
+        longitude: verified.longitude,
+        accuracyMeters: verified.accuracyMeters || undefined,
+        capturedAt: verified.capturedAt,
+        distanceToSiteMeters: verified.distanceToSiteMeters,
+        reasonCode: verified.reasonCode,
+        reason: verified.reason,
+      };
+      if (
+        this.geocodeService &&
+        verified.latitude != null &&
+        verified.longitude != null &&
+        (verified.status === 'ok' || verified.status === 'weak')
+      ) {
+        try {
+          const regeo = await this.geocodeService.regeo(
+            verified.longitude,
+            verified.latitude,
+          );
+          if (regeo?.displayName) capturedLocation.address = regeo.displayName;
+        } catch {
+          // 逆地理失败不影响提交
+        }
+      }
+      if (verified.status === 'ok' || verified.status === 'weak') {
+        const coord =
+          verified.latitude != null && verified.longitude != null
+            ? `${verified.latitude.toFixed(6)}, ${verified.longitude.toFixed(6)}`
+            : '-';
+        const addr = capturedLocation.address ? `，${capturedLocation.address}` : '';
+        const dist =
+          verified.distanceToSiteMeters != null
+            ? `，距归属网格约 ${verified.distanceToSiteMeters} 米`
+            : '';
+        const weakHint = verified.status === 'weak' ? '（弱定位）' : '';
+        locationSummary = `；现场定位${weakHint} ${coord}${addr}${dist}（精度约 ${verified.accuracyMeters} 米）`;
+      } else {
+        const label = verified.status === 'skipped' ? '工程师跳过定位' : '未能获取定位';
+        locationSummary = `；位置异常：${label}${
+          verified.reason ? `（${verified.reason}）` : ''
+        }`;
+      }
     }
     const withLocation = (summary: string) => `${summary}${locationSummary}`;
 
@@ -366,6 +733,9 @@ export class RecordService {
     record.reportPhotos = record.entries.flatMap((e) => e.photos || []);
     record.approvedAt = null;
     record.approvedBy = null;
+    if (capturedLocation) {
+      record.location = capturedLocation;
+    }
 
     const fail = this.hasAiFail(record.entries);
     const pending = this.hasAiPending(record.entries);
@@ -792,15 +1162,66 @@ export class RecordService {
     return { pass, fail, pending, error };
   }
 
-  private async toDetail(record: InspectionRecord, task?: InspectionTask) {
-    const t = task || (await this.taskRepo.findOne({ where: { id: record.taskId } }));
+  private async toDetail(
+    record: InspectionRecord,
+    task?: InspectionTask,
+    cache?: {
+      tasks: Map<string, InspectionTask>;
+      cases: Map<string, ServiceCase>;
+      units: Map<string, CaseWorkUnit>;
+      users: Map<string, User>;
+    },
+  ) {
+    const t =
+      task ||
+      cache?.tasks.get(record.taskId) ||
+      (await this.taskRepo.findOne({ where: { id: record.taskId } }));
     const ai = this.aiSummary(record.entries || []);
+
+    let gspCaseNo: string | null = null;
+    let projectName: string | null = null;
+    let unitLabel: string | null = null;
+    let assignMode: string | null = null;
+    let workUnit: { id: string; seq: number; title: string | null } | null = null;
+    let inspectorName: string | null = null;
+
+    if (t?.serviceCaseId) {
+      const sc =
+        cache?.cases.get(t.serviceCaseId) ||
+        (await this.cases.findOne({ where: { id: t.serviceCaseId } }));
+      if (sc) {
+        gspCaseNo = sc.gspCaseNo;
+        projectName = sc.projectName;
+        unitLabel = sc.unitLabel;
+        assignMode = sc.assignMode;
+      }
+    }
+    if (t?.workUnitId) {
+      const unit =
+        cache?.units.get(t.workUnitId) ||
+        (await this.units.findOne({ where: { id: t.workUnitId } }));
+      if (unit) {
+        workUnit = { id: unit.id, seq: unit.seq, title: unit.title };
+      }
+    }
+    if (t?.inspectorId) {
+      const inspector =
+        cache?.users.get(t.inspectorId) ||
+        (await this.users.findOne({ where: { id: t.inspectorId } }));
+      inspectorName = inspector?.realName || null;
+    }
+
+    const groupKey = t?.serviceCaseId
+      ? `case-${t.serviceCaseId}`
+      : `task-${record.taskId}`;
+
     return {
       id: record.id,
       taskId: record.taskId,
       deviceType: record.deviceType,
       entries: record.entries,
       reportPhotos: record.reportPhotos,
+      location: record.location || null,
       status: record.status,
       submittedAt: record.submittedAt,
       approvedAt: record.approvedAt,
@@ -812,6 +1233,14 @@ export class RecordService {
         record.status === RecordStatus.SUBMITTED &&
         (t?.aiEnabled === false || ai.fail > 0 || ai.error > 0),
       createdAt: record.createdAt,
+      groupKey,
+      serviceCaseId: t?.serviceCaseId || null,
+      gspCaseNo,
+      projectName,
+      unitLabel,
+      assignMode,
+      workUnit,
+      inspectorName,
       task: t
         ? {
             id: t.id,
@@ -822,6 +1251,8 @@ export class RecordService {
             status: t.status,
             templateSnapshot: t.templateSnapshot,
             aiEnabled: t.aiEnabled,
+            serviceCaseId: t.serviceCaseId,
+            workUnitId: t.workUnitId,
           }
         : undefined,
     };
@@ -843,13 +1274,13 @@ export class RecordService {
     if (currentUser.role === UserRole.SUPER_ADMIN) return;
     if (currentUser.role === UserRole.SITE_MANAGER) {
       if (!currentUser.managedSiteIds.includes(siteId)) {
-        throw new ForbiddenException('无权操作该站点');
+        throw new ForbiddenException('无权操作该网格');
       }
       return;
     }
     if (currentUser.role === UserRole.INSPECTOR) {
       if (!currentUser.memberSiteIds.includes(siteId)) {
-        throw new ForbiddenException('无权访问该站点');
+        throw new ForbiddenException('无权访问该网格');
       }
     }
   }

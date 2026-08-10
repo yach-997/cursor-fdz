@@ -22,6 +22,7 @@ import {
   AccountBookOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '../stores/auth';
+import { brandMarkText, useBrandingStore } from '../stores/branding';
 import { flattenMenus, getMenusByRole } from '../router/menus';
 import type { MenuConfig } from '../types';
 import './basic-layout.css';
@@ -76,6 +77,7 @@ export default function BasicLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuthStore();
+  const branding = useBrandingStore((s) => s.branding);
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
 
@@ -125,11 +127,17 @@ export default function BasicLayout() {
   const menuNode = (
     <>
       <div className="app-brand">
-        <div className="app-brand__mark">光</div>
+        <div className="app-brand__mark" aria-hidden>
+          {branding.logoUrl ? (
+            <img src={branding.logoUrl} alt="" className="app-brand__logo" />
+          ) : (
+            brandMarkText(branding.systemName)
+          )}
+        </div>
         {(!collapsed || isMobile) && (
           <div className="app-brand__text">
-            <div className="app-brand__title">光伏储能巡检</div>
-            <div className="app-brand__sub">智能巡检平台</div>
+            <div className="app-brand__title">{branding.systemName}</div>
+            <div className="app-brand__sub">{branding.subtitle || '阳光运维平台'}</div>
           </div>
         )}
       </div>
@@ -185,7 +193,7 @@ export default function BasicLayout() {
             />
             <div>
               <h1 className="app-page-title">{currentTitle}</h1>
-              <div className="app-page-subtitle">光伏储能智能巡检工作台</div>
+              <div className="app-page-subtitle">{branding.subtitle || '阳光运维工作台'}</div>
             </div>
           </div>
           <Dropdown

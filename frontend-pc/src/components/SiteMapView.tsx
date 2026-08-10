@@ -30,7 +30,7 @@ function escapeHtml(value: string) {
   });
 }
 
-/** 仪表盘站点分布（Leaflet + 高德瓦片） */
+/** 仪表盘网格分布（Leaflet + 高德瓦片） */
 export default function SiteMapView({ markers, height = 360 }: SiteMapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -95,7 +95,7 @@ export default function SiteMapView({ markers, height = 360 }: SiteMapViewProps)
             color: '#999',
           }}
         >
-          暂无站点坐标数据
+          暂无网格坐标数据
         </div>
       ) : (
         <div ref={containerRef} style={{ height, width: '100%', borderRadius: 8 }} />

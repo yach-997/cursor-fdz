@@ -158,14 +158,14 @@ export class AuthService {
       const managed = await this.siteScope.getManagedSiteIds(user.id);
       if (managed.length) return UserRole.SITE_MANAGER;
       throw new ForbiddenException(
-        '该账号无管理端权限。请使用 H5 巡检端登录，或在用户管理中勾选「网格长」角色',
+        '该账号无管理端权限。请使用 H5 作业端登录，或在用户管理中勾选「网格长」角色',
       );
     }
 
-    // H5 巡检端：必须具备工程师角色（由正/副网格长设立），正网格长不可用管理身份进 H5
+    // H5 作业端：必须具备工程师角色（由正/副网格长设立），正网格长不可用管理身份进 H5
     if (roles.includes(UserRole.INSPECTOR)) return UserRole.INSPECTOR;
     throw new ForbiddenException(
-      '该账号无巡检端权限。请由正/副网格长设立工程师身份（可为自己开通）后再登录 H5；网格长管理请用 PC',
+      '该账号无作业端权限。请由正/副网格长设立工程师身份（可为自己开通）后再登录 H5；网格长管理请用 PC',
     );
   }
 
@@ -204,6 +204,7 @@ export class AuthService {
       id: user.id,
       username: user.username,
       realName: user.realName,
+      employeeNo: user.employeeNo,
       phone: user.phone,
       email: user.email,
       avatar: user.avatar,

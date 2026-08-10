@@ -54,6 +54,21 @@ export interface AuditTrailEvent {
   summary?: string;
 }
 
+/** 提交时写入的现场定位留痕（质量标签，不作为准入条件） */
+export type LocationQualityStatus = 'ok' | 'weak' | 'failed' | 'skipped';
+
+export interface RecordLocation {
+  status?: LocationQualityStatus;
+  latitude?: number | null;
+  longitude?: number | null;
+  accuracyMeters?: number;
+  capturedAt?: string;
+  address?: string;
+  distanceToSiteMeters?: number;
+  reasonCode?: string;
+  reason?: string;
+}
+
 /** 巡检记录实体 */
 @Entity('inspection_records')
 export class InspectionRecord {
@@ -75,6 +90,10 @@ export class InspectionRecord {
 
   @Column({ name: 'report_photos', type: 'jsonb', nullable: true })
   reportPhotos: string[] | null;
+
+  /** 现场定位经纬度等留痕（取消围栏后写入） */
+  @Column({ type: 'jsonb', nullable: true })
+  location: RecordLocation | null;
 
   @Column({
     type: 'enum',

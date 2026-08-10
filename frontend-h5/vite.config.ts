@@ -10,9 +10,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: '智能设备巡检系统',
-        short_name: '设备巡检',
-        description: '光伏/储能设备现场巡检移动端',
+        name: '阳光运维系统',
+        short_name: '阳光运维',
+        description: '阳光运维现场作业移动端',
         theme_color: '#0f7a58',
         background_color: '#ffffff',
         display: 'standalone',

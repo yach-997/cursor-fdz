@@ -11,7 +11,7 @@ import { IsPostgresUuid } from '../../../common/decorators/postgres-uuid.decorat
 
 /** 创建设备 DTO */
 export class CreateDeviceDto {
-  @IsPostgresUuid({ message: '站点ID格式不正确' })
+  @IsPostgresUuid({ message: '网格ID格式不正确' })
   siteId: string;
 
   @IsString()

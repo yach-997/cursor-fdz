@@ -85,8 +85,7 @@ export class DatabaseSeedService implements OnModuleInit {
   }
 
   /**
-   * 按业务流程图写入/同步 3 套全局模板：
-   * 组串式逆变器 / 集中式逆变器 / 储能系统
+   * 按业务流程图写入/同步设备巡检模板，并补齐 PO 需求类型全局模板。
    */
   private async seedTemplates() {
     const defs: Array<{ name: string; deviceType: DeviceType; entries: EntryDef[] }> = [
@@ -236,6 +235,48 @@ export class DatabaseSeedService implements OnModuleInit {
 
       await this.templateRepo.save(tpl);
       this.logger.log(`已创建流程图模板: ${def.name}`);
+    }
+
+    await this.seedDemandTypeTemplates();
+  }
+
+  /** PO 对齐的全局需求类型（与 Preview bootstrap 同清单） */
+  private async seedDemandTypeTemplates() {
+    const defs: Array<{
+      name: string;
+      assignMode: 'single' | 'multi';
+      unitLabel: string;
+    }> = [
+      { name: '巡检', assignMode: 'multi', unitLabel: '台' },
+      { name: '故障恢复', assignMode: 'single', unitLabel: '台' },
+      { name: '整改', assignMode: 'multi', unitLabel: '台' },
+      { name: '维护', assignMode: 'single', unitLabel: '台' },
+      { name: '交付', assignMode: 'single', unitLabel: '台' },
+    ];
+    for (const def of defs) {
+      const exists = await this.templateRepo.findOne({
+        where: { name: def.name },
+      });
+      if (exists) continue;
+      const tpl = this.templateRepo.create({
+        name: def.name,
+        deviceType: DeviceType.STRING_INVERTER,
+        isGlobal: true,
+        siteId: null,
+        assignMode: def.assignMode,
+        unitLabel: def.unitLabel,
+        expenseEnabledDefault: false,
+        version: 1,
+        entries: this.buildEntries([
+          {
+            name: '现场作业记录',
+            description:
+              '请按该服务类型现场规范完成作业并上传凭证；可在「服务类型」中完善检查条目与样本图。',
+          },
+        ]),
+      } as Partial<InspectionTemplate>);
+      await this.templateRepo.save(tpl);
+      this.logger.log(`已创建需求类型模板: ${def.name}`);
     }
   }
 

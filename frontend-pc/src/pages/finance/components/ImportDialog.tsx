@@ -82,7 +82,14 @@ export default function ImportDialog({
       if (kind === 'gsp') {
         const data = await uploadFinanceExcel(kind, file, false);
         setImportStatus(data);
-        message.success(`导入完成：成功 ${data.successRows || 0}，失败 ${data.failRows || 0}`);
+        const warnCount = data.matchWarnings?.length || data.warnings?.length || 0;
+        if (warnCount > 0) {
+          message.warning(
+            `导入完成：成功 ${data.successRows || 0}，失败 ${data.failRows || 0}；有 ${warnCount} 条匹配提示（不阻断入库）`,
+          );
+        } else {
+          message.success(`导入完成：成功 ${data.successRows || 0}，失败 ${data.failRows || 0}`);
+        }
         onDone();
         return;
       }
@@ -207,7 +214,7 @@ export default function ImportDialog({
           type="info"
           showIcon
           message="第一次导入（GSP 基本信息）"
-          description="表头需含：服务案例号、项目名称、服务类型、创建人、省份、城市、失效现象描述。导入后即可分配站点/派工程师开工；项目名称允许为空。"
+          description="表头需含：服务案例号、项目名称、服务类型、产品线、创建人、省份、城市、失效现象描述。服务类型/产品线按系统配置精确匹配；匹配不上仍会入库，并提示去「服务类型」补同名配置，补好后会自动挂上。"
         />
       )}
       {kind === 'po' && (
@@ -231,6 +238,27 @@ export default function ImportDialog({
             status={loading ? 'active' : importStatus?.done ? 'success' : 'exception'}
             style={{ marginTop: 8 }}
           />
+        </div>
+      )}
+      {importStatus && !loading && (
+        <div style={{ marginTop: 16 }}>
+          {(importStatus.matchWarnings?.length || 0) > 0 ? (
+            <Alert
+              showIcon
+              type="warning"
+              message={`匹配提示 ${importStatus.matchWarnings!.length} 条（案例已入库，请到「服务类型」补配置）`}
+              description={
+                <ul style={{ margin: '8px 0 0', paddingLeft: 18, maxHeight: 180, overflow: 'auto' }}>
+                  {importStatus.matchWarnings!.slice(0, 30).map((w, i) => (
+                    <li key={`${w.gspCaseNo || ''}-${i}`}>
+                      {w.gspCaseNo ? `${w.gspCaseNo}：` : w.row ? `第${w.row}行：` : ''}
+                      {w.message}
+                    </li>
+                  ))}
+                </ul>
+              }
+            />
+          ) : null}
         </div>
       )}
       {importStatus && !loading && importStatus.done === false && (

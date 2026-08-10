@@ -26,6 +26,10 @@ export class User {
   @Column({ name: 'real_name' })
   realName: string;
 
+  /** 工号（管理员/网格长建账号时填写） */
+  @Column({ name: 'employee_no', type: 'varchar', length: 32, nullable: true, unique: true })
+  employeeNo: string | null;
+
   @Column({ unique: true })
   phone: string;
 
@@ -73,11 +77,11 @@ export class User {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 
-  /** 作为网格长管理的站点 */
+  /** 作为网格长管理的网格 */
   @OneToMany(() => Site, (site) => site.manager)
   managedSites: Site[];
 
-  /** 作为工程师加入的站点关联 */
+  /** 作为工程师加入的网格关联 */
   @OneToMany(() => SiteMember, (member) => member.user)
   siteMemberships: SiteMember[];
 }

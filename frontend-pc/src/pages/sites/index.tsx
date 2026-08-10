@@ -40,7 +40,7 @@ import SiteFormModal from './SiteFormModal';
 import { composeFullAddress } from '../../utils/addressParse';
 import { useAuthStore } from '../../stores/auth';
 
-/** 站点管理：管理员任命正网格长；正网格长管理副网格长与工程师 */
+/** 网格管理：管理员任命正网格长；正网格长管理副网格长与工程师 */
 export default function SitesPage() {
   const currentUser = useAuthStore((state) => state.user);
   const isAdmin = currentUser?.role === 'super_admin';
@@ -97,7 +97,7 @@ export default function SitesPage() {
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ status: 'active', inspectionRadiusMeters: 500 });
+    form.setFieldsValue({ status: 'active' });
     setModalOpen(true);
   };
 
@@ -105,7 +105,6 @@ export default function SitesPage() {
     setEditing(record);
     form.setFieldsValue({
       ...record,
-      inspectionRadiusMeters: record.inspectionRadiusMeters || 500,
       fullAddress: composeFullAddress(record),
     });
     setModalOpen(true);
@@ -115,22 +114,23 @@ export default function SitesPage() {
     try {
       const values = await form.validateFields();
       if (values.latitude == null || values.longitude == null) {
-        message.warning('请先点击「现场定位」或「地址解析」确定站点位置');
+        message.warning('请先点击「现场定位」或「地址解析」确定网格位置');
         return;
       }
       const payload = {
         ...values,
         latitude: Number(values.latitude),
         longitude: Number(values.longitude),
-        inspectionRadiusMeters: Number(values.inspectionRadiusMeters || 500),
       };
       delete payload.fullAddress;
+      delete payload.inspectionRadiusKm;
+      delete payload.inspectionRadiusMeters;
       if (editing) {
         await updateSite(editing.id, payload);
-        message.success('站点已更新');
+        message.success('网格已更新');
       } else {
         await createSite(payload);
-        message.success('站点已创建');
+        message.success('网格已创建');
       }
       setModalOpen(false);
       load();
@@ -141,7 +141,7 @@ export default function SitesPage() {
 
   const onDelete = async (id: string) => {
     await deleteSite(id);
-    message.success('站点已删除');
+    message.success('网格已删除');
     load();
   };
 
@@ -216,7 +216,7 @@ export default function SitesPage() {
       return;
     }
     await addSiteMember(staffSite.id, pickInspectorId);
-    message.success('已聘用工程师（该员仍可同时服务于其他站点）');
+    message.success('已聘用工程师（该员仍可同时服务于其他网格）');
     setPickInspectorId(undefined);
     await loadStaff(staffSite);
   };
@@ -231,7 +231,7 @@ export default function SitesPage() {
   const hasRole = (u: UserInfo, role: string) =>
     (u.roles?.length ? u.roles : [u.role]).includes(role as UserInfo['role']);
 
-  // 副网格长候选：非超管、非本站正网格长（任命时后端会自动赋予网格长角色）
+  // 副网格长候选：非超管、非本网格正网格长（任命时后端会自动赋予网格长角色）
   const deputyOptions = staffCandidates
     .filter((u) => u.id !== staffSite?.managerId)
     .filter((u) => !deputies.some((d) => d.userId === u.id))
@@ -249,7 +249,7 @@ export default function SitesPage() {
     }));
 
   const columns: ColumnsType<SiteItem> = [
-    { title: '站点名称', dataIndex: 'name', width: 140 },
+    { title: '网格名称', dataIndex: 'name', width: 140 },
     { title: '编码', dataIndex: 'code', width: 100 },
     {
       title: '地区',
@@ -257,12 +257,6 @@ export default function SitesPage() {
       ellipsis: true,
     },
     { title: '地址', dataIndex: 'address', ellipsis: true },
-    {
-      title: '巡检范围',
-      dataIndex: 'inspectionRadiusMeters',
-      width: 110,
-      render: (value) => `${Number(value || 500)} 米`,
-    },
     {
       title: '正网格长',
       dataIndex: ['manager', 'realName'],
@@ -295,7 +289,7 @@ export default function SitesPage() {
             人员
           </Button>
           {isAdmin && (
-            <Popconfirm title="确认删除该站点？有设备时将失败" onConfirm={() => onDelete(record.id)}>
+            <Popconfirm title="确认删除该网格？有设备时将失败" onConfirm={() => onDelete(record.id)}>
               <Button type="link" danger icon={<DeleteOutlined />}>
                 删除
               </Button>
@@ -358,15 +352,15 @@ export default function SitesPage() {
         />
         {isAdmin && (
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新增站点
+            新增网格
           </Button>
         )}
       </Space>
 
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
         {regionHint
-          ? `当前筛选：${regionHint} → 共 ${total} 个电站`
-          : `管理员任命正网格长；正网格长在本站设立副网格长与工程师。一站一名正网格长，工程师可跨站。`}
+          ? `当前筛选：${regionHint} → 共 ${total} 个网格`
+          : `管理员任命正网格长；正网格长在本网格设立副网格长与工程师。一网格一名正网格长，工程师可跨网格。`}
       </Typography.Paragraph>
 
       <Table
@@ -419,7 +413,7 @@ export default function SitesPage() {
       </Modal>
 
       <Modal
-        title={`站点人员 - ${staffSite?.name || ''}`}
+        title={`网格人员 - ${staffSite?.name || ''}`}
         open={staffOpen}
         onCancel={() => setStaffOpen(false)}
         footer={null}
@@ -454,7 +448,7 @@ export default function SitesPage() {
         <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
           {canManageStaff
             ? '正/副网格长可在此设立副网格长与聘用工程师。工程师账号须单独设立，才能登录 H5。'
-            : '当前账号未任职本站编制管理；请联系正网格长或管理员。'}
+            : '当前账号未任职本网格编制管理；请联系正网格长或管理员。'}
         </Typography.Paragraph>
         <Tabs
           items={[
@@ -553,7 +547,7 @@ export default function SitesPage() {
                               width: 100,
                               render: (_: unknown, r: SiteMemberItem) => (
                                 <Popconfirm
-                                  title="确认解聘？不影响其在其他站点的任职"
+                                  title="确认解聘？不影响其在其他网格的任职"
                                   onConfirm={async () => {
                                     if (!staffSite) return;
                                     await removeSiteMember(staffSite.id, r.userId);

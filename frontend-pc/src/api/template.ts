@@ -12,14 +12,30 @@ export interface TemplateEntry {
   isOptionalModule?: boolean;
 }
 
+export interface TemplateProductLine {
+  id: string;
+  name: string;
+  entries: TemplateEntry[];
+}
+
 export interface TemplateItem {
   id: string;
   name: string;
   deviceType: DeviceType;
   entries: TemplateEntry[];
+  productLines?: TemplateProductLine[];
   isGlobal: boolean;
   siteId: string | null;
+  assignMode?: 'single' | 'multi';
+  unitLabel?: string;
+  expenseEnabledDefault?: boolean;
   version: number;
+  /** 本次更新是否因检查内容变更而升版 */
+  versionChanged?: boolean;
+  /** 保存后按精确同名自动重匹配的案例数 */
+  rematchedCases?: number;
+  /** 改名后同步更新的已绑定案例数 */
+  syncedCases?: number;
   createdAt: string;
 }
 

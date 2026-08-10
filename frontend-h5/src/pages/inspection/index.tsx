@@ -12,6 +12,9 @@ import {
 } from 'react-vant';
 import { fetchTask, startTask, type TaskItem } from '../../api/task';
 import {
+  fetchMyFinanceCase,
+} from '../../api/finance';
+import {
   saveDraft,
   submitRecord,
   uploadPhoto,
@@ -26,7 +29,23 @@ import {
 import { compressImage } from '../../utils/imageCompress';
 import { displayPhotoUrl } from '../../utils/photo-url';
 import { chineseErrorMessage } from '../../utils/displayLabels';
+import { resolveWorkTypeLabel, workActionLabel } from '../../utils/workTypeLabels';
 import PhotoViewerOverlay from '../../components/PhotoViewerOverlay';
+import {
+  TripChoiceCard,
+  TripEndPanel,
+  TripStartPanel,
+  emptyTripForm,
+  isEndTripReady,
+  isStartTripReady,
+  persistTripEnd,
+  persistTripSkip,
+  persistTripStart,
+  resolveTripMode,
+  tripFormFromClaim,
+  type TripFormState,
+  type TripMode,
+} from './trip-steps';
 import './inspection.css';
 
 const RESULT_LABEL: Record<string, string> = {
@@ -80,14 +99,7 @@ function getLiveLocation(onAccuracy?: (accuracy: number) => void): Promise<LiveL
         return;
       }
       const accuracy = Math.max(1, Math.round(best.coords.accuracy));
-      if (accuracy > 200) {
-        reject(
-          new Error(
-            `当前定位精度仅约 ${accuracy} 米。请使用带 GPS 的手机，并开启浏览器“精确位置”权限`,
-          ),
-        );
-        return;
-      }
+      // 精度较差也返回坐标，由后端/报告标记为弱定位，不阻断作业
       resolve({
         gps: `${best.coords.latitude.toFixed(6)},${best.coords.longitude.toFixed(6)}`,
         accuracy: String(accuracy),
@@ -110,7 +122,7 @@ function getLiveLocation(onAccuracy?: (accuracy: number) => void): Promise<LiveL
         const message =
           error.code === error.PERMISSION_DENIED
             ? '定位权限未开启，请在浏览器设置中允许定位'
-            : '现场定位失败，请到开阔处重新定位';
+            : '现场定位失败（可能无信号），仍可继续拍照上传';
         finish(new Error(message));
       },
       { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 },
@@ -198,7 +210,10 @@ export default function InspectionPage() {
   const [record, setRecord] = useState<RecordItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [step, setStep] = useState(0);
+  const [wizardIndex, setWizardIndex] = useState(0);
+  const [tripMode, setTripMode] = useState<TripMode>('na');
+  const [tripForm, setTripForm] = useState<TripFormState>(emptyTripForm);
+  const [tripBusy, setTripBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadSource, setUploadSource] = useState<'camera' | 'gallery' | null>(null);
@@ -210,17 +225,22 @@ export default function InspectionPage() {
     index: number;
   } | null>(null);
   const [locationStatus, setLocationStatus] = useState<
-    'checking' | 'verified' | 'blocked'
+    'checking' | 'ok' | 'weak' | 'failed' | 'skipped'
   >('checking');
   const [locationResult, setLocationResult] = useState<LocationVerification | null>(
     null,
   );
-  const [locationError, setLocationError] = useState('正在确认是否到达巡检现场…');
+  const [locationError, setLocationError] = useState('正在获取现场定位…');
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const pendingPreviewRef = useRef('');
   const lastFilesRef = useRef<File[]>([]);
   const locationProofRef = useRef<LiveLocationProof | null>(null);
+  const locationMetaRef = useRef<{
+    locationStatus?: 'ok' | 'weak' | 'failed' | 'skipped';
+    locationReasonCode?: string;
+    locationReason?: string;
+  }>({});
   const pollRefs = useRef<Record<string, number>>({});
   const activeEntryRef = useRef<string | undefined>(undefined);
   const rejectJumpedRef = useRef(false);
@@ -228,32 +248,62 @@ export default function InspectionPage() {
   const [analyzingIds, setAnalyzingIds] = useState<string[]>([]);
 
   const verifyLocation = useCallback(async () => {
-    if (!taskId) throw new Error('缺少巡检任务');
+    if (!taskId) throw new Error('缺少作业任务');
     setLocationStatus('checking');
     setLocationError('正在获取高精度现场定位…');
     try {
       const proof = await getLiveLocation((accuracy) => {
         setLocationError(
           accuracy <= 200
-            ? `GPS 已连接，当前精度约 ${accuracy} 米，正在校验站点距离…`
+            ? `GPS 已连接，当前精度约 ${accuracy} 米…`
             : `正在提高定位精度，当前约 ${accuracy} 米…`,
         );
       });
       const result = await checkTaskLocation({ taskId, ...proof });
       locationProofRef.current = proof;
+      const status =
+        result.status === 'weak' || result.status === 'ok'
+          ? result.status
+          : result.verified
+            ? 'ok'
+            : Number(proof.accuracy) > 200
+              ? 'weak'
+              : 'ok';
+      locationMetaRef.current = {
+        locationStatus: status,
+        locationReasonCode: result.reasonCode,
+        locationReason: result.reason,
+      };
       setLocationResult(result);
-      setLocationStatus('verified');
-      setLocationError('');
+      setLocationStatus(status);
+      setLocationError(result.reason || '');
       return proof;
     } catch (error) {
-      const message = requestErrorMessage(error, '现场定位校验失败');
+      const message = requestErrorMessage(error, '现场定位失败');
       locationProofRef.current = null;
+      locationMetaRef.current = {
+        locationStatus: 'failed',
+        locationReasonCode: 'no_signal',
+        locationReason: message,
+      };
       setLocationResult(null);
-      setLocationStatus('blocked');
+      setLocationStatus('failed');
       setLocationError(message);
-      throw error;
+      return null;
     }
   }, [taskId]);
+
+  const markLocationSkipped = useCallback(() => {
+    locationProofRef.current = null;
+    locationMetaRef.current = {
+      locationStatus: 'skipped',
+      locationReasonCode: 'manual_skip',
+      locationReason: '工程师确认无法定位后继续作业',
+    };
+    setLocationResult(null);
+    setLocationStatus('skipped');
+    setLocationError('已跳过定位，可继续拍照上传；报告将标记位置异常');
+  }, []);
 
   const allEntriesTpl = useMemo(
     () => task?.templateSnapshot || record?.task?.templateSnapshot || [],
@@ -276,10 +326,54 @@ export default function InspectionPage() {
     [allEntriesTpl, enabledOptionalIds],
   );
 
-  const currentTpl = entriesTpl[step];
+  type WizardStep =
+    | { kind: 'start'; label: string }
+    | { kind: 'end'; label: string }
+    | { kind: 'entry'; label: string; entryIndex: number; tplId: string };
+
+  const wizardSteps = useMemo((): WizardStep[] => {
+    const entrySteps: WizardStep[] = entriesTpl.map((e, i) => ({
+      kind: 'entry',
+      label: e.name,
+      entryIndex: i,
+      tplId: e.id,
+    }));
+    if (tripMode === 'need') {
+      return [
+        { kind: 'start', label: '开始行程' },
+        ...entrySteps,
+        { kind: 'end', label: '结束与费用' },
+      ];
+    }
+    return entrySteps;
+  }, [entriesTpl, tripMode]);
+
+  const currentWizard = wizardSteps[wizardIndex];
+  const currentTpl =
+    currentWizard?.kind === 'entry' ? entriesTpl[currentWizard.entryIndex] : undefined;
+  const workType = resolveWorkTypeLabel(task);
   const currentEntry = record?.entries.find(
     (e) => e.templateEntryId === currentTpl?.id,
   );
+  const showTripChoice = tripMode === 'undecided';
+  const caseId = task?.serviceCaseId || '';
+  const unitId = task?.workUnitId || '';
+
+  const jumpToEntryIndex = useCallback(
+    (entryIndex: number) => {
+      const wi = wizardSteps.findIndex(
+        (s) => s.kind === 'entry' && s.entryIndex === entryIndex,
+      );
+      if (wi >= 0) setWizardIndex(wi);
+    },
+    [wizardSteps],
+  );
+
+  useEffect(() => {
+    if (wizardIndex > 0 && wizardIndex >= wizardSteps.length) {
+      setWizardIndex(Math.max(0, wizardSteps.length - 1));
+    }
+  }, [wizardSteps.length, wizardIndex]);
 
   useEffect(() => {
     activeEntryRef.current = currentTpl?.id;
@@ -381,8 +475,22 @@ export default function InspectionPage() {
         }
         setRecord(r);
       }
+      if (t.serviceCaseId && t.workUnitId) {
+        try {
+          const c = await fetchMyFinanceCase(t.serviceCaseId);
+          const claim = (c.expenses || []).find((e) => e.workUnitId === t.workUnitId);
+          setTripForm(tripFormFromClaim(claim));
+          setTripMode(resolveTripMode(claim));
+        } catch {
+          setTripMode('undecided');
+          setTripForm(emptyTripForm());
+        }
+      } else {
+        setTripMode('na');
+        setTripForm(emptyTripForm());
+      }
     } catch (error) {
-      setLoadError(requestErrorMessage(error, '巡检任务加载失败，请检查网络后重试'));
+      setLoadError(requestErrorMessage(error, '作业加载失败，请检查网络后重试'));
       throw error;
     } finally {
       setLoading(false);
@@ -416,9 +524,9 @@ export default function InspectionPage() {
     const idx = entriesTpl.findIndex((e) => ids.includes(e.id));
     if (idx >= 0) {
       rejectJumpedRef.current = true;
-      setStep(idx);
+      jumpToEntryIndex(idx);
     }
-  }, [task, record, entriesTpl]);
+  }, [task, record, entriesTpl, jumpToEntryIndex]);
 
   const patchEntry = (patch: Partial<RecordEntry>) => {
     if (!record || !currentTpl) return;
@@ -571,10 +679,13 @@ export default function InspectionPage() {
 
     try {
       const currentProof = locationProofRef.current;
-      const proof =
+      let proof: LiveLocationProof | null =
         currentProof && Date.now() - Date.parse(currentProof.capturedAt) < 120_000
           ? currentProof
-          : await verifyLocation();
+          : null;
+      if (!proof && locationStatus !== 'failed' && locationStatus !== 'skipped') {
+        proof = await verifyLocation();
+      }
 
       for (let i = 0; i < imageFiles.length; i += 1) {
         const file = imageFiles[i];
@@ -593,8 +704,9 @@ export default function InspectionPage() {
           compressed,
           {
             taskId,
-            ...proof,
-            // 相册照片与现场拍照都以本次巡检上传时间登记；现场真实性由实时定位校验。
+            ...(proof || {}),
+            ...(locationMetaRef.current || {}),
+            // 相册照片与现场拍照都以本次巡检上传时间登记；现场真实性由实时定位留痕。
             photoTakenAt: new Date().toISOString(),
           },
           (percent) => {
@@ -743,8 +855,32 @@ export default function InspectionPage() {
   };
 
   const goNext = () => {
-    if (uploading) {
+    if (uploading || tripBusy) {
       Toast.info('照片正在上传，请稍候');
+      return;
+    }
+    if (currentWizard?.kind === 'start') {
+      if (!isStartTripReady(tripForm)) {
+        Toast.info('请上传开始里程表、导航截图并填写里程');
+        return;
+      }
+      void (async () => {
+        if (!caseId || !unitId) return;
+        setTripBusy(true);
+        try {
+          await persistTripStart(caseId, unitId, tripForm);
+          Toast.success('开始行程已保存');
+          setWizardIndex((s) => s + 1);
+        } catch {
+          /* */
+        } finally {
+          setTripBusy(false);
+        }
+      })();
+      return;
+    }
+    if (currentWizard?.kind === 'end') {
+      // 结束步点「下一步」不存在，应点提交
       return;
     }
     const mustPhoto =
@@ -763,29 +899,43 @@ export default function InspectionPage() {
       return;
     }
     void handleSaveDraft(true);
-    setStep((s) => s + 1);
+    setWizardIndex((s) => s + 1);
   };
 
   const handleSubmit = async () => {
     if (!record) return;
-    if (uploading) {
+    if (uploading || tripBusy) {
       Toast.info('照片正在上传，请稍候');
       return;
     }
-    const mustCurrent =
-      !!currentTpl &&
-      (currentTpl.isOptionalModule || currentTpl.isRequired !== false);
-    const needCurrent = minPhotosRequired(currentTpl);
-    const countCurrent = currentEntry?.photos?.length || 0;
-    if (mustCurrent && countCurrent < needCurrent) {
-      Toast.info(
-        needCurrent > 1
-          ? isFaultRecordItem(currentTpl)
-            ? `本项须同时上传实时故障与历史故障截图（至少 ${needCurrent} 张）`
-            : `本项须拍摄至少 ${needCurrent} 个不同角度照片`
-          : '请先上传本项照片',
-      );
-      return;
+    if (tripMode === 'need') {
+      if (!isEndTripReady(tripForm)) {
+        Toast.info(
+          Number(tripForm.amount) > 0 && !tripForm.voucherUrls.length
+            ? '有报销金额时请上传费用凭证'
+            : '请补齐结束里程表、导航截图与里程',
+        );
+        const endIdx = wizardSteps.findIndex((s) => s.kind === 'end');
+        if (endIdx >= 0) setWizardIndex(endIdx);
+        return;
+      }
+    }
+    if (currentWizard?.kind === 'entry') {
+      const mustCurrent =
+        !!currentTpl &&
+        (currentTpl.isOptionalModule || currentTpl.isRequired !== false);
+      const needCurrent = minPhotosRequired(currentTpl);
+      const countCurrent = currentEntry?.photos?.length || 0;
+      if (mustCurrent && countCurrent < needCurrent) {
+        Toast.info(
+          needCurrent > 1
+            ? isFaultRecordItem(currentTpl)
+              ? `本项须同时上传实时故障与历史故障截图（至少 ${needCurrent} 张）`
+              : `本项须拍摄至少 ${needCurrent} 个不同角度照片`
+            : '请先上传本项照片',
+        );
+        return;
+      }
     }
     const missing = requiredIncomplete();
     if (missing.length) {
@@ -793,20 +943,34 @@ export default function InspectionPage() {
       const firstName = missing[0].match(/「(.+?)」/)?.[1];
       if (firstName) {
         const idx = entriesTpl.findIndex((e) => e.name === firstName);
-        if (idx >= 0) setStep(idx);
+        if (idx >= 0) jumpToEntryIndex(idx);
       }
       return;
     }
     try {
-      const proof = await verifyLocation();
+      let proof = locationProofRef.current;
+      if (
+        !proof &&
+        locationStatus !== 'failed' &&
+        locationStatus !== 'skipped'
+      ) {
+        proof = await verifyLocation();
+      }
       await Dialog.confirm({
         title: '提交报告',
         message:
-          task?.aiEnabled === false
-            ? '照片已齐。提交后将进入管理员人工审核。'
-            : '照片已齐。提交后 AI 将在后台继续分析，你可去做其他巡检，稍后再看报告结果。',
+          locationStatus === 'failed' || locationStatus === 'skipped'
+            ? '照片已齐。本次未能完成现场定位，报告将标记「位置异常」，提交后仍可审核。'
+            : locationStatus === 'weak'
+              ? '照片已齐。本次定位精度较弱，报告将标记「弱定位」。'
+              : task?.aiEnabled === false
+                ? '照片已齐。提交后将进入管理员人工审核。'
+                : '照片已齐。提交后 AI 将在后台继续分析，你可去做其他作业，稍后再看报告结果。',
       });
       setSaving(true);
+      if (tripMode === 'need' && caseId && unitId) {
+        await persistTripEnd(caseId, unitId, tripForm, true);
+      }
       // 先落库再提交，避免本地有图但服务端未同步
       const saved = await saveDraft(
         record.id,
@@ -821,7 +985,8 @@ export default function InspectionPage() {
       setRecord(saved);
       const submitted = await submitRecord(saved.id, {
         enabledOptionalModuleIds: enabledOptionalIds,
-        ...proof,
+        ...(proof || {}),
+        ...(locationMetaRef.current || {}),
       });
       localStorage.removeItem(`draft:${saved.id}`);
       localStorage.removeItem(`optmod:${saved.id}`);
@@ -830,6 +995,7 @@ export default function InspectionPage() {
           recordId: submitted.id,
           taskName: task?.taskName,
           serviceCaseId: task?.serviceCaseId || null,
+          workUnitId: task?.workUnitId || null,
         },
       });
     } catch {
@@ -837,6 +1003,41 @@ export default function InspectionPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const chooseTripNeed = () => {
+    setTripMode('need');
+    setWizardIndex(0);
+  };
+
+  const chooseTripSkip = async () => {
+    if (!caseId || !unitId) {
+      setTripMode('skip');
+      setWizardIndex(0);
+      return;
+    }
+    setTripBusy(true);
+    try {
+      await persistTripSkip(caseId, unitId);
+      setTripForm(emptyTripForm());
+      setTripMode('skip');
+      setWizardIndex(0);
+      Toast.success('已标记无行程');
+    } catch {
+      /* */
+    } finally {
+      setTripBusy(false);
+    }
+  };
+
+  const switchToNeedFromSkip = () => {
+    setTripMode('need');
+    setWizardIndex(0);
+    Toast.info('请填写开始行程');
+  };
+
+  const switchToSkipFromStart = async () => {
+    await chooseTripSkip();
   };
 
   const aiStatus = currentEntry?.aiResult?.status || 'pending';
@@ -888,7 +1089,7 @@ export default function InspectionPage() {
               marginRight: 72,
             }}
           >
-            巡检执行
+            {workActionLabel(workType, 'executing')}
           </div>
         </div>
       </div>
@@ -896,7 +1097,7 @@ export default function InspectionPage() {
       {loadError && (!task || !record) ? (
         <div className="inspection-load-state">
           <div className="inspection-load-icon">!</div>
-          <h2>巡检任务暂时没加载出来</h2>
+          <h2>{workActionLabel(workType, 'task_noun')}暂时没加载出来</h2>
           <p>{loadError}</p>
           <Button
             round
@@ -913,7 +1114,7 @@ export default function InspectionPage() {
       ) : !task || !record ? (
         <div className="inspection-load-state is-loading">
           <div className="inspection-loading-ring" />
-          <h2>正在准备巡检任务</h2>
+          <h2>正在准备{workActionLabel(workType, 'task_noun')}</h2>
           <p>正在同步检查项和已上传照片…</p>
         </div>
       ) : (
@@ -927,7 +1128,7 @@ export default function InspectionPage() {
                     .replace(/^CASE-/, '')
                     .replace(/-\d+$/, '') || '-'}`
                 : `序列号：${task.device?.serialNumber || '-'}`
-            } · 已启用现场定位校验`}
+            } · 现场定位将写入报告`}
           />
 
           <div
@@ -937,18 +1138,22 @@ export default function InspectionPage() {
               padding: '14px 14px 13px',
               borderRadius: 12,
               border: `1px solid ${
-                locationStatus === 'verified'
+                locationStatus === 'ok'
                   ? '#b8e2cf'
-                  : locationStatus === 'blocked'
-                    ? '#f2c2ba'
-                    : '#d9e4df'
+                  : locationStatus === 'weak'
+                    ? '#ffe7ba'
+                    : locationStatus === 'failed' || locationStatus === 'skipped'
+                      ? '#f2c2ba'
+                      : '#d9e4df'
               }`,
               background:
-                locationStatus === 'verified'
+                locationStatus === 'ok'
                   ? '#eef9f4'
-                  : locationStatus === 'blocked'
-                    ? '#fff5f3'
-                    : '#f7faf8',
+                  : locationStatus === 'weak'
+                    ? '#fffbe6'
+                    : locationStatus === 'failed' || locationStatus === 'skipped'
+                      ? '#fff5f3'
+                      : '#f7faf8',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -960,40 +1165,62 @@ export default function InspectionPage() {
                   placeItems: 'center',
                   borderRadius: 18,
                   background:
-                    locationStatus === 'verified'
+                    locationStatus === 'ok'
                       ? '#16835f'
-                      : locationStatus === 'blocked'
-                        ? '#d95645'
-                        : '#80948a',
+                      : locationStatus === 'weak'
+                        ? '#d48806'
+                        : locationStatus === 'failed' || locationStatus === 'skipped'
+                          ? '#d95645'
+                          : '#80948a',
                   color: '#fff',
                   fontSize: 18,
                   flexShrink: 0,
                 }}
               >
-                {locationStatus === 'verified'
+                {locationStatus === 'ok'
                   ? '✓'
-                  : locationStatus === 'blocked'
-                    ? '!'
-                    : '⌖'}
+                  : locationStatus === 'weak'
+                    ? '~'
+                    : locationStatus === 'failed' || locationStatus === 'skipped'
+                      ? '!'
+                      : '⌖'}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 700, color: '#173d2f' }}>
-                  {locationStatus === 'verified'
-                    ? '已到达巡检现场'
-                    : locationStatus === 'blocked'
-                      ? '暂时无法开始拍照'
-                      : '正在校验现场位置'}
+                  {locationStatus === 'ok'
+                    ? '现场定位已获取'
+                    : locationStatus === 'weak'
+                      ? '弱定位（可继续作业）'
+                      : locationStatus === 'skipped'
+                        ? '已跳过定位（可继续作业）'
+                        : locationStatus === 'failed'
+                          ? '定位失败（可继续作业）'
+                          : '正在获取现场定位'}
                 </div>
                 <div style={{ marginTop: 3, color: '#687a72', fontSize: 12 }}>
-                  {locationStatus === 'verified' && locationResult
-                    ? `距站点约 ${locationResult.distanceMeters} 米 · 定位精度约 ${locationResult.accuracyMeters} 米`
+                  {(locationStatus === 'ok' || locationStatus === 'weak') && locationResult
+                    ? `${
+                        locationResult.latitude != null && locationResult.longitude != null
+                          ? `${Number(locationResult.latitude).toFixed(6)}, ${Number(
+                              locationResult.longitude,
+                            ).toFixed(6)} · `
+                          : ''
+                      }精度约 ${locationResult.accuracyMeters} 米${
+                        locationResult.distanceToSiteMeters != null ||
+                        locationResult.distanceMeters
+                          ? ` · 距归属网格约 ${
+                              locationResult.distanceToSiteMeters ??
+                              locationResult.distanceMeters
+                            } 米`
+                          : ''
+                      }${locationResult.reason ? ` · ${locationResult.reason}` : ''}`
                     : locationError}
                 </div>
               </div>
               <button
                 type="button"
                 disabled={locationStatus === 'checking'}
-                onClick={() => void verifyLocation().catch(() => undefined)}
+                onClick={() => void verifyLocation()}
                 style={{
                   border: '1px solid #b8d4c7',
                   borderRadius: 16,
@@ -1008,12 +1235,33 @@ export default function InspectionPage() {
                 {locationStatus === 'checking' ? '定位中' : '重新定位'}
               </button>
             </div>
+            {(locationStatus === 'failed' || locationStatus === 'checking') && (
+              <button
+                type="button"
+                onClick={markLocationSkipped}
+                style={{
+                  marginTop: 10,
+                  width: '100%',
+                  border: '1px dashed #d9a39a',
+                  borderRadius: 10,
+                  padding: '8px 10px',
+                  background: '#fff',
+                  color: '#a04538',
+                  fontSize: 12,
+                  fontWeight: 600,
+                }}
+              >
+                无法定位，继续作业
+              </button>
+            )}
             <div style={{ marginTop: 10, color: '#7b8983', fontSize: 11, lineHeight: 1.5 }}>
-              {locationStatus === 'blocked'
-                ? '请在手机设置中打开定位服务，并给当前浏览器开启“精确位置”；到室外开阔处后点“重新定位”。电脑通常只有网络定位，不能用于现场巡检。'
-                : locationResult
-                  ? `本站点允许范围为 ${locationResult.radiusMeters} 米，拍照和提交时都会再次校验定位。`
-                  : '正在读取本站点配置的巡检范围…'}
+              {locationStatus === 'failed' || locationStatus === 'skipped'
+                ? '偏远无信号时仍可拍照上传并提交；报告会标记「位置异常」，供审核抽查。'
+                : locationStatus === 'weak'
+                  ? '定位精度较弱，已写入报告弱定位标记，不影响拍照与提交。'
+                  : locationResult
+                    ? '定位经纬度将随报告提交留痕，不再校验是否在网格围栏内。'
+                    : '正在获取现场 GPS；定位失败也可继续作业。'}
             </div>
           </div>
 
@@ -1032,6 +1280,23 @@ export default function InspectionPage() {
             >
               <div style={{ fontWeight: 600, marginBottom: 4 }}>管理员驳回 · 请重点返工红标项</div>
               <div>原因：{(task.record?.rejectReason || record.rejectReason)?.reason}</div>
+            </div>
+          )}
+
+          {showTripChoice ? (
+            <TripChoiceCard
+              busy={tripBusy}
+              onNeed={chooseTripNeed}
+              onSkip={() => void chooseTripSkip()}
+            />
+          ) : (
+            <>
+          {tripMode === 'skip' && (
+            <div className="trip-wizard-skip-bar">
+              <span>本台已选：无行程</span>
+              <button type="button" onClick={switchToNeedFromSkip}>
+                改选有行程
+              </button>
             </div>
           )}
 
@@ -1079,7 +1344,6 @@ export default function InspectionPage() {
                           return next;
                         });
                         if (!on) {
-                          // 开启后跳到该项
                           const idx = allEntriesTpl
                             .filter(
                               (e) =>
@@ -1087,7 +1351,7 @@ export default function InspectionPage() {
                                 [...enabledOptionalIds, m.id].includes(e.id),
                             )
                             .findIndex((e) => e.id === m.id);
-                          if (idx >= 0) setStep(idx);
+                          if (idx >= 0) jumpToEntryIndex(idx);
                         }
                       }}
                       style={{
@@ -1118,7 +1382,7 @@ export default function InspectionPage() {
             }}
           >
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
-              进度 {step + 1} / {entriesTpl.length || 0}
+              进度 {wizardSteps.length ? wizardIndex + 1 : 0} / {wizardSteps.length || 0}
             </div>
             <div
               style={{
@@ -1132,24 +1396,37 @@ export default function InspectionPage() {
               <div
                 style={{
                   height: '100%',
-                  width: `${entriesTpl.length ? ((step + 1) / entriesTpl.length) * 100 : 0}%`,
+                  width: `${
+                    wizardSteps.length
+                      ? ((wizardIndex + 1) / wizardSteps.length) * 100
+                      : 0
+                  }%`,
                   background: '#07c160',
                 }}
               />
             </div>
             <div className="inspection-step-strip">
-              {entriesTpl.map((e, idx) => {
-                const entry = record.entries.find((x) => x.templateEntryId === e.id);
-                const done = !!entry?.photos?.length;
-                const pendingAi = analyzingIds.includes(e.id);
-                const rejectIds =
-                  (task.record?.rejectReason || record.rejectReason)?.entryIds || [];
-                const needRedo = rejectIds.includes(e.id);
+              {wizardSteps.map((ws, idx) => {
+                let done = false;
+                let needRedo = false;
+                let pendingAi = false;
+                if (ws.kind === 'start') {
+                  done = isStartTripReady(tripForm);
+                } else if (ws.kind === 'end') {
+                  done = isEndTripReady(tripForm);
+                } else {
+                  const entry = record.entries.find((x) => x.templateEntryId === ws.tplId);
+                  done = !!entry?.photos?.length;
+                  pendingAi = analyzingIds.includes(ws.tplId);
+                  const rejectIds =
+                    (task.record?.rejectReason || record.rejectReason)?.entryIds || [];
+                  needRedo = rejectIds.includes(ws.tplId);
+                }
                 return (
                   <button
-                    key={e.id}
+                    key={`${ws.kind}-${ws.kind === 'entry' ? ws.tplId : ws.kind}`}
                     type="button"
-                    onClick={() => setStep(idx)}
+                    onClick={() => setWizardIndex(idx)}
                     style={{
                       flexShrink: 0,
                       border: needRedo ? '1px solid #ff4d4f' : 'none',
@@ -1157,11 +1434,20 @@ export default function InspectionPage() {
                       padding: '4px 10px',
                       fontSize: 12,
                       cursor: 'pointer',
-                      background: idx === step ? (needRedo ? '#ff4d4f' : '#07c160') : needRedo ? '#fff1f0' : done ? '#e8f8ef' : '#f0f2f1',
-                      color: idx === step ? '#fff' : needRedo ? '#a8071a' : '#333',
+                      background:
+                        idx === wizardIndex
+                          ? needRedo
+                            ? '#ff4d4f'
+                            : '#07c160'
+                          : needRedo
+                            ? '#fff1f0'
+                            : done
+                              ? '#e8f8ef'
+                              : '#f0f2f1',
+                      color: idx === wizardIndex ? '#fff' : needRedo ? '#a8071a' : '#333',
                     }}
                   >
-                    {idx + 1}.{e.name}
+                    {idx + 1}.{ws.label}
                     {needRedo ? '!' : pendingAi ? '…' : done ? '✓' : ''}
                   </button>
                 );
@@ -1169,11 +1455,43 @@ export default function InspectionPage() {
             </div>
           </div>
 
+          {currentWizard?.kind === 'start' && caseId && unitId && (
+            <>
+              <TripStartPanel
+                caseId={caseId}
+                unitId={unitId}
+                form={tripForm}
+                setForm={setTripForm}
+                onPreview={(urls, index) => setPhotoPreview({ urls, index })}
+              />
+              <button
+                type="button"
+                className="trip-wizard-switch-skip"
+                disabled={tripBusy}
+                onClick={() => void switchToSkipFromStart()}
+              >
+                改为无行程
+              </button>
+            </>
+          )}
+
+          {currentWizard?.kind === 'end' && caseId && unitId && (
+            <TripEndPanel
+              caseId={caseId}
+              unitId={unitId}
+              form={tripForm}
+              setForm={setTripForm}
+              onPreview={(urls, index) => setPhotoPreview({ urls, index })}
+            />
+          )}
+
           {currentTpl ? (
             <Cell.Group
               inset
               className="inspection-current-card"
-              title={`检查项 ${step + 1}/${entriesTpl.length}`}
+              title={`检查项 ${
+                currentWizard?.kind === 'entry' ? currentWizard.entryIndex + 1 : wizardIndex + 1
+              }/${entriesTpl.length}`}
             >
               <Cell
                 title={
@@ -1378,7 +1696,7 @@ export default function InspectionPage() {
                     plain
                     round
                     loading={uploading && uploadSource === 'gallery'}
-                    disabled={uploading || locationStatus !== 'verified'}
+                    disabled={uploading}
                     className="inspection-gallery-button"
                     onClick={() => galleryRef.current?.click()}
                   >
@@ -1388,7 +1706,7 @@ export default function InspectionPage() {
                     type="primary"
                     round
                     loading={uploading && uploadSource === 'camera'}
-                    disabled={uploading || locationStatus !== 'verified'}
+                    disabled={uploading}
                     className="inspection-camera-button"
                     onClick={() => cameraRef.current?.click()}
                   >
@@ -1396,11 +1714,15 @@ export default function InspectionPage() {
                   </Button>
                 </div>
                 <div className="inspection-upload-tip">
-                  {locationStatus === 'verified'
+                  {locationStatus === 'ok'
                     ? isFaultRecordItem(currentTpl)
-                      ? '定位已通过：请分别上传「实时故障」与「历史故障」截图（可相册多选），缺一类 AI 将判不合格'
-                      : '定位已通过：相册可一次多选；现场拍照仍单张拍摄'
-                    : '请先完成现场定位；定位通过后才可选择照片或拍照'}
+                      ? '定位已获取：请分别上传「实时故障」与「历史故障」截图（可相册多选），缺一类 AI 将判不合格'
+                      : '定位已获取：相册可一次多选；现场拍照仍单张拍摄'
+                    : locationStatus === 'weak'
+                      ? '弱定位也可拍照上传；报告将标记弱定位'
+                      : locationStatus === 'failed' || locationStatus === 'skipped'
+                        ? '未定位也可拍照上传；报告将标记位置异常'
+                        : '定位中也可先准备照片；无信号时可点「无法定位，继续作业」'}
                 </div>
               </div>
 
@@ -1466,13 +1788,15 @@ export default function InspectionPage() {
                 />
               </Cell>
             </Cell.Group>
-          ) : (
+          ) : currentWizard?.kind === 'start' || currentWizard?.kind === 'end' ? null : (
             <Empty description="无检查条目" />
+          )}
+            </>
           )}
         </div>
       )}
 
-      {task && record && currentTpl && (
+      {task && record && !showTripChoice && currentWizard && (
         <div
           className="inspection-bottom-actions"
           style={{
@@ -1493,22 +1817,23 @@ export default function InspectionPage() {
           <Button
             round
             style={{ height: 48, flex: 1 }}
-            disabled={step <= 0 || uploading || saving}
+            disabled={wizardIndex <= 0 || uploading || saving || tripBusy}
             onClick={() => {
-              if (uploading) {
+              if (uploading || tripBusy) {
                 Toast.info('照片正在上传，请稍候');
                 return;
               }
-              setStep((s) => s - 1);
+              setWizardIndex((s) => s - 1);
             }}
           >
             上一步
           </Button>
-          {step < entriesTpl.length - 1 ? (
+          {wizardIndex < wizardSteps.length - 1 ? (
             <Button
               round
               type="primary"
-              disabled={uploading || saving}
+              disabled={uploading || saving || tripBusy}
+              loading={tripBusy}
               style={{ height: 48, flex: 1.4 }}
               onClick={goNext}
             >
@@ -1518,7 +1843,7 @@ export default function InspectionPage() {
             <Button
               round
               type="primary"
-              disabled={uploading || saving}
+              disabled={uploading || saving || tripBusy}
               style={{ height: 48, flex: 1.4 }}
               loading={saving}
               onClick={() => void handleSubmit()}

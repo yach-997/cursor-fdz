@@ -14,15 +14,16 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
-  fetchRecords,
+  fetchRecordCaseGroups,
+  fetchRecordsByCase,
   fetchRecord,
   approveRecord,
   rejectRecord,
+  type RecordCaseGroup,
   type RecordItem,
   type AuditTrailEvent,
 } from '../../api/record';
 import { displayPhotoUrl } from '../../utils/photo-url';
-import { DEVICE_TYPE_LABEL } from '../../types';
 import { CHECK_RESULT_LABEL } from '../../utils/displayLabels';
 
 const STATUS_MAP: Record<string, { color: string; text: string }> = {
@@ -40,27 +41,41 @@ const TRAIL_LABEL: Record<string, string> = {
   reopened: '返工打开',
 };
 
-/** 报告审核：AI 不合格报告与未启用 AI 的人工审核报告 */
+function unitTitle(row: RecordItem) {
+  if (row.workUnit) {
+    const label = row.unitLabel || '台';
+    return `${label} #${row.workUnit.seq}`;
+  }
+  return row.task?.taskName || '-';
+}
+
+/** 报告审核：按案例聚合 → 待审单元 → 单条通过/驳回 */
 export default function AuditPage() {
   const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<RecordItem[]>([]);
+  const [groups, setGroups] = useState<RecordCaseGroup[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [tab, setTab] = useState<'pending' | 'rejected'>('pending');
+
+  const [unitsOpen, setUnitsOpen] = useState(false);
+  const [unitsLoading, setUnitsLoading] = useState(false);
+  const [activeGroup, setActiveGroup] = useState<RecordCaseGroup | null>(null);
+  const [units, setUnits] = useState<RecordItem[]>([]);
+
   const [detail, setDetail] = useState<RecordItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectEntryIds, setRejectEntryIds] = useState<string[]>([]);
 
-  const load = useCallback(async () => {
+  const loadGroups = useCallback(async () => {
     setLoading(true);
     try {
       const res =
         tab === 'pending'
-          ? await fetchRecords({ page, limit: 10, scope: 'audit' })
-          : await fetchRecords({ page, limit: 10, status: 'rejected' });
-      setData(res.list);
+          ? await fetchRecordCaseGroups({ page, limit: 10, scope: 'audit' })
+          : await fetchRecordCaseGroups({ page, limit: 10, status: 'rejected' });
+      setGroups(res.list);
       setTotal(res.total);
     } finally {
       setLoading(false);
@@ -68,8 +83,50 @@ export default function AuditPage() {
   }, [page, tab]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    void loadGroups();
+  }, [loadGroups]);
+
+  const openGroup = async (group: RecordCaseGroup) => {
+    setActiveGroup(group);
+    setUnitsOpen(true);
+    setUnitsLoading(true);
+    try {
+      const res =
+        tab === 'pending'
+          ? await fetchRecordsByCase(group.groupKey, { scope: 'audit', limit: 100 })
+          : await fetchRecordsByCase(group.groupKey, {
+              status: 'rejected',
+              limit: 100,
+            });
+      setUnits(res.list);
+    } finally {
+      setUnitsLoading(false);
+    }
+  };
+
+  const reloadUnits = async () => {
+    if (!activeGroup) return;
+    setUnitsLoading(true);
+    try {
+      const res =
+        tab === 'pending'
+          ? await fetchRecordsByCase(activeGroup.groupKey, {
+              scope: 'audit',
+              limit: 100,
+            })
+          : await fetchRecordsByCase(activeGroup.groupKey, {
+              status: 'rejected',
+              limit: 100,
+            });
+      setUnits(res.list);
+      if (!res.list.length) {
+        setUnitsOpen(false);
+        setActiveGroup(null);
+      }
+    } finally {
+      setUnitsLoading(false);
+    }
+  };
 
   const openDetail = async (id: string) => {
     const rec = await fetchRecord(id);
@@ -82,7 +139,8 @@ export default function AuditPage() {
     await approveRecord(detail.id);
     message.success('已通过');
     setDrawerOpen(false);
-    load();
+    await reloadUnits();
+    void loadGroups();
   };
 
   const handleReject = async () => {
@@ -100,20 +158,56 @@ export default function AuditPage() {
     setRejectReason('');
     setRejectEntryIds([]);
     setDrawerOpen(false);
-    load();
+    await reloadUnits();
+    void loadGroups();
   };
 
-  const columns: ColumnsType<RecordItem> = [
+  const groupColumns: ColumnsType<RecordCaseGroup> = [
     {
-      title: '任务',
-      render: (_, row) => row.task?.taskName || '-',
+      title: '案例号',
+      width: 160,
+      render: (_, row) => row.gspCaseNo || '独立任务',
     },
     {
-      title: '设备类型',
-      dataIndex: 'deviceType',
-      width: 140,
-      render: (value: string) =>
-        DEVICE_TYPE_LABEL[value as keyof typeof DEVICE_TYPE_LABEL] || '未知设备类型',
+      title: '项目',
+      render: (_, row) => row.projectName || '-',
+    },
+    {
+      title: tab === 'pending' ? '待审报告' : '驳回报告',
+      width: 110,
+      render: (_, row) =>
+        tab === 'pending' ? (
+          <Tag color="processing">{row.pendingCount || row.recordCount}</Tag>
+        ) : (
+          <Tag color="error">{row.rejectedCount || row.recordCount}</Tag>
+        ),
+    },
+    {
+      title: '最近提交',
+      width: 180,
+      render: (_, row) =>
+        row.latestSubmittedAt ? new Date(row.latestSubmittedAt).toLocaleString() : '-',
+    },
+    {
+      title: '操作',
+      width: 120,
+      render: (_, row) => (
+        <Button type="link" onClick={() => void openGroup(row)}>
+          查看单元
+        </Button>
+      ),
+    },
+  ];
+
+  const unitColumns: ColumnsType<RecordItem> = [
+    {
+      title: '单元',
+      render: (_, row) => unitTitle(row),
+    },
+    {
+      title: '工程师',
+      width: 110,
+      render: (_, row) => row.inspectorName || '-',
     },
     {
       title: '审核类型',
@@ -144,15 +238,15 @@ export default function AuditPage() {
     {
       title: '提交时间',
       dataIndex: 'submittedAt',
-      width: 180,
+      width: 170,
       render: (v?: string) => (v ? new Date(v).toLocaleString() : '-'),
     },
     {
       title: '操作',
-      width: 120,
+      width: 110,
       render: (_, row) => (
-        <Button type="link" onClick={() => openDetail(row.id)}>
-          审核详情
+        <Button type="link" onClick={() => void openDetail(row.id)}>
+          {tab === 'pending' ? '审核' : '详情'}
         </Button>
       ),
     },
@@ -194,7 +288,7 @@ export default function AuditPage() {
   return (
     <div>
       <p style={{ color: '#666', marginBottom: 12 }}>
-        仅展示 AI 分析不合格、需人工处理的报告。AI 全部合格的会自动通过并进入「历史查询」。
+        按案例汇总待审报告。点进案例后按单元逐条通过/驳回；AI 全部合格的已自动通过，不会出现在此列表。
       </p>
       <Space style={{ marginBottom: 16 }}>
         <Button
@@ -218,10 +312,10 @@ export default function AuditPage() {
       </Space>
 
       <Table
-        rowKey="id"
+        rowKey="groupKey"
         loading={loading}
-        columns={columns}
-        dataSource={data}
+        columns={groupColumns}
+        dataSource={groups}
         scroll={{ x: 'max-content' }}
         pagination={{
           current: page,
@@ -232,7 +326,35 @@ export default function AuditPage() {
       />
 
       <Drawer
-        title={detail?.task?.taskName || '审核详情'}
+        title={
+          activeGroup
+            ? `${activeGroup.gspCaseNo || '独立任务'} · ${activeGroup.projectName || ''}`
+            : '案例单元'
+        }
+        width={860}
+        open={unitsOpen}
+        onClose={() => {
+          setUnitsOpen(false);
+          setActiveGroup(null);
+        }}
+      >
+        <Table
+          rowKey="id"
+          loading={unitsLoading}
+          columns={unitColumns}
+          dataSource={units}
+          pagination={false}
+          scroll={{ x: 'max-content' }}
+          locale={{ emptyText: tab === 'pending' ? '暂无待审单元' : '暂无驳回报告' }}
+        />
+      </Drawer>
+
+      <Drawer
+        title={
+          detail
+            ? `${detail.gspCaseNo ? `${detail.gspCaseNo} · ` : ''}${unitTitle(detail)}`
+            : '审核详情'
+        }
         width={680}
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
@@ -251,6 +373,12 @@ export default function AuditPage() {
       >
         {detail ? (
           <>
+            <div style={{ marginBottom: 12, color: '#666' }}>
+              工程师：{detail.inspectorName || '-'}
+              {detail.submittedAt
+                ? ` · 提交于 ${new Date(detail.submittedAt).toLocaleString()}`
+                : ''}
+            </div>
             <div style={{ fontWeight: 600, marginBottom: 12 }}>操作追溯</div>
             {(detail.auditTrail || []).length ? (
               <Timeline items={trailItems(detail.auditTrail)} style={{ marginBottom: 20 }} />
@@ -294,7 +422,8 @@ export default function AuditPage() {
                     ) : null}
                   </div>
                   <div style={{ marginBottom: 8, color: '#666' }}>
-                    智能分析：{CHECK_RESULT_LABEL[entry.aiResult?.status || 'pending'] || '待人工判断'}（
+                    智能分析：
+                    {CHECK_RESULT_LABEL[entry.aiResult?.status || 'pending'] || '待人工判断'}（
                     {((entry.aiResult?.confidence || 0) * 100).toFixed(0)}%）
                     {entry.aiResult?.reason ? ` · ${entry.aiResult.reason}` : ''}
                   </div>

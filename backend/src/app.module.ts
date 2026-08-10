@@ -21,11 +21,16 @@ import {
   ImportBatch,
   ChangeLog,
   ItemPriceMapping,
-    CaseWorkRecord,
+  CaseWorkRecord,
+  CaseAssignment,
+  CaseWorkUnit,
+  CasePerfShare,
+  CaseExpenseClaim,
   Assessment,
   MonthlySettlement,
   AssessmentEvent,
   AiHardRule,
+  SystemBranding,
 } from './entities';
 import { AuthModule } from './modules/auth/auth.module';
 import { SiteModule } from './modules/site/site.module';
@@ -48,6 +53,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { DataScopeGuard } from './common/guards/data-scope.guard';
 import { DatabaseSeedService } from './database/seed.service';
+import { MultiSchemaBootstrapService } from './database/multi-schema.bootstrap';
 import { HealthController } from './modules/health/health.controller';
 
 @Module({
@@ -99,10 +105,15 @@ import { HealthController } from './modules/health/health.controller';
             ChangeLog,
             ItemPriceMapping,
               CaseWorkRecord,
+              CaseAssignment,
+              CaseWorkUnit,
+              CasePerfShare,
+              CaseExpenseClaim,
               Assessment,
               MonthlySettlement,
               AssessmentEvent,
             AiHardRule,
+            SystemBranding,
           ],
           synchronize,
           logging: config.get<string>('NODE_ENV') === 'development',
@@ -147,6 +158,7 @@ import { HealthController } from './modules/health/health.controller';
   controllers: [HealthController],
   providers: [
     DatabaseSeedService,
+    MultiSchemaBootstrapService,
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
     { provide: APP_GUARD, useClass: JwtAuthGuard },

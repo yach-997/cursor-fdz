@@ -1,7 +1,7 @@
 import request from '../utils/request';
 import type { ApiResponse, LoginResult, UserInfo } from '../types';
 
-/** 登录（H5 巡检端） */
+/** 登录（H5 作业端） */
 export async function loginApi(username: string, password: string) {
   const { data } = await request.post<ApiResponse<LoginResult>>('/auth/login', {
     username,

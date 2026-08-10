@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Card, Form, Input, InputNumber, Modal, Space, Table, Tag, message } from 'antd';
+import { Button, Card, Form, Input, InputNumber, Modal, Select, Space, Table, Tag, message } from 'antd';
 import dayjs from 'dayjs';
 import {
   correctMonthlySettlement,
@@ -7,35 +7,90 @@ import {
   fetchMonthlySettlements,
   lockMonthlySettlements,
 } from '../../../api/finance';
+import { fetchSites } from '../../../api/site';
 import type { FinanceMonthlySettlement } from '../../../types/finance';
+import type { SiteItem } from '../../../types';
 import { useAuthStore } from '../../../stores/auth';
 
 export default function FinanceMonthlyPage() {
   const isAdmin = useAuthStore((state) => state.user?.role === 'super_admin');
   const [month, setMonth] = useState(dayjs().format('YYYY-MM'));
+  const [keyword, setKeyword] = useState('');
+  const [role, setRole] = useState<string>();
+  const [siteId, setSiteId] = useState<string>();
+  const [sites, setSites] = useState<SiteItem[]>([]);
   const [rows, setRows] = useState<FinanceMonthlySettlement[]>([]);
   const [loading, setLoading] = useState(false);
   const [current, setCurrent] = useState<FinanceMonthlySettlement>();
   const [form] = Form.useForm();
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    void fetchSites({ page: 1, limit: 100 })
+      .then((res) => setSites(res.list || []))
+      .catch(() => setSites([]));
+  }, [isAdmin]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setRows(await fetchMonthlySettlements(month));
+      setRows(
+        await fetchMonthlySettlements({
+          month,
+          keyword: keyword || undefined,
+          siteId: isAdmin ? siteId : undefined,
+          role: isAdmin ? role : undefined,
+        }),
+      );
     } finally {
       setLoading(false);
     }
-  }, [month]);
+  }, [month, keyword, siteId, role, isAdmin]);
+
   useEffect(() => {
     void load();
   }, [load]);
+
   const money = (value: unknown) => `¥${Number(value || 0).toFixed(2)}`;
   return (
     <Card className="finance-card" title="月度结算">
       <div className="finance-review-tip">
-        最终金额 = 已审核计件绩效 + 排名奖罚 − 事件扣罚 + 补助 + 校正增补。锁定后不可修改，并同步封存当月案例。
+        最终金额 = 已审核计件绩效 + 排名奖罚 − 事件扣罚 + 补助 + 校正增补。网格长仅可只读查看本网格结算；校正/锁定/导出仅管理员。
       </div>
       <Space className="finance-toolbar" wrap>
         <Input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
+        <Input
+          allowClear
+          placeholder="姓名/账号"
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+          style={{ width: 160 }}
+        />
+        {isAdmin && (
+          <>
+            <Select
+              allowClear
+              placeholder="角色"
+              value={role}
+              onChange={setRole}
+              style={{ width: 120 }}
+              options={[
+                { value: 'inspector', label: '工程师' },
+                { value: 'site_manager', label: '网格长' },
+              ]}
+            />
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              placeholder="网格"
+              value={siteId}
+              onChange={setSiteId}
+              style={{ width: 180 }}
+              options={sites.map((site) => ({ value: site.id, label: site.name }))}
+            />
+          </>
+        )}
         <Button onClick={load}>查询</Button>
         {isAdmin && (
           <>

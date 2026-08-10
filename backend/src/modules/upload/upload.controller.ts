@@ -56,7 +56,7 @@ export class UploadController {
     return this.uploadService.getQiniuToken();
   }
 
-  /** 进入巡检、拍照前主动校验是否位于站点范围内。 */
+  /** 进入巡检、拍照前主动校验是否位于网格范围内。 */
   @Post('location-check')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   checkLocation(

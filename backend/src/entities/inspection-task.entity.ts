@@ -34,9 +34,13 @@ export class InspectionTask {
   @Column({ name: 'created_by', type: 'uuid' })
   createdBy: string;
 
-  /** 关联费用案例（一对一） */
+  /** 关联费用案例（可一对多：一案例多执行单元） */
   @Column({ name: 'service_case_id', type: 'bigint', nullable: true })
   serviceCaseId: string | null;
+
+  /** 关联执行单元（一单元一任务） */
+  @Column({ name: 'work_unit_id', type: 'bigint', nullable: true })
+  workUnitId: string | null;
 
   @Column({
     name: 'task_type',

@@ -58,7 +58,7 @@ export class UserService {
       const creatorIds = await this.getStaffingCreatorIds(currentUser.id);
       // 无编制池时仍返回本人（管理员创建的正网格长默认不在池内）
       if (creatorIds.length) {
-        // 正/副网格长权限相同：共享所管站点编制池，A/B 站互不可见
+        // 正/副网格长权限相同：共享所管网格编制池，A/B 站互不可见
         qb.andWhere('user.created_by IN (:...creatorIds)', { creatorIds });
         if (query.role === UserRole.INSPECTOR || query.role === UserRole.SITE_MANAGER) {
           const filter = qbUserHasRole('user', query.role, 'filter');
@@ -79,7 +79,7 @@ export class UserService {
     }
 
     if (query.keyword) {
-      qb.andWhere('(user.username ILIKE :kw OR user.realName ILIKE :kw OR user.phone ILIKE :kw)', {
+      qb.andWhere('(user.username ILIKE :kw OR user.realName ILIKE :kw OR user.phone ILIKE :kw OR user.employee_no ILIKE :kw)', {
         kw: `%${query.keyword}%`,
       });
     }
@@ -122,7 +122,8 @@ export class UserService {
         !kw ||
         self.username.includes(kw) ||
         self.realName.includes(kw) ||
-        self.phone.includes(kw);
+        self.phone.includes(kw) ||
+        !!(self.employeeNo && self.employeeNo.includes(kw));
       if (
         selfMatchRole &&
         selfMatchStatus &&
@@ -170,11 +171,17 @@ export class UserService {
     if (existsUsername) throw new ConflictException('用户名已存在');
     if (existsPhone) throw new ConflictException('手机号已存在');
 
+    const employeeNo = String(dto.employeeNo || '').trim();
+    if (!employeeNo) throw new BadRequestException('工号不能为空');
+    const existsEmp = await this.userRepo.findOne({ where: { employeeNo } });
+    if (existsEmp) throw new ConflictException('工号已存在');
+
     const hashed = await bcrypt.hash(dto.password, 10);
     const user = this.userRepo.create({
       username: dto.username,
       password: hashed,
       realName: dto.realName,
+      employeeNo,
       phone: dto.phone,
       status: CommonStatus.ACTIVE,
       role: roles[0],
@@ -215,6 +222,15 @@ export class UserService {
     if (dto.phone && dto.phone !== user.phone) {
       const existsPhone = await this.userRepo.findOne({ where: { phone: dto.phone } });
       if (existsPhone) throw new ConflictException('手机号已存在');
+    }
+    if (dto.employeeNo !== undefined) {
+      const employeeNo = String(dto.employeeNo || '').trim();
+      if (!employeeNo) throw new BadRequestException('工号不能为空');
+      if (employeeNo !== user.employeeNo) {
+        const existsEmp = await this.userRepo.findOne({ where: { employeeNo } });
+        if (existsEmp) throw new ConflictException('工号已存在');
+      }
+      user.employeeNo = employeeNo;
     }
 
     Object.assign(user, {
@@ -286,7 +302,7 @@ export class UserService {
       .where(roleCond.sql, roleCond.params)
       .andWhere('user.status = :status', { status: CommonStatus.ACTIVE });
 
-    // 网格长：仅看本站编制创建人下的工程师；超管：全部工程师（供历史查询等筛选）
+    // 网格长：仅看本网格编制创建人下的工程师；超管：全部工程师（供历史查询等筛选）
     if (currentUser.role === UserRole.SITE_MANAGER) {
       await this.assertCanStaffAccounts(currentUser);
       const creatorIds = await this.getStaffingCreatorIds(currentUser.id);
@@ -297,7 +313,7 @@ export class UserService {
     }
 
     if (query.keyword) {
-      qb.andWhere('(user.username ILIKE :kw OR user.realName ILIKE :kw OR user.phone ILIKE :kw)', {
+      qb.andWhere('(user.username ILIKE :kw OR user.realName ILIKE :kw OR user.phone ILIKE :kw OR user.employee_no ILIKE :kw)', {
         kw: `%${query.keyword}%`,
       });
     }
@@ -322,7 +338,7 @@ export class UserService {
     return { list: result, total, page, limit };
   }
 
-  /** 所管站点（正+副）上的编制创建人：自己、各站正网格长、各站副网格长 */
+  /** 所管网格（正+副）上的编制创建人：自己、各网格正网格长、各网格副网格长 */
   private async getStaffingCreatorIds(userId: string): Promise<string[]> {
     const primarySites = await this.siteRepo.find({
       where: { managerId: userId, deletedAt: IsNull() },
@@ -364,7 +380,7 @@ export class UserService {
     return ids.length > 0;
   }
 
-  /** 管理员任意；正/副网格长（已任职站点）可编制 */
+  /** 管理员任意；正/副网格长（已任职网格）可编制 */
   private async assertCanStaffAccounts(currentUser: CurrentUserContext) {
     if (currentUser.role === UserRole.SUPER_ADMIN) return;
     if (currentUser.role === UserRole.SITE_MANAGER) {
@@ -438,7 +454,7 @@ export class UserService {
     return user;
   }
 
-  /** 管理员管自己设立的正网格长；正/副网格长管本站编制池内账号 */
+  /** 管理员管自己设立的正网格长；正/副网格长管本网格编制池内账号 */
   private async assertCanManage(target: User, currentUser: CurrentUserContext) {
     if (userHasRole(target, UserRole.SUPER_ADMIN)) {
       throw new ForbiddenException('无权管理超级管理员');
@@ -456,10 +472,10 @@ export class UserService {
       if (target.id === currentUser.id) return;
       const creatorIds = await this.getStaffingCreatorIds(currentUser.id);
       if (!creatorIds.length) {
-        throw new ForbiddenException('未任职站点，无权管理下属账号');
+        throw new ForbiddenException('未任职网格，无权管理下属账号');
       }
       if (!target.createdBy || !creatorIds.includes(target.createdBy)) {
-        throw new ForbiddenException('只能管理本站正/副网格长设立的副网格长与工程师');
+        throw new ForbiddenException('只能管理本网格正/副网格长设立的副网格长与工程师');
       }
       if (
         !userHasRole(target, UserRole.INSPECTOR) &&
@@ -478,6 +494,7 @@ export class UserService {
       id: user.id,
       username: user.username,
       realName: user.realName,
+      employeeNo: user.employeeNo,
       phone: user.phone,
       email: user.email,
       avatar: user.avatar,

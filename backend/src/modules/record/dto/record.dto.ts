@@ -1,8 +1,10 @@
 import {
   IsArray,
   IsDateString,
+  IsIn,
   IsOptional,
   IsString,
+  MaxLength,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -57,6 +59,11 @@ export class QueryRecordDto extends PaginationDto {
   @IsOptional()
   @IsString()
   scope?: 'history' | 'audit';
+
+  /** 按案例聚合时：case-{serviceCaseId} 或 task-{taskId} */
+  @IsOptional()
+  @IsString()
+  groupKey?: string;
 }
 
 export class SubmitRecordDto {
@@ -77,6 +84,21 @@ export class SubmitRecordDto {
   @IsOptional()
   @IsDateString()
   capturedAt?: string;
+
+  /** 定位质量：ok / weak / failed / skipped（软失败不阻断提交） */
+  @IsOptional()
+  @IsIn(['ok', 'weak', 'failed', 'skipped'])
+  locationStatus?: 'ok' | 'weak' | 'failed' | 'skipped';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  locationReasonCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  locationReason?: string;
 }
 
 export class CreateRecordDto {

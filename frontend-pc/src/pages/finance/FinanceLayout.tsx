@@ -3,12 +3,12 @@ import './finance.css';
 
 const pageMeta: Array<{ prefix: string; title: string; desc: string }> = [
   { prefix: '/finance/dashboard', title: '经营看板', desc: '收入、绩效与结算进度总览' },
-  { prefix: '/finance/cases', title: '案例管理', desc: '导入案例、派站点与工程师作业' },
+  { prefix: '/finance/cases', title: '案例管理', desc: '导入案例、派网格与工程师作业' },
   { prefix: '/finance/po-orders', title: 'PO 管理', desc: '甲方订单与案例价格关联' },
   { prefix: '/finance/prices', title: '价格库', desc: '内部绩效价与甲方结算价维护' },
   { prefix: '/finance/review', title: '结算审核', desc: '审核作业记录与结算金额' },
-  { prefix: '/finance/assessment', title: '考核管理', desc: '考核事件与扣减规则' },
-  { prefix: '/finance/monthly', title: '月度结算', desc: '按月汇总生成结算单' },
+  { prefix: '/finance/assessment', title: '考核管理', desc: '打分排名与奖罚补助' },
+  { prefix: '/finance/monthly', title: '月度结算', desc: '按月汇总结算单；网格长只读本网格' },
 ];
 
 export default function FinanceLayout() {

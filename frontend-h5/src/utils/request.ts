@@ -240,7 +240,7 @@ request.interceptors.response.use(
       toastInfo('登录已过期');
       window.location.href = '/m/login';
     } else if (status === 403 && isAuthLoginRequest(reqUrl)) {
-      if (!skipToast) toastInfo(msg || '无权限登录巡检端');
+      if (!skipToast) toastInfo(msg || '无权限登录作业端');
       return Promise.reject(error);
     } else if (!skipToast) {
       toastInfo(msg || '网络错误');

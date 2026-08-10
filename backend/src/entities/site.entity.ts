@@ -12,7 +12,7 @@ import { User } from './user.entity';
 import { SiteMember } from './site-member.entity';
 import { Device } from './device.entity';
 
-/** 站点实体 */
+/** 网格实体 */
 @Entity('sites')
 export class Site {
   @PrimaryGeneratedColumn('uuid')
@@ -42,7 +42,7 @@ export class Site {
   @Column({ type: 'decimal', precision: 10, scale: 7 })
   longitude: number;
 
-  /** 工程师允许拍照/提交的站点围栏半径（米） */
+  /** 工程师允许拍照/提交的网格围栏半径（米）——已废弃，保留列兼容旧数据 */
   @Column({ name: 'inspection_radius_meters', type: 'int', default: 500 })
   inspectionRadiusMeters: number;
 

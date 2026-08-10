@@ -144,13 +144,13 @@ export class AlertService {
     setTimeout(() => void this.runScheduledChecks(), 15000);
   }
 
-  /** 报告完成后即时检查本站点；异常只记日志，不阻塞巡检主流程。 */
+  /** 报告完成后即时检查本网格；异常只记日志，不阻塞巡检主流程。 */
   async runSiteChecksNow(siteId: string) {
     try {
       await this.checkSiteAlerts(siteId);
     } catch (error) {
       this.logger.error(
-        `站点 ${siteId} 即时预警检查失败: ${(error as Error).message}`,
+        `网格 ${siteId} 即时预警检查失败: ${(error as Error).message}`,
       );
     }
   }
@@ -334,7 +334,7 @@ export class AlertService {
     await this.sendNotifications(siteId, saved);
   }
 
-  /** 通过 Webhook / 邮件通知运维人员与站点负责人。 */
+  /** 通过 Webhook / 邮件通知运维人员与网格负责人。 */
   private async sendNotifications(siteId: string, alert: AlertRecord) {
     const config = await this.configRepo.findOne({ where: { siteId } });
     if (!config) return;
@@ -388,8 +388,8 @@ export class AlertService {
           body: JSON.stringify({
             from,
             to: recipients,
-            subject: `【巡检预警】${site?.name || '站点'} - ${alert.title}`,
-            html: `<h2>${alert.title}</h2><p>${alert.message}</p><p>站点：${site?.name || siteId}</p><p>触发时间：${new Date(alert.createdAt).toLocaleString('zh-CN')}</p>`,
+            subject: `【巡检预警】${site?.name || '网格'} - ${alert.title}`,
+            html: `<h2>${alert.title}</h2><p>${alert.message}</p><p>网格：${site?.name || siteId}</p><p>触发时间：${new Date(alert.createdAt).toLocaleString('zh-CN')}</p>`,
           }),
           signal: AbortSignal.timeout(10_000),
         });
@@ -427,7 +427,7 @@ export class AlertService {
     if (currentUser.role === UserRole.SITE_MANAGER) {
       if (siteId) {
         if (!currentUser.managedSiteIds.includes(siteId)) {
-          throw new ForbiddenException('无权访问该站点');
+          throw new ForbiddenException('无权访问该网格');
         }
         return [siteId];
       }
@@ -440,7 +440,7 @@ export class AlertService {
     if (currentUser.role === UserRole.SUPER_ADMIN) return;
     if (currentUser.role === UserRole.SITE_MANAGER) {
       if (!currentUser.managedSiteIds.includes(siteId)) {
-        throw new ForbiddenException('无权操作该站点');
+        throw new ForbiddenException('无权操作该网格');
       }
       return;
     }

@@ -1,15 +1,37 @@
 import { useEffect, useState } from 'react';
-import { Alert, Card, Table } from 'antd';
-import { fetchFinanceDashboard } from '../../../api/finance';
-import type { FinanceDashboard } from '../../../types/finance';
+import { Alert, Button, Card, Drawer, Space, Table, Tag, message } from 'antd';
+import { useNavigate } from 'react-router-dom';
+import { fetchFinanceDashboard, fetchFinanceVarianceDetail } from '../../../api/finance';
+import type { FinanceDashboard, FinanceVarianceDetail } from '../../../types/finance';
 import { useAuthStore } from '../../../stores/auth';
 
+const moneyText = (value: number) =>
+  `¥ ${Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`;
+
 export default function FinanceDashboardPage() {
+  const navigate = useNavigate();
   const isAdmin = useAuthStore((state) => state.user?.role === 'super_admin');
   const [data, setData] = useState<FinanceDashboard>();
+  const [varianceOpen, setVarianceOpen] = useState(false);
+  const [varianceLoading, setVarianceLoading] = useState(false);
+  const [variance, setVariance] = useState<FinanceVarianceDetail>();
+
   useEffect(() => {
     void fetchFinanceDashboard().then(setData);
   }, []);
+
+  const openVariance = async () => {
+    setVarianceOpen(true);
+    setVarianceLoading(true);
+    try {
+      setVariance(await fetchFinanceVarianceDetail());
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '加载偏差明细失败');
+    } finally {
+      setVarianceLoading(false);
+    }
+  };
+
   const s = data?.summary;
   const income = Number(s?.income ?? 0);
   const poTotalAmount = Number(s?.poTotalAmount ?? 0);
@@ -22,6 +44,8 @@ export default function FinanceDashboardPage() {
     return match ? `${match[1]}年${Number(match[2])}月` : value;
   };
   const ignoredItems = data?.ignoredItems || [];
+  const vs = variance?.summary;
+
   return (
     <>
       <div className="finance-stat-grid">
@@ -51,9 +75,14 @@ export default function FinanceDashboardPage() {
           <span>忽略条目（明细行）</span>
           <b>{s?.ignoredCount || 0}</b>
         </div>
-        <div className="finance-stat">
+        <div
+          className="finance-stat finance-stat-clickable"
+          onClick={() => void openVariance()}
+          title="点击查看偏差明细"
+        >
           <span>收入与 PO 偏差率</span>
           <b>{(varianceRate * 100).toFixed(2)}%</b>
+          <em>点击查看明细</em>
         </div>
       </div>
       {isAdmin && (
@@ -102,11 +131,13 @@ export default function FinanceDashboardPage() {
                 {Math.abs(varianceAmount).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}（
                 {(varianceRate * 100).toFixed(2)}%）
               </p>
-              <p style={{ marginBottom: 0 }}>
+              <p style={{ marginBottom: 8 }}>
                 已定价 {s?.okCount || 0} 条 · 待定价 {s?.pendingPrice || 0} 条 · 忽略{' '}
-                {s?.ignoredCount || 0} 条（名称仅为「无」「自定义」的明细不计入核算）。若仍有待定价，请到「价格库
-                → 批量映射维护」处理；忽略项可在下方列表或案例详情中查看。
+                {s?.ignoredCount || 0} 条（名称仅为「无」「自定义」的明细不计入核算）。
               </p>
+              <Button type="link" style={{ padding: 0 }} onClick={() => void openVariance()}>
+                查看偏差明细（差在哪些案例/PO）
+              </Button>
             </div>
           }
         />
@@ -157,6 +188,151 @@ export default function FinanceDashboardPage() {
           ]}
         />
       </Card>
+
+      <Drawer
+        width={920}
+        open={varianceOpen}
+        onClose={() => setVarianceOpen(false)}
+        title="收入与 PO 偏差明细"
+        extra={
+          <Space>
+            {isAdmin && (
+              <Button onClick={() => navigate('/finance/prices')}>去价格库定价</Button>
+            )}
+            <Button onClick={() => navigate('/finance/po-orders')}>看待匹配 PO</Button>
+          </Space>
+        }
+      >
+        {vs && (
+          <>
+            <Alert
+              showIcon
+              type={Math.abs(vs.varianceAmount) > 0 ? 'warning' : 'success'}
+              style={{ marginBottom: 16 }}
+              message="怎么算的"
+              description={
+                <div>
+                  PO 总额 {moneyText(vs.poTotalAmount)} − 已定价核算收入 {moneyText(vs.income)} ＝
+                  差额 {moneyText(Math.abs(vs.varianceAmount))}（偏差率{' '}
+                  {(vs.varianceRate * 100).toFixed(2)}%）
+                  <div style={{ marginTop: 8, color: '#666' }}>
+                    已定价 {vs.okCount} 条 · 待定价 {vs.pendingPrice} 条 · 忽略 {vs.ignoredCount} 条 ·
+                    未匹配 PO {vs.unmatchedPoCount} 单
+                  </div>
+                </div>
+              }
+            />
+            <Table
+              rowKey="key"
+              size="small"
+              pagination={false}
+              loading={varianceLoading}
+              style={{ marginBottom: 20 }}
+              dataSource={variance?.buckets || []}
+              columns={[
+                { title: '偏差构成', dataIndex: 'label', width: 180 },
+                {
+                  title: '金额',
+                  dataIndex: 'amount',
+                  width: 140,
+                  render: (v, row) =>
+                    row.key === 'pending_price' || row.key === 'ignored'
+                      ? '-'
+                      : moneyText(Number(v)),
+                },
+                { title: '数量', dataIndex: 'count', width: 90 },
+                { title: '说明', dataIndex: 'tip' },
+              ]}
+            />
+            <Card size="small" title="有缺口的案例（按差额从大到小）" style={{ marginBottom: 16 }}>
+              <Table
+                rowKey="caseId"
+                size="small"
+                loading={varianceLoading}
+                pagination={{ pageSize: 8 }}
+                dataSource={variance?.cases || []}
+                locale={{ emptyText: '暂无案例缺口' }}
+                columns={[
+                  { title: '案例号', dataIndex: 'gspCaseNo', width: 140 },
+                  { title: '项目', dataIndex: 'projectName', ellipsis: true },
+                  {
+                    title: 'PO 金额',
+                    dataIndex: 'poTotalAmount',
+                    width: 110,
+                    render: (v) => moneyText(v),
+                  },
+                  {
+                    title: '核算收入',
+                    dataIndex: 'caseRevenue',
+                    width: 110,
+                    render: (v) => moneyText(v),
+                  },
+                  {
+                    title: '差额',
+                    dataIndex: 'gap',
+                    width: 110,
+                    render: (v) => (
+                      <span style={{ color: Number(v) > 0 ? '#cf1322' : undefined }}>
+                        {moneyText(v)}
+                      </span>
+                    ),
+                  },
+                  {
+                    title: '待定价/忽略',
+                    width: 110,
+                    render: (_, row) => `${row.pendingPrice}/${row.ignoredCount}`,
+                  },
+                  {
+                    title: '原因',
+                    dataIndex: 'reason',
+                    width: 160,
+                    render: (v) => <Tag color="orange">{v}</Tag>,
+                  },
+                  {
+                    title: '操作',
+                    width: 80,
+                    render: (_, row) => (
+                      <Button
+                        type="link"
+                        onClick={() => navigate(`/finance/cases?keyword=${encodeURIComponent(row.gspCaseNo)}`)}
+                      >
+                        查看
+                      </Button>
+                    ),
+                  },
+                ]}
+              />
+            </Card>
+            <Card size="small" title="未匹配案例的 PO（全部计入 PO 总额，未进核算收入）">
+              <Table
+                rowKey="id"
+                size="small"
+                loading={varianceLoading}
+                pagination={{ pageSize: 8 }}
+                dataSource={variance?.unmatchedPos || []}
+                locale={{ emptyText: '暂无未匹配 PO' }}
+                columns={[
+                  { title: 'PO 号', dataIndex: 'poNo', width: 140 },
+                  { title: 'GSP 案例号', dataIndex: 'gspCaseNo', width: 140 },
+                  { title: '项目', dataIndex: 'projectName', ellipsis: true },
+                  {
+                    title: 'PO 金额',
+                    dataIndex: 'poTotalAmount',
+                    width: 120,
+                    render: (v) => moneyText(v),
+                  },
+                  {
+                    title: '状态',
+                    dataIndex: 'matchStatus',
+                    width: 100,
+                    render: (v) => (v === 'pending' ? <Tag color="gold">待匹配</Tag> : <Tag>{v}</Tag>),
+                  },
+                ]}
+              />
+            </Card>
+          </>
+        )}
+      </Drawer>
     </>
   );
 }

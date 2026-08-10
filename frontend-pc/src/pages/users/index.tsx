@@ -32,7 +32,7 @@ function userRolesOf(record: UserInfo): UserRole[] {
   return record.roles?.length ? record.roles : record.role ? [record.role] : [];
 }
 
-/** 用户管理：管理员→正网格长；正/副网格长在列表内设立账号并聘用工程师到站点 */
+/** 用户管理：管理员→正网格长；正/副网格长在列表内设立账号并聘用工程师到网格 */
 export default function UsersPage() {
   const currentUser = useAuthStore((s) => s.user);
   const isAdmin = currentUser?.role === 'super_admin';
@@ -205,6 +205,7 @@ export default function UsersPage() {
       if (values.roles?.includes('inspector')) nextRoles.push('inspector');
       await updateUser(editing.id, {
         realName: values.realName,
+        employeeNo: values.employeeNo,
         phone: values.phone,
         roles: nextRoles,
       });
@@ -227,6 +228,7 @@ export default function UsersPage() {
     if (editing) {
       await updateUser(editing.id, {
         realName: values.realName,
+        employeeNo: values.employeeNo,
         phone: values.phone,
         roles,
       });
@@ -237,6 +239,7 @@ export default function UsersPage() {
         username: values.username,
         password: values.password,
         realName: values.realName,
+        employeeNo: values.employeeNo,
         phone: values.phone,
         roles,
       });
@@ -249,7 +252,7 @@ export default function UsersPage() {
   const onEnableMyInspector = async () => {
     await enableMyInspector();
     await useAuthStore.getState().fetchMe();
-    message.success('已开通工程师身份，请退出后用同一账号登录 H5 巡检端');
+    message.success('已开通工程师身份，请退出后用同一账号登录 H5 作业端');
     void loadList();
   };
 
@@ -290,6 +293,7 @@ export default function UsersPage() {
 
   const listColumns: ColumnsType<UserInfo> = [
     { title: '用户名', dataIndex: 'username', width: 120 },
+    { title: '工号', dataIndex: 'employeeNo', width: 110, render: (v) => v || '-' },
     { title: '姓名', dataIndex: 'realName', width: 100 },
     { title: '手机号', dataIndex: 'phone', width: 130 },
     {
@@ -320,7 +324,7 @@ export default function UsersPage() {
     ...(canStaffAsManager
       ? ([
           {
-            title: '已聘站点',
+            title: '已聘网格',
             width: 160,
             render: (_: unknown, record: UserInfo) => {
               if (!userRolesOf(record).includes('inspector')) {
@@ -369,7 +373,7 @@ export default function UsersPage() {
             </Button>
             {canHire && (
               <Button type="link" onClick={() => openHire(record)}>
-                聘用到站点
+                聘用到网格
               </Button>
             )}
             {hiredSites.map((s) => (
@@ -417,7 +421,7 @@ export default function UsersPage() {
           isAdmin
             ? '管理员只设立正网格长（PC）。工程师须由正/副网格长设立；正/副网格长也可为自己开通工程师身份后登录 H5。'
             : canStaffAsManager
-              ? '在用户列表设立副网格长/工程师；工程师可直接「聘用到站点」。正网格长不能给自己设副网格长，可开通工程师后同一账号登 H5。'
+              ? '在用户列表设立副网格长/工程师；工程师可直接「聘用到网格」。正网格长不能给自己设副网格长，可开通工程师后同一账号登 H5。'
               : '请先被任命为正网格长或副网格长后，再编制下属账号。'
         }
       />
@@ -428,7 +432,7 @@ export default function UsersPage() {
           showIcon
           style={{ marginBottom: 12 }}
           message="本账号尚未开通工程师身份"
-          description="开通后可用同一用户名登录 H5 巡检端接单作业。"
+          description="开通后可用同一用户名登录 H5 作业端接单作业。"
           action={
             <Button type="primary" icon={<MobileOutlined />} onClick={() => void onEnableMyInspector()}>
               开通我的工程师身份
@@ -522,6 +526,23 @@ export default function UsersPage() {
             <Input />
           </Form.Item>
           <Form.Item
+            name="employeeNo"
+            label="工号"
+            rules={
+              creatingForSelf
+                ? []
+                : [
+                    { required: true, message: '请输入工号' },
+                    { min: 2, max: 32, message: '工号 2-32 位' },
+                  ]
+            }
+          >
+            <Input
+              placeholder={creatingForSelf ? '给自己开通工程师时无需填写' : '员工工号，不可重复'}
+              disabled={creatingForSelf}
+            />
+          </Form.Item>
+          <Form.Item
             name="phone"
             label="手机号"
             rules={[
@@ -537,10 +558,10 @@ export default function UsersPage() {
             rules={[{ required: true, type: 'array', min: 1, message: '请选择角色' }]}
             extra={
               isAdmin
-                ? '正网格长登录 PC；创建后到「站点管理」任命到电站'
+                ? '正网格长登录 PC；创建后到「网格管理」任命到电站'
                 : creatingForSelf || editingSelf
                   ? '本账号只能开通/取消工程师，不能设为副网格长（与正网格长冲突）。开通后请重新登录 H5。'
-                  : '可设立副网格长或工程师。创建工程师后，在列表中点「聘用到站点」即可安排上岗。'
+                  : '可设立副网格长或工程师。创建工程师后，在列表中点「聘用到网格」即可安排上岗。'
             }
           >
             <Checkbox.Group options={roleOptions} />
@@ -566,14 +587,14 @@ export default function UsersPage() {
       </Modal>
 
       <Modal
-        title={`聘用到站点 - ${hireUser?.realName || ''}`}
+        title={`聘用到网格 - ${hireUser?.realName || ''}`}
         open={hireOpen}
         onCancel={() => setHireOpen(false)}
         onOk={() => void submitHire()}
       >
         <Select
           style={{ width: '100%' }}
-          placeholder="选择所管站点"
+          placeholder="选择所管网格"
           value={hireSiteId}
           onChange={setHireSiteId}
           options={managedSites.map((s) => ({ value: s.id, label: `${s.name}（${s.code}）` }))}

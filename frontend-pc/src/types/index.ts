@@ -20,6 +20,8 @@ export interface UserInfo {
   id: string;
   username: string;
   realName: string;
+  /** 工号 */
+  employeeNo?: string | null;
   phone: string;
   email?: string;
   avatar?: string;

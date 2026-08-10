@@ -1,7 +1,7 @@
 {
   "name": "inspection-backend",
   "version": "1.0.0",
-  "description": "智能设备巡检系统 - NestJS 后端",
+  "description": "阳光运维系统 - NestJS 后端",
   "scripts": {
     "build": "nest build",
     "test:smoke": "npm run build && node test/smoke.js",

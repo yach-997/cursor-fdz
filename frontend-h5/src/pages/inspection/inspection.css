@@ -427,3 +427,134 @@
     font-size: 13px;
   }
 }
+
+/* 行程嵌进产品线 */
+.trip-wizard-card {
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--h5-line-soft, #dce8e2);
+  border-radius: 12px;
+  background: #fff;
+}
+.trip-wizard-card h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+.trip-wizard-card > p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #61756b;
+}
+.trip-wizard-choice {
+  display: grid;
+  gap: 10px;
+}
+.trip-wizard-choice button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid #d5e5de;
+  border-radius: 14px;
+  background: #fff;
+  text-align: left;
+  color: #3f6559;
+}
+.trip-wizard-choice button.is-primary {
+  border-color: #087b59;
+  background: #e8f7f1;
+}
+.trip-wizard-choice button strong {
+  font-size: 15px;
+  color: #12483c;
+}
+.trip-wizard-choice button span {
+  font-size: 12px;
+  color: #61756b;
+}
+.trip-wizard-block {
+  margin-top: 14px;
+}
+.trip-wizard-block > strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+.trip-wizard-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: #3f6559;
+}
+.trip-wizard-field input,
+.trip-wizard-field textarea {
+  border: 1px solid #d5e5de;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 15px;
+}
+.trip-wizard-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #61756b;
+}
+.trip-wizard-diff {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #31584d;
+}
+.trip-wizard-diff strong {
+  color: #087b59;
+  font-size: 16px;
+}
+.trip-wizard-skip-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff4e5;
+  font-size: 13px;
+  color: #b86a00;
+}
+.trip-wizard-skip-bar button {
+  border: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: #fff;
+  color: #087b59;
+  font-size: 12px;
+  font-weight: 650;
+}
+.trip-wizard-switch-skip {
+  display: block;
+  width: 100%;
+  margin: 8px 0 12px;
+  border: 1px solid #d5e5de;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+  color: #3f6559;
+  font-size: 14px;
+}
+.trip-inline-thumb-btn {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+.trip-inline-thumb-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+}

@@ -240,7 +240,7 @@ export class GeocodeService {
         .filter(Boolean)
         .join('');
 
-      // 站点表单要求省市区：境外/简地址时用可展示字段兜底，避免只定位却无法保存
+      // 网格表单要求省市区：境外/简地址时用可展示字段兜底，避免只定位却无法保存
       const safeProvince = province || city || '未知地区';
       const safeCity = city || safeProvince;
       const safeDistrict = district || safeCity;
@@ -289,7 +289,7 @@ export class GeocodeService {
   }
 
   private buildPoiKeywords(query: GeocodeQuery) {
-    // 站点名称通常比短地址更精确。例如「卧龙湖二期伏电站」应优先于
+    // 网格名称通常比短地址更精确。例如「卧龙湖二期伏电站」应优先于
     // 地址末尾的「高峰」，否则 POI 搜索可能误命中同名的高峰公园。
     const raw = [query.name, query.detail, query.address]
       .map((s) => s?.trim())

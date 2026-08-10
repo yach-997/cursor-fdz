@@ -26,10 +26,937 @@
 .mobile-finance-tag { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: #eef6f3; color: #087b5b; font-size: 12px; font-weight: 500; }
 .mobile-finance-check-done { display: flex !important; align-items: center; gap: 8px; margin: 10px 0 !important; font-weight: 500 !important; }
 .mobile-finance-check-done input { width: auto !important; }
-.income-hero { padding: 24px; color: #fff; background: linear-gradient(135deg,#16a875,#086c51); }
-.income-hero strong { display: block; font-size: 32px; margin-top: 8px; }
-.income-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
-.income-grid div { padding: 12px; border-radius: 12px; background: rgba(255,255,255,.13); }
-.income-grid b { display: block; font-size: 20px; }
-.income-item-lines { margin-top: 12px; padding-top: 10px; border-top: 1px solid #edf2f0; }
-.income-item-lines p { display:flex; justify-content:space-between; margin:8px 0; font-size:14px; }
+.mobile-finance-status.is-pending { background: #fff4e5; color: #b54708; }
+.mobile-finance-status.is-reject { background: #fee4e2; color: #b42318; }
+.is-neg { color: #c84b4b !important; }
+.is-pos { color: #087b59 !important; }
+
+/* —— 我的收入账单风 —— */
+.inc-bill-page {
+  min-height: 100vh;
+  padding-bottom: 40px;
+  color: #16352d;
+  background: #f2f5f3;
+}
+.inc-bill-top {
+  padding: max(8px, env(safe-area-inset-top)) 0 22px;
+  color: #fff;
+  background: linear-gradient(165deg, #19ad7b 0%, #0d7a58 100%);
+}
+.inc-bill-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 14px 0;
+}
+.inc-bill-nav h1 {
+  margin: 0;
+  flex: 1;
+  text-align: center;
+  font-size: 17px;
+  font-weight: 650;
+}
+.inc-bill-month-inline {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  padding: 2px 8px;
+}
+.inc-bill-month-inline strong {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+.inc-bill-month-inline span {
+  font-size: 11px;
+  opacity: .72;
+  font-weight: 500;
+}
+.inc-bill-icon-btn {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255,255,255,.16);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 650;
+}
+.inc-bill-month {
+  display: none;
+}
+.inc-bill-loading {
+  padding: 28px 16px 8px;
+  display: grid;
+  place-items: center;
+}
+.inc-bill-sum {
+  padding: 12px 20px 0;
+  text-align: center;
+}
+.inc-bill-sum > p:first-child {
+  margin: 0;
+  font-size: 12px;
+  opacity: .82;
+  letter-spacing: .04em;
+}
+.inc-bill-sum > strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 36px;
+  font-weight: 720;
+  letter-spacing: -.04em;
+  line-height: 1.08;
+}
+.inc-bill-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-top: 14px;
+}
+.inc-bill-stats > div {
+  padding: 8px 6px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.14);
+}
+.inc-bill-stats span {
+  display: block;
+  font-size: 11px;
+  opacity: .78;
+}
+.inc-bill-stats b {
+  display: block;
+  margin-top: 3px;
+  font-size: 13px;
+  font-weight: 650;
+}
+.inc-bill-eq,
+.inc-bill-legend {
+  display: none;
+}
+.inc-bill-extra {
+  margin: 10px 0 0;
+  font-size: 11px;
+  opacity: .72;
+  line-height: 1.4;
+}
+.inc-bill-sum .is-neg { color: #ffe3e0 !important; }
+.inc-bill-expense {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid #eef2f0;
+}
+.inc-bill-expense:first-of-type { border-top: 0; padding-top: 2px; }
+.inc-bill-expense-main { flex: 1; min-width: 0; }
+.inc-bill-expense-main h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: #16352d;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.inc-bill-expense-main p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #6a7d76;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inc-bill-expense > b {
+  flex: 0 0 auto;
+  font-size: 15px;
+  padding-top: 1px;
+}
+
+.inc-bill-body {
+  margin-top: -16px;
+  padding: 14px 14px 8px;
+  border-radius: 22px 22px 0 0;
+  background: #f2f5f3;
+  min-height: 48vh;
+}
+.inc-bill-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 14px;
+  background: #e4ece8;
+}
+.inc-bill-seg button {
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #5f746d;
+  font-size: 13px;
+  font-weight: 550;
+  padding: 11px 8px;
+  transition: .18s ease;
+}
+.inc-bill-seg button.is-on {
+  background: #fff;
+  color: #0f6b52;
+  font-weight: 650;
+  box-shadow: 0 4px 14px rgba(20, 70, 52, .08);
+}
+.inc-bill-seg em {
+  font-style: normal;
+  margin-left: 4px;
+  opacity: .6;
+}
+
+.inc-bill-days {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px 2px 6px;
+  scrollbar-width: none;
+}
+.inc-bill-days::-webkit-scrollbar { display: none; }
+.inc-bill-days button {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 54px;
+  border: 0;
+  border-radius: 14px;
+  background: #fff;
+  color: #3f6559;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  box-shadow: 0 2px 8px rgba(20, 70, 52, .04);
+  transition: transform .15s ease, background .15s ease, color .15s ease;
+}
+.inc-bill-days button b {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+}
+.inc-bill-days button span {
+  font-size: 10px;
+  opacity: .7;
+}
+.inc-bill-days button.is-on {
+  background: #0f6b52;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(15, 107, 82, .28);
+}
+
+.inc-bill-panel { margin-top: 8px; }
+.inc-bill-empty {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+.inc-bill-text-btn {
+  border: 0;
+  background: transparent;
+  color: #0f6b52;
+  font-size: 13px;
+  font-weight: 650;
+  padding: 8px;
+}
+.inc-bill-group { margin-bottom: 14px; }
+.inc-bill-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 2px 8px;
+}
+.inc-bill-group-date {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.inc-bill-group-date strong {
+  font-size: 22px;
+  font-weight: 720;
+  letter-spacing: -.03em;
+  color: #16352d;
+  line-height: 1;
+}
+.inc-bill-group-date span {
+  font-size: 11px;
+  color: #7a8f87;
+}
+.inc-bill-group-head em {
+  font-style: normal;
+  font-size: 11px;
+  color: #7a8f87;
+}
+.inc-bill-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-radius: 16px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(20, 70, 52, .05);
+}
+.inc-bill-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-bottom: 1px solid #eef2f0;
+  background: transparent;
+  text-align: left;
+  padding: 12px 14px;
+  color: inherit;
+  font: inherit;
+}
+.inc-bill-list li:last-child .inc-bill-row { border-bottom: 0; }
+.inc-bill-row:active { background: #f5faf7; }
+.inc-bill-row-main { flex: 1; min-width: 0; }
+.inc-bill-row-main h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inc-bill-row-main p {
+  margin: 4px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #6a7d76;
+}
+.inc-bill-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 550;
+}
+.inc-bill-tag.ok { background: #e7f6ef; color: #0f766e; }
+.inc-bill-tag.wait { background: #fff4e5; color: #b54708; }
+.inc-bill-tag.bad { background: #fee4e2; color: #b42318; }
+.inc-bill-row > strong {
+  flex: 0 0 auto;
+  font-size: 15px;
+  color: #0f6b52;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+.inc-bill-block {
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(20, 70, 52, .05);
+}
+.inc-bill-block h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #4a6b60;
+  font-weight: 650;
+}
+.inc-bill-flat {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #eef2f0;
+  font-size: 13px;
+  color: #3f6559;
+}
+.inc-bill-flat:first-of-type { border-top: 0; padding-top: 0; }
+.inc-bill-penalties {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.inc-bill-penalties li {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #3f6559;
+}
+.inc-bill-penalties b { flex: 0 0 auto; color: #c84b4b; }
+
+.inc-bill-picker { padding: 6px 16px 24px; }
+.inc-bill-picker-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.inc-bill-picker-bar strong { font-size: 16px; }
+.inc-bill-picker-bar button {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 12px;
+  background: #eef5f1;
+  color: #0f6b52;
+  font-size: 20px;
+}
+.inc-bill-picker-bar button:disabled { opacity: .35; }
+.inc-bill-cal-head,
+.inc-bill-cal {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  text-align: center;
+}
+.inc-bill-cal-head {
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: #8a9b94;
+}
+.inc-bill-cal button,
+.inc-bill-cal span {
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #16352d;
+  font-size: 14px;
+  font-weight: 550;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.inc-bill-cal button:disabled { opacity: .28; }
+.inc-bill-cal button.has-dot { font-weight: 700; }
+.inc-bill-cal button.has-dot i {
+  position: absolute;
+  bottom: 5px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #1aa875;
+}
+.inc-bill-cal button.is-today { box-shadow: inset 0 0 0 1px rgba(15, 107, 82, .35); }
+.inc-bill-cal button.is-on {
+  background: #0f6b52;
+  color: #fff;
+}
+.inc-bill-cal button.is-on i { background: #fff; }
+.inc-bill-picker-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 16px;
+}
+.inc-bill-picker-ghost,
+.inc-bill-picker-primary {
+  min-height: 44px;
+  border-radius: 22px;
+  font-size: 14px;
+  font-weight: 650;
+}
+.inc-bill-picker-ghost {
+  border: 1px solid #cfe0d8;
+  background: #fff;
+  color: #0f6b52;
+}
+.inc-bill-picker-primary {
+  border: 0;
+  background: linear-gradient(135deg, #19ad7b, #0d7a58);
+  color: #fff;
+}
+
+.inc-bill-sheet {
+  padding: 8px 16px 28px;
+  max-height: min(78vh, 640px);
+  overflow: auto;
+}
+.inc-bill-sheet-grab {
+  width: 36px;
+  height: 4px;
+  margin: 4px auto 12px;
+  border-radius: 999px;
+  background: #d5e0db;
+}
+.inc-bill-sheet-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.inc-bill-sheet-head h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.35;
+}
+.inc-bill-sheet-head p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #6a7d76;
+}
+.inc-bill-sheet-day {
+  color: #0f6b52 !important;
+  font-weight: 550;
+}
+.inc-bill-sheet-close {
+  flex: 0 0 auto;
+  border: 0;
+  background: #eef5f1;
+  color: #0f6b52;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.inc-bill-sheet-net {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f3faf7, #eaf6f1);
+}
+.inc-bill-sheet-net span { font-size: 13px; color: #5f746d; }
+.inc-bill-sheet-net strong { font-size: 24px; color: #0f6b52; }
+.inc-bill-sheet-formula {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: #3f6559;
+}
+.inc-bill-sheet-formula i { font-style: normal; color: #9aada5; }
+.inc-bill-sheet-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #6a7d76;
+}
+.inc-bill-sheet-block { margin-top: 14px; }
+.inc-bill-sheet-block h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #31584d;
+}
+.inc-bill-sheet-warn {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff4f0;
+  color: #b42318;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.inc-bill-link {
+  border: 0;
+  background: transparent;
+  color: #0f6b52;
+  font-size: 13px;
+  padding: 0;
+}
+.inc-bill-items {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.inc-bill-items li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: #3f6559;
+}
+.inc-bill-page .is-neg { color: #c84b4b !important; }
+.inc-bill-page .is-pos { color: #0f6b52 !important; }
+
+/* —— 作业单元共享池 —— */
+.unit-pool-card { padding-bottom: 16px; }
+.unit-progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: #5f746d;
+}
+.unit-progress-head strong { font-size: 20px; color: #163c33; }
+.unit-progress-bar {
+  margin-top: 10px;
+  height: 6px;
+  border-radius: 999px;
+  background: #e6f0eb;
+  overflow: hidden;
+}
+.unit-progress-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #19ad7b, #087b59);
+}
+.unit-now {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #f3faf7;
+  display: grid;
+  gap: 10px;
+}
+.unit-now-info { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.unit-now-label {
+  font-size: 12px;
+  color: #5f746d;
+}
+.unit-now strong { font-size: 18px; color: #163c33; }
+.unit-now small { font-size: 12px; color: #087b5b; }
+.unit-now-extra { color: #5f746d !important; }
+.unit-claim-next { width: 100%; margin-top: 14px; }
+.unit-claim-next.is-secondary-style {
+  background: #fff;
+  color: #087b59;
+  border: 1px solid #087b59;
+  box-shadow: none;
+}
+.unit-empty-tip { margin: 14px 0 0; }
+.unit-filter-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.unit-filter-chip {
+  flex: 0 0 auto;
+  border: 1px solid #d5e5de;
+  background: #fff;
+  color: #3f6559;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 13px;
+}
+.unit-filter-chip.is-active {
+  border-color: #087b59;
+  background: #e8f7f1;
+  color: #087b59;
+  font-weight: 600;
+}
+.unit-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.unit-chip {
+  min-height: 44px;
+  border: 1px solid #cfe0d8;
+  border-radius: 12px;
+  background: #fff;
+  color: #126f55;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0;
+}
+.unit-chip.is-open { background: #f7fcfa; }
+.unit-chip.is-mine {
+  border-color: #087b59;
+  background: #e8f7f1;
+}
+.unit-chip.is-done {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-color: #e2ebe7;
+  background: #f5f8f6;
+  color: #82918c;
+  font-weight: 500;
+}
+.unit-chip:disabled {
+  opacity: 0.45;
+}
+.unit-more-btn {
+  width: 100%;
+  margin-top: 10px;
+  border: 0;
+  background: transparent;
+  color: #108663;
+  font-size: 13px;
+  padding: 10px 0;
+}
+.unit-hint { margin: 8px 0 0; font-size: 12px; }
+.unit-mine-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+.unit-mine-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-top: 1px solid #eef3f0;
+  font-size: 14px;
+}
+.unit-mine-list li:first-child { border-top: 0; }
+.unit-mine-list li.is-focus span:first-child { color: #087b59; font-weight: 600; }
+.unit-mine-list em { font-style: normal; color: #5f746d; font-size: 12px; }
+.unit-mine-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.unit-enter-btn {
+  border: 1px solid #087b59;
+  background: #e8f7f1;
+  color: #087b59;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.unit-enter-btn:disabled { opacity: 0.45; }
+.unit-all-groups { margin-top: 8px; display: grid; gap: 14px; }
+.unit-group-title {
+  font-size: 13px;
+  font-weight: 650;
+  color: #31584d;
+  margin-bottom: 4px;
+}
+.unit-group-title.is-btn {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  padding: 8px 0;
+  font: inherit;
+  font-weight: 650;
+  color: #31584d;
+}
+.unit-group-title.is-btn span { font-weight: 500; color: #108663; font-size: 12px; }
+
+@media (min-width: 420px) {
+  .unit-grid { grid-template-columns: repeat(5, 1fr); }
+}
+
+/* 行程报销提醒 */
+.trip-remind-banner {
+  margin-top: 10px;
+  padding: 12px 12px 10px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #e8f7f1 0%, #f3faf7 100%);
+  border: 1px solid #b7e0ce;
+}
+.trip-remind-banner strong {
+  display: block;
+  font-size: 14px;
+  color: #0a5a40;
+  margin-bottom: 4px;
+}
+.trip-remind-banner p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #31584d;
+}
+.trip-start-hint {
+  margin: 14px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #087b59;
+}
+.trip-skip-tag {
+  margin: 10px 0 0;
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #fff4e5;
+  color: #b86a00;
+  font-size: 12px;
+  font-weight: 650;
+}
+.trip-choice-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+.trip-choice-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid #d5e5de;
+  background: #fff;
+  border-radius: 14px;
+  padding: 14px 14px;
+  text-align: left;
+  color: #3f6559;
+}
+.trip-choice-btn strong {
+  font-size: 15px;
+  color: #12483c;
+}
+.trip-choice-btn span {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #61756b;
+}
+.trip-choice-btn.is-primary {
+  border-color: #087b59;
+  background: #e8f7f1;
+}
+.trip-choice-btn:disabled {
+  opacity: 0.6;
+}
+
+/* 行程报销 */
+.trip-steps {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 12px 16px 0;
+}
+.trip-steps button {
+  border: 1px solid #d5e5de;
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px 8px;
+  font-size: 13px;
+  color: #3f6559;
+}
+.trip-steps button.is-active {
+  border-color: #087b59;
+  background: #e8f7f1;
+  color: #087b59;
+  font-weight: 650;
+}
+.trip-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: #5f746d;
+}
+.trip-field input,
+.trip-field select,
+.trip-field textarea {
+  border: 1px solid #d5e5de;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 15px;
+  color: #163c33;
+  background: #fff;
+}
+.trip-unit-tag {
+  margin: 10px 0 0;
+  font-size: 14px;
+  font-weight: 650;
+  color: #087b59;
+}
+.trip-reject {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fff1f0;
+  color: #a61d24;
+  font-size: 13px;
+}
+.trip-upload-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+  align-items: center;
+}
+.trip-upload-btn {
+  min-height: 72px;
+  min-width: 96px;
+  border: 1px dashed #9ec9b8;
+  border-radius: 12px;
+  background: #f7fcfa;
+  color: #087b59;
+  font-size: 13px;
+  padding: 8px 12px;
+}
+.trip-upload-btn.is-sm {
+  min-height: 44px;
+  min-width: 72px;
+}
+.trip-thumb {
+  position: relative;
+  width: 72px;
+  height: 72px;
+}
+.trip-thumb-img {
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #eef3f0;
+}
+.trip-thumb-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.trip-thumb-del {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 999px;
+  background: #333;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+}
+.trip-diff {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: #31584d;
+}
+.trip-diff strong { color: #087b59; font-size: 16px; }
+.trip-item-block {
+  margin-top: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eef3f0;
+}
+.trip-total {
+  margin: 14px 0 0;
+  font-size: 14px;
+  color: #31584d;
+}
+.trip-total strong { font-size: 18px; color: #087b59; }
+.trip-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 16px;
+}

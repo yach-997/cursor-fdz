@@ -22,12 +22,18 @@ import {
   BatchCreateTasksFromCasesDto,
   ClearConfirmQueryDto,
   FinanceCaseQueryDto,
+  OcrMileageDto,
+  ReviewExpenseDto,
   SaveCaseWorkDto,
+  SaveExpenseClaimDto,
+  SaveTripExpenseDto,
   SetCaseSiteDto,
   SetCaseTaskTypeDto,
+  SetCaseWorkPlanDto,
 } from '../dto/finance.dto';
 import { FinanceQueryService } from '../services/finance-query.service';
 import { FinanceWorkflowService } from '../services/finance-workflow.service';
+import { FinanceMultiService } from '../services/finance-multi.service';
 import { CaseBridgeService } from '../services/case-bridge.service';
 import { UploadService } from '../../upload/upload.service';
 
@@ -36,6 +42,7 @@ export class FinanceCaseController {
   constructor(
     private readonly service: FinanceQueryService,
     private readonly workflow: FinanceWorkflowService,
+    private readonly multi: FinanceMultiService,
     private readonly bridge: CaseBridgeService,
     private readonly upload: UploadService,
   ) {}
@@ -83,6 +90,28 @@ export class FinanceCaseController {
   ) {
     return this.workflow.myCase(id, user);
   }
+  @Get('expenses/pending') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) pendingExpenses(
+    @Query('status') status: string | undefined,
+    @Query('keyword') keyword: string | undefined,
+    @Query('month') month: string | undefined,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.multi.listExpenses(user, { status, keyword, month });
+  }
+  @Post('expenses/:expenseId/approve') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) approveExpense(
+    @Param('expenseId') expenseId: string,
+    @Body() dto: ReviewExpenseDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.multi.reviewExpense(expenseId, true, dto.note, user, dto.approvedAmount);
+  }
+  @Post('expenses/:expenseId/reject') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) rejectExpense(
+    @Param('expenseId') expenseId: string,
+    @Body() dto: ReviewExpenseDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.multi.reviewExpense(expenseId, false, dto.note, user);
+  }
   @Put(':id/site') @Roles(UserRole.SUPER_ADMIN) setSite(
     @Param('id') id: string,
     @Body() dto: SetCaseSiteDto,
@@ -108,7 +137,70 @@ export class FinanceCaseController {
     @Body() dto: AssignCaseDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
-    return this.workflow.assign(id, dto.inspectorId, dto.reason, user);
+    return this.workflow.assignMany(id, dto, user);
+  }
+  @Post(':id/assignees/:inspectorId/withdraw')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
+  withdrawAssignee(
+    @Param('id') id: string,
+    @Param('inspectorId') inspectorId: string,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.multi.withdrawAssignee(id, inspectorId, user);
+  }
+  @Put(':id/work-plan') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) setWorkPlan(
+    @Param('id') id: string,
+    @Body() dto: SetCaseWorkPlanDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.multi.setWorkPlan(id, dto, user);
+  }
+  @Get(':id/units') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR) listUnits(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.multi.listUnits(id, user);
+  }
+  @Post(':id/units/:unitId/claim') @Roles(UserRole.INSPECTOR) claimUnit(
+    @Param('id') id: string,
+    @Param('unitId') unitId: string,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.multi.claimUnit(id, unitId, user);
+  }
+  @Post(':id/units/:unitId/complete') @Roles(UserRole.INSPECTOR) completeUnit(
+    @Param('id') id: string,
+    @Param('unitId') unitId: string,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.multi.completeUnit(id, unitId, user);
+  }
+  /** 按台保存行程报销（可选） */
+  @Post(':id/units/:unitId/expense') @Roles(UserRole.INSPECTOR) saveUnitExpense(
+    @Param('id') id: string,
+    @Param('unitId') unitId: string,
+    @Body() dto: SaveTripExpenseDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.multi.upsertTripExpense(id, unitId, dto, user);
+  }
+  /** 识别里程表读数 */
+  @Post(':id/units/:unitId/expense/ocr-mileage')
+  @Roles(UserRole.INSPECTOR)
+  ocrUnitMileage(
+    @Param('id') id: string,
+    @Param('unitId') unitId: string,
+    @Body() dto: OcrMileageDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.multi.ocrUnitMileage(id, unitId, dto.imageUrl, dto.kind, user);
+  }
+  @Post(':id/expenses') @Roles(UserRole.INSPECTOR) saveExpense(
+    @Param('id') id: string,
+    @Body() dto: SaveExpenseClaimDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.multi.upsertExpense(id, dto, user);
   }
   @Post(':id/start') @Roles(UserRole.INSPECTOR) start(
     @Param('id') id: string,

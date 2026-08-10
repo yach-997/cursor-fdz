@@ -9,7 +9,7 @@ import { FinanceQueryService } from '../services/finance-query.service';
 @Controller('po-orders')
 export class FinancePoController {
   constructor(private readonly service: FinanceQueryService) {}
-  @Get() @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) list(
+  @Get() @Roles(UserRole.SUPER_ADMIN) list(
     @Query() query: PoOrderQueryDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
@@ -21,19 +21,19 @@ export class FinancePoController {
   ) {
     return this.service.clearPoOrders(user, query.confirm);
   }
-  @Post('generate-cases') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) generateCases(
+  @Post('generate-cases') @Roles(UserRole.SUPER_ADMIN) generateCases(
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.service.generateCasesFromPo(user);
   }
-  @Post(':id/match') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) match(
+  @Post(':id/match') @Roles(UserRole.SUPER_ADMIN) match(
     @Param('id') id: string,
     @Body() dto: MatchPoDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.service.matchPo(id, dto.gspCaseNo, user);
   }
-  @Post(':id/recalc') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) recalc(
+  @Post(':id/recalc') @Roles(UserRole.SUPER_ADMIN) recalc(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserContext,
   ) {

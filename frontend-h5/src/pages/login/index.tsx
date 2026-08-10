@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Form, Field, Toast } from 'react-vant';
 import { useAuthStore } from '../../stores/auth';
+import { brandMarkText, useBrandingStore } from '../../stores/branding';
 import './login.css';
 
 /** PC 入口页地址 */
@@ -14,6 +15,7 @@ const PC_PORTAL_URL = IS_LOCAL_HOST
 export default function LoginPage() {
   const navigate = useNavigate();
   const { login, loading, token, user, hydrate } = useAuthStore();
+  const branding = useBrandingStore((s) => s.branding);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
@@ -71,9 +73,15 @@ export default function LoginPage() {
 
       <div className="h5-login-page__inner">
         <div className="h5-login-brand">
-          <div className="h5-login-brand__logo" aria-hidden>光</div>
-          <div className="h5-login-brand__eyebrow">现场巡检端</div>
-          <h1>光伏储能巡检</h1>
+          <div className="h5-login-brand__logo" aria-hidden>
+            {branding.logoUrl ? (
+              <img src={branding.logoUrl} alt="" />
+            ) : (
+              brandMarkText(branding.systemName)
+            )}
+          </div>
+          <div className="h5-login-brand__eyebrow">现场作业端</div>
+          <h1>{branding.systemName}</h1>
           <p>现场任务、照片与报告，随时掌握</p>
         </div>
 
@@ -118,11 +126,11 @@ export default function LoginPage() {
               onClick={() => void onSubmit()}
               className="h5-login-btn"
             >
-              进入巡检端
+              进入作业端
             </Button>
           </div>
         </div>
-        <div className="h5-login-trust"><i /> 数据安全传输 · 巡检记录自动保存</div>
+        <div className="h5-login-trust"><i /> 数据安全传输 · 作业记录自动保存</div>
       </div>
     </div>
   );

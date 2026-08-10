@@ -4,6 +4,7 @@ import { NavBar, Cell, Empty, Tag, Image, PullRefresh, Button } from 'react-vant
 import { fetchRecord, type RecordItem } from '../../api/record';
 import { displayPhotoUrl } from '../../utils/photo-url';
 import { RECORD_STATUS_LABEL } from '../../utils/displayLabels';
+import { resolveWorkTypeLabel, workActionLabel } from '../../utils/workTypeLabels';
 import './report.css';
 
 const AI_LABEL: Record<string, string> = {
@@ -90,7 +91,9 @@ export default function ReportPage() {
           <div className="report-body">
             <Cell.Group inset>
               <Cell
-                title={record.task?.taskName || '巡检报告'}
+                title={
+                  record.task?.taskName || `${resolveWorkTypeLabel(record.task)}报告`
+                }
                 label={`状态：${RECORD_STATUS_LABEL[record.status] || '未知状态'}${
                   record.submittedAt
                     ? ` · 提交 ${String(record.submittedAt).slice(0, 16)}`
@@ -117,6 +120,62 @@ export default function ReportPage() {
                 <span>失败</span>
               </div>
             </div>
+
+            {record.location ? (
+              <Cell.Group inset title="现场定位" style={{ marginTop: 12 }}>
+                <Cell
+                  title="状态"
+                  value={
+                    record.location.status === 'failed' ||
+                    record.location.status === 'skipped'
+                      ? '位置异常'
+                      : record.location.status === 'weak'
+                        ? '弱定位'
+                        : record.location.latitude != null
+                          ? '正常'
+                          : '未知'
+                  }
+                />
+                {record.location.latitude != null && record.location.longitude != null ? (
+                  <Cell
+                    title="经纬度"
+                    value={`${Number(record.location.latitude).toFixed(6)}, ${Number(
+                      record.location.longitude,
+                    ).toFixed(6)}`}
+                  />
+                ) : (
+                  <Cell
+                    title="说明"
+                    value={
+                      record.location.reason ||
+                      (record.location.status === 'skipped'
+                        ? '工程师确认无法定位后继续作业'
+                        : '未能获取现场定位')
+                    }
+                  />
+                )}
+                {record.location.address ? (
+                  <Cell title="地址" value={record.location.address} />
+                ) : null}
+                {(record.location.accuracyMeters != null &&
+                  record.location.accuracyMeters > 0) ||
+                record.location.distanceToSiteMeters != null ? (
+                  <Cell
+                    title="精度/距离"
+                    value={`${
+                      record.location.accuracyMeters != null &&
+                      record.location.accuracyMeters > 0
+                        ? `约 ${record.location.accuracyMeters} 米`
+                        : '-'
+                    }${
+                      record.location.distanceToSiteMeters != null
+                        ? ` · 距归属网格约 ${record.location.distanceToSiteMeters} 米`
+                        : ''
+                    }`}
+                  />
+                ) : null}
+              </Cell.Group>
+            ) : null}
 
             {record.rejectReason?.reason && (
               <div className="report-alert report-alert--reject">

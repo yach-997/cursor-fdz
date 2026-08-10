@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { NavBar, Cell, Button, Empty, Toast, Tag, Collapse, Dialog } from 'react-vant';
 import { fetchTask, startTask, deleteTask, type TaskItem } from '../../api/task';
 import { fetchDeviceHistory, type DeviceHistory } from '../../api/device';
+import { resolveWorkTypeLabel, workActionLabel } from '../../utils/workTypeLabels';
 
 const STATUS_TEXT: Record<string, string> = {
   pending: '未开始',
@@ -117,6 +118,8 @@ export default function TaskDetailPage() {
     !!reject?.reason || task?.status === 'rejected' || task?.statusLabel === '已驳回' ||
     task?.statusLabel === '待整改';
 
+  const workType = resolveWorkTypeLabel(task);
+
   return (
     <div>
       <NavBar title="任务详情" leftText="返回" onClickLeft={() => navigate(-1)} />
@@ -190,7 +193,7 @@ export default function TaskDetailPage() {
               <Cell title="序列号" value={task.device?.serialNumber || '-'} />
             )}
             <Cell
-              title={task.serviceCaseId ? '任务类型' : '设备类型'}
+              title={task.serviceCaseId ? '服务类型' : '设备类型'}
               value={
                 task.serviceCaseId
                   ? task.device?.model || DEVICE_TYPE[task.device?.deviceType || ''] || '-'
@@ -272,7 +275,7 @@ export default function TaskDetailPage() {
                   style={{ height: 48 }}
                   onClick={() => navigate(`/m/report/${task.record!.id}`)}
                 >
-                  查看巡检报告
+                  {workActionLabel(workType, 'report')}
                 </Button>
               )}
             <Button
@@ -285,10 +288,10 @@ export default function TaskDetailPage() {
               onClick={() => void onStart()}
             >
               {task.status === 'pending'
-                ? '开始巡检'
+                ? workActionLabel(workType, 'start')
                 : reject?.reason
                   ? '去返工'
-                  : '继续巡检'}
+                  : workActionLabel(workType, 'continue')}
             </Button>
             {canDelete && (
               <Button

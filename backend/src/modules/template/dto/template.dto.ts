@@ -5,9 +5,11 @@ import {
   IsEnum,
   IsBoolean,
   IsArray,
+  IsIn,
   ValidateNested,
   IsInt,
   Min,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { DeviceType, CheckType } from '../../../common/enums';
@@ -45,26 +47,64 @@ export class TemplateEntryDto {
   isOptionalModule?: boolean;
 }
 
+/** 产品线变体 DTO */
+export class TemplateProductLineDto {
+  @IsOptional()
+  @IsString()
+  id?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TemplateEntryDto)
+  entries: TemplateEntryDto[];
+}
+
 /** 创建模板 */
 export class CreateTemplateDto {
   @IsString()
   @IsNotEmpty()
   name: string;
 
-  @IsEnum(DeviceType)
-  deviceType: DeviceType;
-
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => TemplateEntryDto)
-  entries: TemplateEntryDto[];
+  entries?: TemplateEntryDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TemplateProductLineDto)
+  productLines?: TemplateProductLineDto[];
 
   @IsBoolean()
   isGlobal: boolean;
 
+  /** 兼容旧设备巡检；自定义任务类型可不传，后端默认 string_inverter */
   @IsOptional()
-  @IsPostgresUuid({ message: '站点标识格式不正确' })
+  @IsEnum(DeviceType)
+  deviceType?: DeviceType;
+
+  @IsOptional()
+  @IsPostgresUuid({ message: '网格标识格式不正确' })
   siteId?: string | null;
+
+  @IsOptional()
+  @IsIn(['single', 'multi'])
+  assignMode?: 'single' | 'multi';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  unitLabel?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  expenseEnabledDefault?: boolean;
 }
 
 /** 更新模板（修改后 version+1） */
@@ -84,12 +124,31 @@ export class UpdateTemplateDto {
   entries?: TemplateEntryDto[];
 
   @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TemplateProductLineDto)
+  productLines?: TemplateProductLineDto[];
+
+  @IsOptional()
   @IsBoolean()
   isGlobal?: boolean;
 
   @IsOptional()
-  @IsPostgresUuid({ message: '站点标识格式不正确' })
+  @IsPostgresUuid({ message: '网格标识格式不正确' })
   siteId?: string | null;
+
+  @IsOptional()
+  @IsIn(['single', 'multi'])
+  assignMode?: 'single' | 'multi';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  unitLabel?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  expenseEnabledDefault?: boolean;
 }
 
 /** 查询模板 */
@@ -99,7 +158,7 @@ export class QueryTemplateDto {
   deviceType?: DeviceType;
 
   @IsOptional()
-  @IsPostgresUuid({ message: '站点标识格式不正确' })
+  @IsPostgresUuid({ message: '网格标识格式不正确' })
   siteId?: string;
 
   /** 按模板名称模糊搜索 */
@@ -108,8 +167,8 @@ export class QueryTemplateDto {
   keyword?: string;
 }
 
-/** 克隆模板到站点 */
+/** 克隆模板到网格 */
 export class CloneTemplateDto {
-  @IsPostgresUuid({ message: '站点标识格式不正确' })
+  @IsPostgresUuid({ message: '网格标识格式不正确' })
   siteId: string;
 }

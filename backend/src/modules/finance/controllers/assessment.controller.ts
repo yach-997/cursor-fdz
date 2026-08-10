@@ -5,7 +5,9 @@ import { UserRole } from '../../../common/enums';
 import { CurrentUserContext } from '../../../common/interfaces';
 import {
   AssessmentQueryDto,
+  ClearConfirmQueryDto,
   CreateAssessmentEventDto,
+  RankAssessmentDto,
   SaveAssessmentDto,
 } from '../dto/finance.dto';
 import { FinanceSettlementService } from '../services/finance-settlement.service';
@@ -20,13 +22,20 @@ export class FinanceAssessmentController {
     return this.service.eventCatalog();
   }
 
+  @Delete('clear')
+  @Roles(UserRole.SUPER_ADMIN)
+  clear(@Query() query: ClearConfirmQueryDto, @CurrentUser() user: CurrentUserContext) {
+    return this.service.clearAssessments(user, query.confirm);
+  }
+
   @Get('events')
   listEvents(
     @Query('month') month: string,
-    @Query('userId') userId: string,
+    @Query('userId') userId: string | undefined,
+    @Query('serviceCaseId') serviceCaseId: string | undefined,
     @CurrentUser() user: CurrentUserContext,
   ) {
-    return this.service.listEvents(month, userId, user);
+    return this.service.listEvents(month, user, { userId, serviceCaseId });
   }
 
   @Post('events')
@@ -41,7 +50,11 @@ export class FinanceAssessmentController {
 
   @Get()
   list(@Query() query: AssessmentQueryDto, @CurrentUser() user: CurrentUserContext) {
-    return this.service.listAssessments(query.month, user);
+    return this.service.listAssessments(query.month, user, {
+      keyword: query.keyword,
+      siteId: query.siteId,
+      role: query.role,
+    });
   }
 
   @Post()
@@ -50,7 +63,11 @@ export class FinanceAssessmentController {
   }
 
   @Post(':month/rank')
-  rank(@Param('month') month: string, @CurrentUser() user: CurrentUserContext) {
-    return this.service.rank(month, user);
+  rank(
+    @Param('month') month: string,
+    @Body() dto: RankAssessmentDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.service.rank(month, dto, user);
   }
 }

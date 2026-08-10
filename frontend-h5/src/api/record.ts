@@ -20,6 +20,17 @@ export interface RecordItem {
   taskId: string;
   deviceType: string;
   entries: RecordEntry[];
+  location?: {
+    status?: 'ok' | 'weak' | 'failed' | 'skipped';
+    latitude?: number | null;
+    longitude?: number | null;
+    accuracyMeters?: number;
+    capturedAt?: string;
+    address?: string;
+    distanceToSiteMeters?: number;
+    reasonCode?: string;
+    reason?: string;
+  } | null;
   status: string;
   submittedAt?: string | null;
   rejectReason?: { reason: string; entryIds?: string[]; rejectedAt?: string } | null;
@@ -59,6 +70,9 @@ export async function submitRecord(
     gps?: string;
     accuracy?: string;
     capturedAt?: string;
+    locationStatus?: 'ok' | 'weak' | 'failed' | 'skipped';
+    locationReasonCode?: string;
+    locationReason?: string;
   },
 ) {
   const { data } = await request.put<ApiResponse<RecordItem>>(
@@ -76,6 +90,9 @@ export async function uploadPhoto(
     accuracy?: string;
     capturedAt?: string;
     photoTakenAt?: string;
+    locationStatus?: string;
+    locationReasonCode?: string;
+    locationReason?: string;
   },
   onProgress?: (percent: number) => void,
 ) {
@@ -99,18 +116,28 @@ export async function uploadPhoto(
 
 export interface LocationVerification {
   verified: boolean;
+  status?: 'ok' | 'weak' | 'failed' | 'skipped';
+  latitude?: number | null;
+  longitude?: number | null;
   distanceMeters: number;
+  distanceToSiteMeters?: number;
   radiusMeters: number;
   accuracyMeters: number;
+  capturedAt?: string;
   checkedAt: string;
   siteName: string;
+  reasonCode?: string;
+  reason?: string;
 }
 
 export async function checkTaskLocation(payload: {
   taskId: string;
-  gps: string;
-  accuracy: string;
-  capturedAt: string;
+  gps?: string;
+  accuracy?: string;
+  capturedAt?: string;
+  locationStatus?: string;
+  locationReasonCode?: string;
+  locationReason?: string;
 }) {
   const { data } = await request.post<ApiResponse<LocationVerification>>(
     '/upload/location-check',

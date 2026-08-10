@@ -46,7 +46,7 @@ export class GeocodeController {
 
     if (!result) {
       throw new BadRequestException(
-        '未找到该地址对应坐标，请尝试填写更完整的地址或站点名称，也可手动在地图上选点',
+        '未找到该地址对应坐标，请尝试填写更完整的地址或网格名称，也可手动在地图上选点',
       );
     }
     return result;

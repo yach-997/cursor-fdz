@@ -37,10 +37,10 @@ export interface CurrentUserContext {
   roles: string[];
   status: string;
   client?: LoginClient;
-  /** 网格长/副网格长管理的站点 ID 列表 */
+  /** 网格长/副网格长管理的网格 ID 列表 */
   managedSiteIds: string[];
-  /** 工程师加入的站点 ID 列表 */
+  /** 工程师加入的网格 ID 列表 */
   memberSiteIds: string[];
-  /** 数据范围可用的站点 ID（由 DataScope 计算） */
+  /** 数据范围可用的网格 ID（由 DataScope 计算） */
   scopedSiteIds: string[];
 }

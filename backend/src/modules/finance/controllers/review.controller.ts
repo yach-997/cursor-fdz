@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { UserRole } from '../../../common/enums';
@@ -8,6 +8,7 @@ import {
   DeductionReviewDto,
   RejectSettlementDto,
   ReviewCommentDto,
+  ReviewPendingQueryDto,
 } from '../dto/finance.dto';
 import { FinanceWorkflowService } from '../services/finance-workflow.service';
 
@@ -17,8 +18,16 @@ export class FinanceReviewController {
   constructor(private readonly workflow: FinanceWorkflowService) {}
 
   @Get('pending')
-  pending(@CurrentUser() user: CurrentUserContext) {
-    return this.workflow.pendingReview(user);
+  pending(@Query() query: ReviewPendingQueryDto, @CurrentUser() user: CurrentUserContext) {
+    return this.workflow.pendingReview(user, query);
+  }
+
+  @Get(':caseId/amount-breakdown')
+  amountBreakdown(
+    @Param('caseId') caseId: string,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.workflow.amountBreakdown(caseId, user);
   }
 
   @Post(':caseId/approve')

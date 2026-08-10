@@ -5,6 +5,7 @@ import zhCN from 'antd/locale/zh_CN';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { router } from './router';
 import { useAuthStore } from './stores/auth';
+import { useBrandingStore } from './stores/branding';
 import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
 
@@ -19,10 +20,14 @@ const queryClient = new QueryClient({
 
 function AppBootstrap() {
   const hydrate = useAuthStore((s) => s.hydrate);
+  const hydrateBranding = useBrandingStore((s) => s.hydrate);
+  const refreshBranding = useBrandingStore((s) => s.refresh);
 
   useEffect(() => {
     hydrate();
-  }, [hydrate]);
+    hydrateBranding();
+    void refreshBranding();
+  }, [hydrate, hydrateBranding, refreshBranding]);
 
   return <RouterProvider router={router} />;
 }

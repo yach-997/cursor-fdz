@@ -35,7 +35,7 @@ export class SiteService implements OnModuleInit {
     private readonly dataSource: DataSource,
   ) {}
 
-  /** 兼容关闭 DB_SYNC 的线上数据库；幂等执行，不影响已有站点。 */
+  /** 兼容关闭 DB_SYNC 的线上数据库；幂等执行，不影响已有网格。 */
   async onModuleInit() {
     const columns = (await this.dataSource.query(
       `SELECT 1
@@ -52,7 +52,7 @@ export class SiteService implements OnModuleInit {
     }
   }
 
-  /** 分页查询站点列表（含数据隔离） */
+  /** 分页查询网格列表（含数据隔离） */
   async findAll(query: QuerySiteDto, currentUser: CurrentUserContext) {
     const page = query.page || 1;
     const limit = query.limit || 10;
@@ -114,14 +114,14 @@ export class SiteService implements OnModuleInit {
     };
   }
 
-  /** 获取站点详情 */
+  /** 获取网格详情 */
   async findOne(id: string, currentUser: CurrentUserContext) {
     const site = await this.siteRepo.findOne({
       where: { id, deletedAt: IsNull() },
     });
 
     if (!site) {
-      throw new NotFoundException('站点不存在');
+      throw new NotFoundException('网格不存在');
     }
 
     await this.attachManagers([site]);
@@ -129,13 +129,13 @@ export class SiteService implements OnModuleInit {
     return this.toSafeSite(site);
   }
 
-  /** 创建站点（仅超管） */
+  /** 创建网格（仅超管） */
   async create(dto: CreateSiteDto) {
     const exists = await this.siteRepo.findOne({
       where: { code: dto.code, deletedAt: IsNull() },
     });
     if (exists) {
-      throw new ConflictException('站点编码已存在');
+      throw new ConflictException('网格编码已存在');
     }
 
     if (dto.managerId) {
@@ -160,11 +160,11 @@ export class SiteService implements OnModuleInit {
     return this.findOneRaw(saved.id);
   }
 
-  /** 更新站点 */
+  /** 更新网格 */
   async update(id: string, dto: UpdateSiteDto, currentUser: CurrentUserContext) {
     const site = await this.getActiveSite(id);
 
-    // 网格长只能更新自己管理的站点，且不能改 managerId
+    // 网格长只能更新自己管理的网格，且不能改 managerId
     if (currentUser.role === UserRole.SITE_MANAGER) {
       this.assertSiteAccess(id, currentUser);
       if (dto.managerId !== undefined) {
@@ -177,7 +177,7 @@ export class SiteService implements OnModuleInit {
         where: { code: dto.code, deletedAt: IsNull() },
       });
       if (exists) {
-        throw new ConflictException('站点编码已存在');
+        throw new ConflictException('网格编码已存在');
       }
     }
 
@@ -206,7 +206,7 @@ export class SiteService implements OnModuleInit {
   }
 
   /**
-   * 软删除站点
+   * 软删除网格
    * 业务规则：有设备则禁止删除，返回 400
    */
   async remove(id: string) {
@@ -215,7 +215,7 @@ export class SiteService implements OnModuleInit {
     const deviceCount = await this.deviceRepo.count({ where: { siteId: id } });
     if (deviceCount > 0) {
       throw new BadRequestException(
-        `该站点下仍有 ${deviceCount} 台设备，请先转移或删除设备后再删除站点`,
+        `该网格下仍有 ${deviceCount} 台设备，请先转移或删除设备后再删除网格`,
       );
     }
 
@@ -249,7 +249,7 @@ export class SiteService implements OnModuleInit {
 
   /**
    * 任命副网格长（可多名）
-   * 仅本站正网格长可操作；自动赋予网格长角色
+   * 仅本网格正网格长可操作；自动赋予网格长角色
    */
   async appointDeputy(
     id: string,
@@ -283,7 +283,7 @@ export class SiteService implements OnModuleInit {
         existing.status === CommonStatus.ACTIVE &&
         existing.memberRole === SiteMemberRole.DEPUTY_MANAGER
       ) {
-        throw new ConflictException('该用户已是本站副网格长');
+        throw new ConflictException('该用户已是本网格副网格长');
       }
       existing.memberRole = SiteMemberRole.DEPUTY_MANAGER;
       existing.status = CommonStatus.ACTIVE;
@@ -314,14 +314,14 @@ export class SiteService implements OnModuleInit {
       },
     });
     if (!member || member.status !== CommonStatus.ACTIVE) {
-      throw new NotFoundException('该用户不是本站副网格长');
+      throw new NotFoundException('该用户不是本网格副网格长');
     }
     member.status = CommonStatus.INACTIVE;
     await this.siteMemberRepo.save(member);
     return { success: true };
   }
 
-  /** 获取站点成员列表 */
+  /** 获取网格成员列表 */
   async getMembers(
     id: string,
     currentUser: CurrentUserContext,
@@ -353,8 +353,8 @@ export class SiteService implements OnModuleInit {
   }
 
   /**
-   * 聘用工程师（同一工程师可同时加入多个站点）
-   * 仅本站正网格长可操作
+   * 聘用工程师（同一工程师可同时加入多个网格）
+   * 仅本网格正网格长可操作
    */
   async addMember(id: string, dto: AddMemberDto, currentUser: CurrentUserContext) {
     const site = await this.getActiveSite(id);
@@ -382,13 +382,13 @@ export class SiteService implements OnModuleInit {
         existing.status === CommonStatus.ACTIVE &&
         existing.memberRole === SiteMemberRole.DEPUTY_MANAGER
       ) {
-        throw new ConflictException('该用户已是本站副网格长，无法同时任工程师');
+        throw new ConflictException('该用户已是本网格副网格长，无法同时任工程师');
       }
       if (
         existing.status === CommonStatus.ACTIVE &&
         existing.memberRole === SiteMemberRole.INSPECTOR
       ) {
-        throw new ConflictException('该工程师已在本站聘用中');
+        throw new ConflictException('该工程师已在本网格聘用中');
       }
       existing.memberRole = SiteMemberRole.INSPECTOR;
       existing.status = CommonStatus.ACTIVE;
@@ -406,7 +406,7 @@ export class SiteService implements OnModuleInit {
     return this.toMemberDto(saved, user);
   }
 
-  /** 解聘工程师（不影响其在其他站点的聘用） */
+  /** 解聘工程师（不影响其在其他网格的聘用） */
   async removeMember(id: string, userId: string, currentUser: CurrentUserContext) {
     const site = await this.getActiveSite(id);
     this.assertSiteStaffManager(site, currentUser);
@@ -420,7 +420,7 @@ export class SiteService implements OnModuleInit {
     });
 
     if (!member || member.status !== CommonStatus.ACTIVE) {
-      throw new NotFoundException('该工程师未在本站聘用');
+      throw new NotFoundException('该工程师未在本网格聘用');
     }
 
     member.status = CommonStatus.INACTIVE;
@@ -436,7 +436,7 @@ export class SiteService implements OnModuleInit {
       where: { id, deletedAt: IsNull() },
     });
     if (!site) {
-      throw new NotFoundException('站点不存在');
+      throw new NotFoundException('网格不存在');
     }
     return site;
   }
@@ -444,7 +444,7 @@ export class SiteService implements OnModuleInit {
   private async findOneRaw(id: string) {
     const site = await this.siteRepo.findOne({ where: { id } });
     if (!site) {
-      throw new NotFoundException('站点不存在');
+      throw new NotFoundException('网格不存在');
     }
     await this.attachManagers([site]);
     return this.toSafeSite(site);
@@ -481,32 +481,32 @@ export class SiteService implements OnModuleInit {
     return user;
   }
 
-  /** 校验当前用户是否有权访问该站点 */
+  /** 校验当前用户是否有权访问该网格 */
   private assertSiteAccess(siteId: string, currentUser: CurrentUserContext) {
     if (currentUser.role === UserRole.SUPER_ADMIN) {
       return;
     }
     if (currentUser.role === UserRole.SITE_MANAGER) {
       if (!currentUser.managedSiteIds.includes(siteId)) {
-        throw new ForbiddenException('无权访问该站点数据');
+        throw new ForbiddenException('无权访问该网格数据');
       }
       return;
     }
     if (currentUser.role === UserRole.INSPECTOR) {
       if (!currentUser.memberSiteIds.includes(siteId)) {
-        throw new ForbiddenException('无权访问该站点数据');
+        throw new ForbiddenException('无权访问该网格数据');
       }
     }
   }
 
-  /** 本站正网格长或副网格长可管理编制（权限对齐） */
+  /** 本网格正网格长或副网格长可管理编制（权限对齐） */
   private assertSiteStaffManager(site: Site, currentUser: CurrentUserContext) {
     if (currentUser.role !== UserRole.SITE_MANAGER) {
-      throw new ForbiddenException('仅本站正/副网格长可管理副网格长与工程师编制');
+      throw new ForbiddenException('仅本网格正/副网格长可管理副网格长与工程师编制');
     }
     if (site.managerId === currentUser.id) return;
     if (currentUser.managedSiteIds?.includes(site.id)) return;
-    throw new ForbiddenException('仅本站正/副网格长可管理副网格长与工程师编制');
+    throw new ForbiddenException('仅本网格正/副网格长可管理副网格长与工程师编制');
   }
 
   private async deactivateDeputyMembership(siteId: string, userId: string) {

@@ -15,10 +15,9 @@ export class PriceService {
     private readonly logs: ChangeLogService,
   ) {}
   async list(query: PriceQueryDto, user: CurrentUserContext) {
-    if (user.role !== UserRole.SUPER_ADMIN && query.type === 'perf') {
-      throw new ForbiddenException('网格长无权查看绩效单价库');
+    if (user.role !== UserRole.SUPER_ADMIN) {
+      throw new ForbiddenException('仅管理员可查看价格库');
     }
-    if (user.role !== UserRole.SUPER_ADMIN) query.type = 'settle';
     const page = query.page || 1,
       limit = query.limit || 10;
     const qb = this.repo.createQueryBuilder('p');

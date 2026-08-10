@@ -44,7 +44,7 @@ export class StatsService {
     return this.buildDashboard(undefined, currentUser);
   }
 
-  /** 网格长本站仪表盘 */
+  /** 网格长本网格仪表盘 */
   async getSiteDashboard(siteId: string | undefined, currentUser: CurrentUserContext) {
     const ids = this.resolveSiteIds(siteId, currentUser);
     if (!ids.length) {
@@ -287,7 +287,7 @@ export class StatsService {
       rows.push({
         记录ID: rec.id,
         任务名称: task?.taskName || '',
-        站点: site?.name || '',
+        网格: site?.name || '',
         设备序列号: device?.serialNumber || '',
         设备类型: rec.deviceType,
         工程师: inspector?.realName || '',
@@ -535,7 +535,7 @@ export class StatsService {
       if (!currentUser.managedSiteIds.length) return [];
       if (siteId) {
         if (!currentUser.managedSiteIds.includes(siteId)) {
-          throw new ForbiddenException('无权访问该站点');
+          throw new ForbiddenException('无权访问该网格');
         }
         return [siteId];
       }

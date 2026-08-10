@@ -107,16 +107,15 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('「安装固定检查」须至少上传 2 张不同角度照片后再分析');
     }
 
-    // 标记 pending
+    // 标记 pending；重新分析时清掉工程师现场确认，让新 AI 结论写回最终结论
     entry.aiResult = {
       status: CheckResult.PENDING,
       confidence: 0,
       reason: photoUrls.length > 1 ? `分析中（共 ${photoUrls.length} 张）...` : '分析中...',
       startedAt: new Date().toISOString(),
     };
-    if (!entry.manualResult || entry.manualResult === CheckResult.PENDING) {
-      entry.finalResult = null;
-    }
+    entry.manualResult = CheckResult.PENDING;
+    entry.finalResult = null;
     await this.recordRepo.save(record);
 
     // 重新分析时清掉上一轮缓存，否则轮询会立即读到旧的失败结果。

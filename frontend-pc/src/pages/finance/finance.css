@@ -79,6 +79,23 @@
   color: #133f34;
   font-size: 25px;
 }
+.finance-stat-clickable {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  border: 1px solid transparent;
+}
+.finance-stat-clickable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 28px rgba(20, 75, 58, 0.14);
+  border-color: #9fd5c2;
+}
+.finance-stat-clickable em {
+  display: block;
+  margin-top: 6px;
+  font-style: normal;
+  font-size: 12px;
+  color: #07845f;
+}
 .finance-detail-section {
   margin-top: 18px;
 }
@@ -104,4 +121,53 @@
   .finance-card .ant-table {
     min-width: 760px;
   }
+}
+
+.settle-amount-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #0f6b52;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.settle-amount-link:hover {
+  color: #087b59;
+}
+.settle-amount-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.settle-amount-summary > div {
+  padding: 12px;
+  border-radius: 12px;
+  background: #f3faf7;
+  border: 1px solid #e2efe9;
+}
+.settle-amount-summary span {
+  display: block;
+  font-size: 12px;
+  color: #5f746d;
+}
+.settle-amount-summary strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 20px;
+  color: #0f6b52;
+  letter-spacing: -0.02em;
+}
+.settle-amount-summary em {
+  display: block;
+  margin-top: 4px;
+  font-style: normal;
+  font-size: 11px;
+  color: #8a9b94;
+}
+.settle-amount-summary .is-neg,
+.settle-amount-link.is-neg {
+  color: #c84b4b;
 }

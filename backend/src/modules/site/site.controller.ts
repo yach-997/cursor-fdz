@@ -25,26 +25,26 @@ import { UserRole } from '../../common/enums';
 import { CurrentUserContext } from '../../common/interfaces';
 import { ParsePostgresUuidPipe } from '../../common/pipes/parse-postgres-uuid.pipe';
 
-/** 站点管理控制器 */
+/** 网格管理控制器 */
 @Controller('sites')
 export class SiteController {
   constructor(private readonly siteService: SiteService) {}
 
-  /** 站点列表（超管全量，网格长/工程师按数据范围） */
+  /** 网格列表（超管全量，网格长/工程师按数据范围） */
   @Get()
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   async findAll(@Query() query: QuerySiteDto, @CurrentUser() user: CurrentUserContext) {
     return this.siteService.findAll(query, user);
   }
 
-  /** 创建站点（仅管理员） */
+  /** 创建网格（仅管理员） */
   @Post()
   @Roles(UserRole.SUPER_ADMIN)
   async create(@Body() dto: CreateSiteDto) {
     return this.siteService.create(dto);
   }
 
-  /** 站点详情 */
+  /** 网格详情 */
   @Get(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
   async findOne(
@@ -54,7 +54,7 @@ export class SiteController {
     return this.siteService.findOne(id, user);
   }
 
-  /** 更新站点 */
+  /** 更新网格 */
   @Put(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async update(
@@ -65,7 +65,7 @@ export class SiteController {
     return this.siteService.update(id, dto, user);
   }
 
-  /** 软删除站点（仅管理员，有设备则 400） */
+  /** 软删除网格（仅管理员，有设备则 400） */
   @Delete(':id')
   @Roles(UserRole.SUPER_ADMIN)
   @HttpCode(HttpStatus.OK)
@@ -83,7 +83,7 @@ export class SiteController {
     return this.siteService.appointManager(id, dto);
   }
 
-  /** 任命副网格长（仅本站正网格长） */
+  /** 任命副网格长（仅本网格正网格长） */
   @Post(':id/deputies')
   @Roles(UserRole.SITE_MANAGER)
   async appointDeputy(
@@ -94,7 +94,7 @@ export class SiteController {
     return this.siteService.appointDeputy(id, dto, user);
   }
 
-  /** 移除副网格长（仅本站正网格长） */
+  /** 移除副网格长（仅本网格正网格长） */
   @Delete(':id/deputies/:userId')
   @Roles(UserRole.SITE_MANAGER)
   @HttpCode(HttpStatus.OK)
@@ -106,7 +106,7 @@ export class SiteController {
     return this.siteService.removeDeputy(id, userId, user);
   }
 
-  /** 站点成员列表（含副网格长/工程师，可按 role 过滤） */
+  /** 网格成员列表（含副网格长/工程师，可按 role 过滤） */
   @Get(':id/members')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   async getMembers(
@@ -117,7 +117,7 @@ export class SiteController {
     return this.siteService.getMembers(id, user, role);
   }
 
-  /** 聘用工程师（仅本站正网格长；工程师可同时属于多个站点） */
+  /** 聘用工程师（仅本网格正网格长；工程师可同时属于多个网格） */
   @Post(':id/members')
   @Roles(UserRole.SITE_MANAGER)
   async addMember(
@@ -128,7 +128,7 @@ export class SiteController {
     return this.siteService.addMember(id, dto, user);
   }
 
-  /** 解聘工程师（仅本站正网格长） */
+  /** 解聘工程师（仅本网格正网格长） */
   @Delete(':id/members/:userId')
   @Roles(UserRole.SITE_MANAGER)
   @HttpCode(HttpStatus.OK)

@@ -18,6 +18,7 @@ const MyPage = lazy(() => import('../pages/my'));
 const SettingsPage = lazy(() => import('../pages/settings'));
 const PhotoPreviewPage = lazy(() => import('../pages/photo'));
 const FinanceCaseDetailPage = lazy(() => import('../pages/finance/case-detail'));
+const FinanceExpensePage = lazy(() => import('../pages/finance/expense'));
 const MyIncomePage = lazy(() => import('../pages/finance/income'));
 
 function Lazy({ children }: { children: React.ReactNode }) {
@@ -36,7 +37,7 @@ function Lazy({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** H5 路由：登录 + 站点选择 + 底部 Tab */
+/** H5 路由：登录 + 网格选择 + 底部 Tab */
 export const router = createBrowserRouter([
   {
     errorElement: <RouteErrorPage />,
@@ -53,6 +54,10 @@ export const router = createBrowserRouter([
   {
     path: '/m/finance-cases/:id',
     element: <AuthGuard><Lazy><FinanceCaseDetailPage /></Lazy></AuthGuard>,
+  },
+  {
+    path: '/m/finance-cases/:id/expense',
+    element: <AuthGuard><Lazy><FinanceExpensePage /></Lazy></AuthGuard>,
   },
   {
     path: '/m/income',

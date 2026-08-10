@@ -34,18 +34,44 @@ export class UploadPhotoMetaDto {
   @IsOptional()
   @IsString()
   inspectorName?: string;
+  @IsOptional()
+  @IsString()
+  locationStatus?: string;
+
+  @IsOptional()
+  @IsString()
+  locationReasonCode?: string;
+
+  @IsOptional()
+  @IsString()
+  locationReason?: string;
 }
 
 export class LocationCheckDto {
   @IsPostgresUuid()
   taskId: string;
 
+  @IsOptional()
   @IsString()
-  gps: string;
+  gps?: string;
 
+  @IsOptional()
   @IsString()
-  accuracy: string;
+  accuracy?: string;
 
+  @IsOptional()
   @IsDateString()
-  capturedAt: string;
+  capturedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  locationStatus?: string;
+
+  @IsOptional()
+  @IsString()
+  locationReasonCode?: string;
+
+  @IsOptional()
+  @IsString()
+  locationReason?: string;
 }

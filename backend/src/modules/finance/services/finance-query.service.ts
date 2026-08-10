@@ -1,13 +1,14 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { CasePerformance, PoItem, PoOrder, ServiceCase } from '../../../entities';
+import { CasePerformance, InspectionTemplate, PoItem, PoOrder, ServiceCase } from '../../../entities';
 import { CurrentUserContext } from '../../../common/interfaces';
 import { ChangeLogService } from './change-log.service';
 import { FinanceScopeService } from './finance-scope.service';
 import { DashboardQueryDto, FinanceCaseQueryDto, PoOrderQueryDto } from '../dto/finance.dto';
 import { UserRole } from '../../../common/enums';
 import { assertFinanceClearAllowed } from '../../../common/utils/finance-clear-guard';
+import { applyDemandTypeForCases } from './demand-type-match';
 
 @Injectable()
 export class FinanceQueryService {
@@ -16,6 +17,8 @@ export class FinanceQueryService {
     @InjectRepository(PoOrder) private readonly orders: Repository<PoOrder>,
     @InjectRepository(PoItem) private readonly items: Repository<PoItem>,
     @InjectRepository(CasePerformance) private readonly performance: Repository<CasePerformance>,
+    @InjectRepository(InspectionTemplate)
+    private readonly templates: Repository<InspectionTemplate>,
     private readonly scope: FinanceScopeService,
     private readonly logs: ChangeLogService,
   ) {}
@@ -53,7 +56,7 @@ export class FinanceQueryService {
   }
 
   /**
-   * 从零复测：仅清空业务过程数据，保留账号、站点、设备、模板、标准图和价格配置。
+   * 从零复测：仅清空业务过程数据，保留账号、网格、设备、模板、标准图和价格配置。
    * 仅 Preview/测试环境的超级管理员可执行，并复用危险操作确认保护。
    */
   async clearTestData(user: CurrentUserContext, confirm?: string) {
@@ -107,7 +110,7 @@ export class FinanceQueryService {
       counts,
       { preserved: ['users', 'sites', 'devices', 'inspection_templates', 'price_library'] },
       user.id,
-      '清空测试业务数据，保留账号、站点、设备、模板、标准图和价格配置',
+      '清空测试业务数据，保留账号、网格、设备、模板、标准图和价格配置',
     );
     return { cleared: counts };
   }
@@ -149,6 +152,7 @@ export class FinanceQueryService {
         'c.gsp_case_no AS "gspCaseNo"',
         'c.project_name AS "projectName"',
         'c.service_type AS "serviceType"',
+        'c.product_line AS "productLine"',
         'c.creator AS creator',
         'c.province AS province',
         'c.city AS city',
@@ -161,30 +165,41 @@ export class FinanceQueryService {
         'c.task_type AS "taskType"',
         'c.task_template_id AS "taskTemplateId"',
         'tpl.name AS "taskTypeName"',
+        // 派单模式以案例自身为准（派单时用户选择），不跟服务类型模板默认走
+        `COALESCE(c.assign_mode, 'single') AS "assignMode"`,
+        'c.planned_units AS "plannedUnits"',
+        'c.completed_units AS "completedUnits"',
+        'c.expense_enabled AS "expenseEnabled"',
+        'COALESCE(c.unit_label, tpl.unit_label, \'台\') AS "unitLabel"',
         'c.inspector_id AS "inspectorId"',
-        'ins.real_name AS "inspectorName"',
+        `COALESCE(
+          (
+            SELECT string_agg(u.real_name, '、' ORDER BY ca.assign_time NULLS LAST, ca.id)
+            FROM case_assignment ca
+            INNER JOIN users u ON u.id = ca.inspector_id
+            WHERE ca.service_case_id = c.id AND ca.status <> 'withdrawn'
+          ),
+          ins.real_name
+        ) AS "inspectorName"`,
         'c.finish_time AS "finishTime"',
         'c.updated_at AS "updatedAt"',
         'COALESCE(p.case_revenue,0) AS "caseRevenue"',
       ]);
-    // 网格长：按管理站点隔离；区域仅作可选筛选，不作为权限边界
+    // 网格长：仅看已挂到自己管辖网格的案例（未分配只给管理员）
     if (user.role === UserRole.SITE_MANAGER) {
       if (!user.managedSiteIds?.length) {
         return { list: [], total: 0, page, limit };
       }
+      if (query.siteBind === 'unassigned') {
+        return { list: [], total: 0, page, limit };
+      }
       if (query.siteId) {
         if (!user.managedSiteIds.includes(query.siteId)) {
-          throw new ForbiddenException('无权查看该站点案例');
+          throw new ForbiddenException('无权查看该网格案例');
         }
         qb.andWhere('c.site_id = :siteId', { siteId: query.siteId });
-      } else if (query.siteBind === 'unassigned') {
-        qb.andWhere('c.site_id IS NULL');
-      } else if (query.siteBind === 'assigned_site') {
-        qb.andWhere('c.site_id IN (:...siteIds)', { siteIds: user.managedSiteIds });
       } else {
-        qb.andWhere('(c.site_id IN (:...siteIds) OR c.site_id IS NULL)', {
-          siteIds: user.managedSiteIds,
-        });
+        qb.andWhere('c.site_id IN (:...siteIds)', { siteIds: user.managedSiteIds });
       }
     } else {
       if (query.siteId) qb.andWhere('c.site_id = :siteId', { siteId: query.siteId });
@@ -240,9 +255,7 @@ export class FinanceQueryService {
       if (!user.managedSiteIds?.length) {
         return { provinces: [] as string[], citiesByProvince: {} as Record<string, string[]> };
       }
-      qb.andWhere('(c.site_id IN (:...siteIds) OR c.site_id IS NULL)', {
-        siteIds: user.managedSiteIds,
-      });
+      qb.andWhere('c.site_id IN (:...siteIds)', { siteIds: user.managedSiteIds });
     }
     const rows = await qb
       .distinct(true)
@@ -317,12 +330,26 @@ export class FinanceQueryService {
           )
         )[0]?.name
       : null;
+    const assignments = await this.cases.manager.query(
+      `SELECT a.inspector_id AS "inspectorId",
+              a.status AS status,
+              u.real_name AS "inspectorName",
+              u.username AS username,
+              u.phone AS phone
+       FROM case_assignment a
+       LEFT JOIN users u ON u.id = a.inspector_id
+       WHERE a.service_case_id = $1
+         AND a.status IN ('assigned', 'working', 'done')
+       ORDER BY a.assign_time ASC NULLS LAST`,
+      [id],
+    );
     return {
       ...item,
       siteName: siteRow?.name || null,
       siteManagerName: siteRow?.managerName || null,
       inspectorName: inspectorName || null,
       taskTypeName: taskTypeName || item.taskType || null,
+      assignments: assignments || [],
       orders: orders.map((order) => ({
         ...order,
         items: visibleItems.filter((entry) => entry.poId === order.id),
@@ -345,15 +372,12 @@ export class FinanceQueryService {
       .createQueryBuilder('po')
       .leftJoin(ServiceCase, 'c', 'c.id = po.service_case_id')
       .select(['po', 'c.region AS "caseRegion"']);
-    // 网格长：看自己站点案例关联的 PO，以及尚未匹配案例的待挂接 PO
+    // 网格长：只看已挂到本网格案例的 PO（未匹配/未挂网格 PO 仅管理员可见）
     if (user.role === UserRole.SITE_MANAGER) {
       if (!user.managedSiteIds?.length) {
         return { list: [], total: 0, page, limit };
       }
-      qb.andWhere(
-        '(c.site_id IN (:...siteIds) OR po.service_case_id IS NULL OR c.site_id IS NULL)',
-        { siteIds: user.managedSiteIds },
-      );
+      qb.andWhere('c.site_id IN (:...siteIds)', { siteIds: user.managedSiteIds });
     }
     if (query.matchStatus)
       qb.andWhere('po.match_status = :matchStatus', { matchStatus: query.matchStatus });
@@ -465,6 +489,17 @@ export class FinanceQueryService {
       { chunk: 100 },
     );
     for (const item of created) caseMap.set(item.gspCaseNo, item);
+    const toSync: ServiceCase[] = [];
+    for (const order of eligible) {
+      const sc = caseMap.get(order.gspCaseNo);
+      if (!sc) continue;
+      if (!sc.serviceType && order.demandType) {
+        sc.serviceType = order.demandType;
+        toSync.push(sc);
+      }
+    }
+    if (toSync.length) await this.cases.save(toSync, { chunk: 100 });
+    await applyDemandTypeForCases(this.cases, this.templates, [...caseMap.values()]);
     for (const order of eligible) {
       order.serviceCaseId = caseMap.get(order.gspCaseNo)!.id;
       order.matchStatus = 'matched';
@@ -605,10 +640,7 @@ export class FinanceQueryService {
           monthlyIncome: [],
         };
       }
-      qb.andWhere(
-        '(c.site_id IN (:...siteIds) OR po.service_case_id IS NULL OR c.site_id IS NULL)',
-        { siteIds: user.managedSiteIds },
-      );
+      qb.andWhere('c.site_id IN (:...siteIds)', { siteIds: user.managedSiteIds });
     }
     if (query.from) qb.andWhere('po.demand_date>=:from', { from: query.from });
     if (query.to) qb.andWhere('po.demand_date<=:to', { to: query.to });
@@ -653,10 +685,7 @@ export class FinanceQueryService {
       .orderBy('COUNT(*)', 'DESC')
       .limit(50);
     if (user.role === UserRole.SITE_MANAGER) {
-      ignoredQb.andWhere(
-        '(c.site_id IN (:...siteIds) OR po.service_case_id IS NULL OR c.site_id IS NULL)',
-        { siteIds: user.managedSiteIds },
-      );
+      ignoredQb.andWhere('c.site_id IN (:...siteIds)', { siteIds: user.managedSiteIds });
     }
     if (query.from) ignoredQb.andWhere('po.demand_date>=:from', { from: query.from });
     if (query.to) ignoredQb.andWhere('po.demand_date<=:to', { to: query.to });
@@ -699,6 +728,227 @@ export class FinanceQueryService {
           month,
           income: value.toFixed(2),
         })),
+    };
+  }
+
+  /** 收入与 PO 偏差明细：拆分原因 + 案例/未匹配 PO 清单 */
+  async dashboardVariance(query: DashboardQueryDto, user: CurrentUserContext) {
+    const money = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const applyPoScope = <T extends { andWhere: (...args: unknown[]) => T }>(qb: T) => {
+      if (user.role === UserRole.SITE_MANAGER) {
+        if (!user.managedSiteIds?.length) return null;
+        qb.andWhere('c.site_id IN (:...siteIds)', { siteIds: user.managedSiteIds });
+      }
+      if (query.from) qb.andWhere('po.demand_date>=:from', { from: query.from });
+      if (query.to) qb.andWhere('po.demand_date<=:to', { to: query.to });
+      if (query.project) qb.andWhere('po.project_name=:project', { project: query.project });
+      if (query.province) qb.andWhere('po.province=:province', { province: query.province });
+      if (query.demandType)
+        qb.andWhere('po.demand_type=:demandType', { demandType: query.demandType });
+      return qb;
+    };
+
+    if (user.role === UserRole.SITE_MANAGER && !user.managedSiteIds?.length) {
+      return {
+        summary: {
+          income: 0,
+          poTotalAmount: 0,
+          varianceAmount: 0,
+          varianceRate: 0,
+          pendingPrice: 0,
+          ignoredCount: 0,
+          okCount: 0,
+          unmatchedPoCount: 0,
+          unmatchedPoAmount: 0,
+          caseGapCount: 0,
+          caseGapAmount: 0,
+        },
+        buckets: [],
+        cases: [],
+        unmatchedPos: [],
+        ignoredItems: [],
+      };
+    }
+
+    const dash = await this.dashboard(query, user);
+    const income = Number(dash.summary.income || 0);
+    const poTotalAmount = Number(dash.summary.poTotalAmount || 0);
+    const varianceAmount = Number(dash.summary.varianceAmount || 0);
+    const varianceRate = Number(dash.summary.varianceRate || 0);
+
+    const unmatchedQb = this.orders
+      .createQueryBuilder('po')
+      .leftJoin(ServiceCase, 'c', 'c.id = po.service_case_id')
+      .select('po.id', 'id')
+      .addSelect('po.po_no', 'poNo')
+      .addSelect('po.gsp_case_no', 'gspCaseNo')
+      .addSelect('po.project_name', 'projectName')
+      .addSelect('po.po_total_amount', 'poTotalAmount')
+      .addSelect('po.match_status', 'matchStatus')
+      .where('(po.service_case_id IS NULL OR po.match_status = :pending)', { pending: 'pending' })
+      .orderBy('po.po_total_amount', 'DESC')
+      .limit(100);
+    if (!applyPoScope(unmatchedQb)) {
+      /* scoped empty already handled */
+    }
+    const unmatchedRows = await unmatchedQb.getRawMany<{
+      id: string;
+      poNo: string;
+      gspCaseNo: string;
+      projectName: string;
+      poTotalAmount: string;
+      matchStatus: string;
+    }>();
+    const unmatchedPos = unmatchedRows.map((row) => ({
+      id: row.id,
+      poNo: row.poNo,
+      gspCaseNo: row.gspCaseNo,
+      projectName: row.projectName || '-',
+      poTotalAmount: Number(row.poTotalAmount || 0),
+      matchStatus: row.matchStatus,
+    }));
+    const unmatchedPoAmount = money(
+      unmatchedPos.reduce((sum, row) => sum + row.poTotalAmount, 0),
+    );
+
+    const caseQb = this.orders
+      .createQueryBuilder('po')
+      .innerJoin(ServiceCase, 'c', 'c.id = po.service_case_id')
+      .leftJoin(CasePerformance, 'p', 'p.service_case_id = c.id')
+      .leftJoin(PoItem, 'item', 'item.po_id = po.id')
+      .select('c.id', 'caseId')
+      .addSelect('c.gsp_case_no', 'gspCaseNo')
+      .addSelect('c.project_name', 'projectName')
+      .addSelect('COALESCE(SUM(DISTINCT po.po_total_amount), 0)', 'poTotalAmount')
+      .addSelect('COALESCE(MAX(p.case_revenue), 0)', 'caseRevenue')
+      .addSelect("COUNT(item.id) FILTER (WHERE item.price_status = 'pending_price')", 'pendingPrice')
+      .addSelect("COUNT(item.id) FILTER (WHERE item.price_status = 'ignored')", 'ignoredCount')
+      .addSelect("COUNT(item.id) FILTER (WHERE item.price_status = 'ok')", 'okCount')
+      .where('po.service_case_id IS NOT NULL')
+      .andWhere("po.match_status <> 'pending'")
+      .groupBy('c.id')
+      .addGroupBy('c.gsp_case_no')
+      .addGroupBy('c.project_name');
+    applyPoScope(caseQb);
+    const caseRows = await caseQb.getRawMany<{
+      caseId: string;
+      gspCaseNo: string;
+      projectName: string;
+      poTotalAmount: string;
+      caseRevenue: string;
+      pendingPrice: string;
+      ignoredCount: string;
+      okCount: string;
+    }>();
+
+    // SUM(DISTINCT po.po_total_amount) can be wrong if amounts collide; recompute per case safely
+    const casePoTotals = new Map<string, number>();
+    const poCaseQb = this.orders
+      .createQueryBuilder('po')
+      .innerJoin(ServiceCase, 'c', 'c.id = po.service_case_id')
+      .select('c.id', 'caseId')
+      .addSelect('po.id', 'poId')
+      .addSelect('po.po_total_amount', 'poTotalAmount')
+      .where('po.service_case_id IS NOT NULL')
+      .andWhere("po.match_status <> 'pending'");
+    applyPoScope(poCaseQb);
+    const poCaseRows = await poCaseQb.getRawMany<{
+      caseId: string;
+      poId: string;
+      poTotalAmount: string;
+    }>();
+    const seenPo = new Set<string>();
+    for (const row of poCaseRows) {
+      if (seenPo.has(row.poId)) continue;
+      seenPo.add(row.poId);
+      casePoTotals.set(
+        row.caseId,
+        money((casePoTotals.get(row.caseId) || 0) + Number(row.poTotalAmount || 0)),
+      );
+    }
+
+    const cases = caseRows
+      .map((row) => {
+        const poAmt = casePoTotals.get(row.caseId) ?? Number(row.poTotalAmount || 0);
+        const revenue = Number(row.caseRevenue || 0);
+        const gap = money(poAmt - revenue);
+        return {
+          caseId: row.caseId,
+          gspCaseNo: row.gspCaseNo,
+          projectName: row.projectName || '-',
+          poTotalAmount: poAmt,
+          caseRevenue: revenue,
+          gap,
+          pendingPrice: Number(row.pendingPrice || 0),
+          ignoredCount: Number(row.ignoredCount || 0),
+          okCount: Number(row.okCount || 0),
+          reason:
+            Number(row.pendingPrice || 0) > 0
+              ? '存在待定价条目'
+              : Number(row.ignoredCount || 0) > 0 && Math.abs(gap) > 0.009
+                ? '含忽略条目或定价未覆盖 PO 总额'
+                : Math.abs(gap) > 0.009
+                  ? '核算收入与 PO 总额不一致'
+                  : '无显著偏差',
+        };
+      })
+      .filter((row) => Math.abs(row.gap) > 0.009 || row.pendingPrice > 0 || row.ignoredCount > 0)
+      .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap))
+      .slice(0, 100);
+
+    const caseGapAmount = money(
+      cases.reduce((sum, row) => sum + Math.max(0, row.gap), 0),
+    );
+
+    const buckets = [
+      {
+        key: 'unmatched',
+        label: '未匹配案例的 PO',
+        amount: unmatchedPoAmount,
+        count: unmatchedPos.length,
+        tip: 'PO 已计入总额，但尚未挂到案例，核算收入为 0',
+      },
+      {
+        key: 'case_gap',
+        label: '已匹配案例核算缺口',
+        amount: caseGapAmount,
+        count: cases.filter((row) => row.gap > 0.009).length,
+        tip: '多为待定价、忽略条目，或条目收入合计对不上 PO 头金额',
+      },
+      {
+        key: 'pending_price',
+        label: '待定价条目（条数）',
+        amount: 0,
+        count: Number(dash.summary.pendingPrice || 0),
+        tip: '待定价不会进入核算收入，请到价格库批量映射',
+      },
+      {
+        key: 'ignored',
+        label: '忽略条目（条数）',
+        amount: 0,
+        count: Number(dash.summary.ignoredCount || 0),
+        tip: '名称如「无」「自定义」等不计入核算',
+      },
+    ];
+
+    return {
+      summary: {
+        income,
+        poTotalAmount,
+        varianceAmount,
+        varianceRate,
+        pendingPrice: Number(dash.summary.pendingPrice || 0),
+        ignoredCount: Number(dash.summary.ignoredCount || 0),
+        okCount: Number(dash.summary.okCount || 0),
+        unmatchedPoCount: unmatchedPos.length,
+        unmatchedPoAmount,
+        caseGapCount: cases.filter((row) => row.gap > 0.009).length,
+        caseGapAmount,
+      },
+      buckets,
+      cases,
+      unmatchedPos,
+      ignoredItems: dash.ignoredItems || [],
     };
   }
 }

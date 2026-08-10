@@ -34,6 +34,27 @@ export class RecordController {
     return this.recordService.findAll(query, user);
   }
 
+  /** 按案例聚合列表（须在 :id 之前） */
+  @Get('case-groups')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
+  async findCaseGroups(
+    @Query() query: QueryRecordDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.recordService.findCaseGroups(query, user);
+  }
+
+  /** 某案例/独立任务下的报告列表（须在 :id 之前） */
+  @Get('by-case/:groupKey')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER, UserRole.INSPECTOR)
+  async findCaseRecords(
+    @Param('groupKey') groupKey: string,
+    @Query() query: QueryRecordDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.recordService.findCaseRecords(groupKey, query, user);
+  }
+
   /** 设备横向对比（须在 :id 之前） */
   @Get('device/:deviceId/compare')
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)

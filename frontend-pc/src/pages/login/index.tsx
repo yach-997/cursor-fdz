@@ -9,6 +9,7 @@ import {
   CloudSyncOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '../../stores/auth';
+import { brandMarkText, useBrandingStore } from '../../stores/branding';
 import { getHomePathByRole } from '../../router/menus';
 import request from '../../utils/request';
 import './login.css';
@@ -19,6 +20,7 @@ type BackendStatus = 'checking' | 'ok' | 'fail';
 export default function LoginPage() {
   const navigate = useNavigate();
   const { login, loading, token, user, hydrate, logout } = useAuthStore();
+  const branding = useBrandingStore((s) => s.branding);
   const [form] = Form.useForm();
   const [remember, setRemember] = useState(false);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
@@ -75,13 +77,19 @@ export default function LoginPage() {
           <div className="pc-login-visual__glow" />
           <div className="pc-login-visual__content">
             <div className="pc-login-visual__brand">
-              <span className="pc-login-visual__mark">光</span>
-              <span>光伏储能巡检云</span>
+              <span className="pc-login-visual__mark" aria-hidden>
+                {branding.logoUrl ? (
+                  <img src={branding.logoUrl} alt="" />
+                ) : (
+                  brandMarkText(branding.systemName)
+                )}
+              </span>
+              <span>{branding.systemName}</span>
             </div>
             <div className="pc-login-visual__main">
               <div className="pc-login-visual__eyebrow">智能能源运营管理</div>
               <h1>让每一次巡检<br />都清晰、可靠、可追溯</h1>
-              <p>站点、任务、设备与报告统一管理，让团队专注现场和决策。</p>
+              <p>网格、任务、设备与报告统一管理，让团队专注现场和决策。</p>
               <div className="pc-login-features">
                 <div><SafetyCertificateOutlined /><span><b>规范巡检</b><small>流程标准化</small></span></div>
                 <div><ThunderboltOutlined /><span><b>高效协同</b><small>多角色联动</small></span></div>
@@ -100,7 +108,13 @@ export default function LoginPage() {
             </Link>
 
             <div className="pc-login-brand">
-              <div className="pc-login-brand__logo" aria-hidden>光</div>
+              <div className="pc-login-brand__logo" aria-hidden>
+                {branding.logoUrl ? (
+                  <img src={branding.logoUrl} alt="" />
+                ) : (
+                  brandMarkText(branding.systemName)
+                )}
+              </div>
               <div>
                 <div className="pc-login-brand__eyebrow">管理工作台</div>
                 <h2>欢迎回来</h2>

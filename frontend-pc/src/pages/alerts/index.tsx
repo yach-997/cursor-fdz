@@ -123,7 +123,7 @@ export default function AlertsPage() {
   };
 
   const columns: ColumnsType<AlertItem> = [
-    { title: '站点', dataIndex: 'siteName', width: 140 },
+    { title: '网格', dataIndex: 'siteName', width: 140 },
     {
       title: '类型',
       dataIndex: 'alertType',
@@ -193,7 +193,7 @@ export default function AlertsPage() {
       <Space wrap style={{ marginBottom: 16 }}>
         <Select
           allowClear
-          placeholder="站点"
+          placeholder="网格"
           style={{ width: 180 }}
           value={siteId}
           onChange={setSiteId}
@@ -245,9 +245,9 @@ export default function AlertsPage() {
         onCancel={() => setConfigOpen(false)}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="siteId" label="站点" rules={[{ required: true }]}>
+          <Form.Item name="siteId" label="网格" rules={[{ required: true }]}>
             <Select
-              placeholder="选择站点"
+              placeholder="选择网格"
               options={sites.map((s) => ({ label: s.name, value: s.id }))}
             />
           </Form.Item>
@@ -265,7 +265,7 @@ export default function AlertsPage() {
           <Form.Item name="enabled" label="启用预警" valuePropName="checked">
             <Switch />
           </Form.Item>
-          <Form.Item name="notifyEmails" label="运维人员 / 站点联系人邮箱（回车添加）">
+          <Form.Item name="notifyEmails" label="运维人员 / 网格联系人邮箱（回车添加）">
             <Select mode="tags" placeholder="admin@example.com" tokenSeparators={[',', ' ']} />
           </Form.Item>
           <Form.Item name="webhookUrl" label="机器人通知地址">

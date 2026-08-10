@@ -9,10 +9,16 @@ import { FinanceQueryService } from '../services/finance-query.service';
 @Controller('finance')
 export class FinanceDashboardController {
   constructor(private readonly service: FinanceQueryService) {}
-  @Get('dashboard') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) dashboard(
-    @Query() query: DashboardQueryDto,
-    @CurrentUser() user: CurrentUserContext,
-  ) {
+
+  @Get('dashboard')
+  @Roles(UserRole.SUPER_ADMIN)
+  dashboard(@Query() query: DashboardQueryDto, @CurrentUser() user: CurrentUserContext) {
     return this.service.dashboard(query, user);
+  }
+
+  @Get('dashboard/variance')
+  @Roles(UserRole.SUPER_ADMIN)
+  variance(@Query() query: DashboardQueryDto, @CurrentUser() user: CurrentUserContext) {
+    return this.service.dashboardVariance(query, user);
   }
 }

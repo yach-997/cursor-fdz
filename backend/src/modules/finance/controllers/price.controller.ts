@@ -47,7 +47,7 @@ export class FinancePriceController {
   @Post('mappings/recalculate') @Roles(UserRole.SUPER_ADMIN) recalculateMappings() {
     return this.mappings.recalculate();
   }
-  @Get() @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) list(
+  @Get() @Roles(UserRole.SUPER_ADMIN) list(
     @Query() query: PriceQueryDto,
     @CurrentUser() user: CurrentUserContext,
   ) {

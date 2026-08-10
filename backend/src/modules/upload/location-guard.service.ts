@@ -15,18 +15,33 @@ export interface LocationProof {
   accuracy?: string | number;
   capturedAt?: string;
   photoTakenAt?: string;
+  /** 前端声明：failed / skipped（无定位仍继续作业） */
+  locationStatus?: string;
+  locationReasonCode?: string;
+  locationReason?: string;
 }
 
-export interface LocationVerification {
+export type LocationQualityStatus = 'ok' | 'weak' | 'failed' | 'skipped';
+
+/** 现场定位采集结果：软失败不拦截，仅留质量状态 */
+export interface LocationCapture {
   verified: boolean;
-  distanceMeters: number;
-  radiusMeters: number;
+  status: LocationQualityStatus;
+  latitude: number | null;
+  longitude: number | null;
   accuracyMeters: number;
+  capturedAt: string;
   checkedAt: string;
   siteName: string;
+  distanceToSiteMeters?: number;
+  /** 兼容旧前端字段 */
+  distanceMeters: number;
+  radiusMeters: number;
+  reasonCode?: string;
+  reason?: string;
 }
 
-/** 巡检现场围栏：由后端计算距离，前端提示不能替代这里的强制校验。 */
+/** 采集现场 GPS；无信号/精度差时写入异常状态，不阻断作业。 */
 @Injectable()
 export class LocationGuardService {
   constructor(
@@ -42,86 +57,127 @@ export class LocationGuardService {
     proof: LocationProof,
     currentUser: CurrentUserContext,
     requireFreshPhoto = false,
-  ): Promise<LocationVerification> {
+  ): Promise<LocationCapture> {
     const task = await this.taskRepo.findOne({ where: { id: taskId } });
     if (!task) throw new BadRequestException('巡检任务不存在');
 
-    // 管理员可代为处理历史数据；工程师必须是任务本人且处于现场。
+    // 非工程师（管理员代操作）不强制现场定位
     if (currentUser.role !== UserRole.INSPECTOR) {
-      return {
-        verified: true,
-        distanceMeters: 0,
-        radiusMeters: this.defaultRadiusMeters,
+      return this.buildCapture({
+        status: 'ok',
+        latitude: null,
+        longitude: null,
         accuracyMeters: 0,
-        checkedAt: new Date().toISOString(),
         siteName: '',
-      };
+        reasonCode: 'admin',
+        reason: '管理员代操作，未校验现场定位',
+      });
     }
     if (task.inspectorId !== currentUser.id) {
       throw new ForbiddenException('只能执行分配给本人的巡检任务');
     }
 
     const site = await this.siteRepo.findOne({ where: { id: task.siteId } });
-    if (!site) throw new BadRequestException('任务站点不存在');
-    const siteLat = Number(site.latitude);
-    const siteLng = Number(site.longitude);
-    if (!this.validCoordinate(siteLat, siteLng) || (siteLat === 0 && siteLng === 0)) {
-      throw new BadRequestException('站点尚未设置准确坐标，请联系管理员完善站点定位');
-    }
+    if (!site) throw new BadRequestException('任务网格不存在');
+
+    const declared =
+      proof.locationStatus === 'skipped' || proof.locationStatus === 'failed'
+        ? proof.locationStatus
+        : null;
 
     const current = this.parseGps(proof.gps);
     if (!current) {
-      throw new BadRequestException('未获取到现场定位，请允许定位权限后重试');
+      const status: LocationQualityStatus = declared === 'skipped' ? 'skipped' : 'failed';
+      return this.buildCapture({
+        status,
+        latitude: null,
+        longitude: null,
+        accuracyMeters: 0,
+        siteName: site.name,
+        reasonCode:
+          proof.locationReasonCode ||
+          (status === 'skipped' ? 'manual_skip' : 'missing'),
+        reason:
+          proof.locationReason ||
+          (status === 'skipped'
+            ? '工程师确认无法定位后继续作业'
+            : '未获取到现场定位（可能无信号或未授权）'),
+      });
     }
 
     const accuracy = Number(proof.accuracy);
     const maxAccuracy = this.maxAccuracyMeters;
+    const accuracyOk = Number.isFinite(accuracy) && accuracy > 0 && accuracy <= maxAccuracy;
+    const capturedAt = proof.capturedAt || new Date().toISOString();
+    const fresh = this.isFreshTime(capturedAt, 3 * 60_000);
+    void requireFreshPhoto;
+
+    const siteLat = Number(site.latitude);
+    const siteLng = Number(site.longitude);
+    let distanceToSiteMeters: number | undefined;
+    if (this.validCoordinate(siteLat, siteLng) && !(siteLat === 0 && siteLng === 0)) {
+      distanceToSiteMeters = Math.round(
+        this.distanceMeters(current.latitude, current.longitude, siteLat, siteLng),
+      );
+    }
+
+    let status: LocationQualityStatus = 'ok';
+    let reasonCode: string | undefined;
+    let reason: string | undefined;
     if (!Number.isFinite(accuracy) || accuracy <= 0) {
-      throw new BadRequestException('定位精度未知，请重新定位');
-    }
-    if (accuracy > maxAccuracy) {
-      throw new BadRequestException(
-        `当前定位精度约 ${Math.round(accuracy)} 米，请到室外开阔处重新定位`,
-      );
-    }
-
-    this.assertFreshTime(proof.capturedAt, 3 * 60_000, '定位已过期，请重新定位');
-    if (requireFreshPhoto) {
-      this.assertFreshTime(
-        proof.photoTakenAt,
-        10 * 60_000,
-        '照片不是刚刚现场拍摄，请重新拍照',
-      );
+      status = 'weak';
+      reasonCode = 'unknown_accuracy';
+      reason = '定位精度未知';
+    } else if (!accuracyOk) {
+      status = 'weak';
+      reasonCode = 'weak_accuracy';
+      reason = `定位精度约 ${Math.round(accuracy)} 米，弱于建议阈值 ${maxAccuracy} 米`;
+    } else if (!fresh) {
+      status = 'weak';
+      reasonCode = 'stale';
+      reason = '定位时间偏旧，已按弱定位留痕';
     }
 
-    const siteRadius = Number(site.inspectionRadiusMeters);
-    const radiusMeters =
-      Number.isFinite(siteRadius) && siteRadius >= 50 && siteRadius <= 5000
-        ? siteRadius
-        : this.defaultRadiusMeters;
-    const distance = Math.round(
-      this.distanceMeters(current.latitude, current.longitude, siteLat, siteLng),
-    );
-    const allowedDistance = radiusMeters + Math.min(accuracy, 50);
-    if (distance > allowedDistance) {
-      throw new ForbiddenException(
-        `当前位置距「${site.name}」约 ${distance} 米，超出 ${radiusMeters} 米巡检范围`,
-      );
-    }
-
-    return {
-      verified: true,
-      distanceMeters: distance,
-      radiusMeters,
-      accuracyMeters: Math.round(accuracy),
-      checkedAt: new Date().toISOString(),
+    return this.buildCapture({
+      status,
+      latitude: Number(current.latitude.toFixed(7)),
+      longitude: Number(current.longitude.toFixed(7)),
+      accuracyMeters: Number.isFinite(accuracy) && accuracy > 0 ? Math.round(accuracy) : 0,
+      capturedAt,
       siteName: site.name,
-    };
+      distanceToSiteMeters,
+      reasonCode,
+      reason,
+    });
   }
 
-  private get defaultRadiusMeters() {
-    const configured = Number(this.config.get('INSPECTION_RADIUS_METERS', 500));
-    return Number.isFinite(configured) && configured >= 50 ? configured : 500;
+  private buildCapture(input: {
+    status: LocationQualityStatus;
+    latitude: number | null;
+    longitude: number | null;
+    accuracyMeters: number;
+    siteName: string;
+    capturedAt?: string;
+    distanceToSiteMeters?: number;
+    reasonCode?: string;
+    reason?: string;
+  }): LocationCapture {
+    const now = new Date().toISOString();
+    return {
+      verified: input.status === 'ok',
+      status: input.status,
+      latitude: input.latitude,
+      longitude: input.longitude,
+      accuracyMeters: input.accuracyMeters,
+      capturedAt: input.capturedAt || now,
+      checkedAt: now,
+      siteName: input.siteName,
+      distanceToSiteMeters: input.distanceToSiteMeters,
+      distanceMeters: input.distanceToSiteMeters ?? 0,
+      radiusMeters: 0,
+      reasonCode: input.reasonCode,
+      reason: input.reason,
+    };
   }
 
   private get maxAccuracyMeters() {
@@ -148,12 +204,10 @@ export class LocationGuardService {
     );
   }
 
-  private assertFreshTime(value: string | undefined, maxAgeMs: number, message: string) {
+  private isFreshTime(value: string | undefined, maxAgeMs: number) {
     const timestamp = value ? Date.parse(value) : Number.NaN;
     const age = Date.now() - timestamp;
-    if (!Number.isFinite(timestamp) || age < -60_000 || age > maxAgeMs) {
-      throw new BadRequestException(message);
-    }
+    return Number.isFinite(timestamp) && age >= -60_000 && age <= maxAgeMs;
   }
 
   private distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number) {

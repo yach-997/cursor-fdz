@@ -184,7 +184,7 @@ export default function AnalysisPage() {
         />
         <Select
           allowClear
-          placeholder="站点"
+          placeholder="网格"
           style={{ width: 180 }}
           value={siteId}
           onChange={setSiteId}

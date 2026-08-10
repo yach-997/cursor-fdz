@@ -29,7 +29,7 @@ import {
   SetCaseTaskTypeDto,
 } from '../dto/finance.dto';
 
-/** 案例 ↔ 站点桥接（派单时自动创建巡检任务） */
+/** 案例 ↔ 网格桥接（派单时自动创建巡检任务） */
 @Injectable()
 export class CaseBridgeService {
   constructor(
@@ -46,7 +46,7 @@ export class CaseBridgeService {
 
   async setSite(caseId: string, dto: SetCaseSiteDto, user: CurrentUserContext) {
     if (user.role !== UserRole.SUPER_ADMIN) {
-      throw new ForbiddenException('仅管理员可分配/改派站点');
+      throw new ForbiddenException('仅管理员可分配/改派网格');
     }
     const item = await this.getCase(caseId, user);
     this.assertCaseSiteTransferable(item);
@@ -58,9 +58,11 @@ export class CaseBridgeService {
 
     if (item.inspectorId || item.status !== 'pending_assign') {
       await this.workflow.resetDispatchForSiteTransfer(item);
+      // resetDispatch 已写回 pending_assign / 清空工程师；此处再保险一次
       item.inspectorId = null;
       item.assignBy = null;
       item.assignTime = null;
+      item.completedUnits = 0;
       item.status = 'pending_assign';
     }
 
@@ -74,15 +76,15 @@ export class CaseBridgeService {
       site.id,
       user.id,
       prev
-        ? `改派站点 → ${site.name}（原派单已清空，请新站点重新派单）`
-        : `案例归属站点 → ${site.name}`,
+        ? `改派网格 → ${site.name}（原派单已清空，请新网格重新派单）`
+        : `案例归属网格 → ${site.name}`,
     );
     return item;
   }
 
   async batchAssignSites(dto: BatchAssignCasesToSitesDto, user: CurrentUserContext) {
     if (user.role !== UserRole.SUPER_ADMIN) {
-      throw new ForbiddenException('仅管理员可分配/改派站点');
+      throw new ForbiddenException('仅管理员可分配/改派网格');
     }
     if (!dto.caseIds?.length) throw new BadRequestException('请选择案例');
     const site = await this.getSite(dto.siteId);
@@ -103,6 +105,7 @@ export class CaseBridgeService {
           item.inspectorId = null;
           item.assignBy = null;
           item.assignTime = null;
+          item.completedUnits = 0;
           item.status = 'pending_assign';
         }
         item.siteId = site.id;
@@ -111,7 +114,7 @@ export class CaseBridgeService {
       } catch (err) {
         skipped.push({
           caseId: item.gspCaseNo || item.id,
-          reason: err instanceof Error ? err.message : '不可改派站点',
+          reason: err instanceof Error ? err.message : '不可改派网格',
         });
       }
     }
@@ -122,7 +125,7 @@ export class CaseBridgeService {
       null,
       { siteId: site.id, count: updated },
       user.id,
-      `批量分配/改派 ${updated} 个案例到站点 ${site.name}`,
+      `批量分配/改派 ${updated} 个案例到网格 ${site.name}`,
     );
     return { updated, siteId: site.id, siteName: site.name, skipped };
   }
@@ -131,14 +134,14 @@ export class CaseBridgeService {
     if (
       ['finished', 'settle_review', 'settled', 'month_locked'].includes(item.status)
     ) {
-      throw new BadRequestException('案例已完工或进入结算，不能改派站点');
+      throw new BadRequestException('案例已完工或进入结算，不能改派网格');
     }
   }
 
   private assertCaseTaskTypeEditable(item: ServiceCase) {
     if (['working', 'finished', 'settle_review', 'settled', 'month_locked'].includes(item.status)) {
       throw new BadRequestException(
-        '案例已开始作业或进入结算，不能再修改任务类型（避免与已建巡检模板不一致）',
+        '案例已开始作业或进入结算，不能再修改服务类型（避免与已建巡检模板不一致）',
       );
     }
   }
@@ -146,23 +149,63 @@ export class CaseBridgeService {
   async setTaskType(caseId: string, dto: SetCaseTaskTypeDto, user: CurrentUserContext) {
     this.assertAdminOrManager(user);
     const item = await this.getCase(caseId, user);
-    if (!item.siteId) throw new BadRequestException('请先将案例分配到站点');
+    if (!item.siteId) throw new BadRequestException('请先将案例分配到网格');
     this.assertSiteManage(user, item.siteId);
     this.assertCaseTaskTypeEditable(item);
     const template = await this.templates.findOne({ where: { id: dto.templateId } });
-    if (!template) throw new NotFoundException('任务类型不存在，请先在「任务类型」中创建');
-    const prev = { taskType: item.taskType, taskTemplateId: item.taskTemplateId };
+    if (!template) throw new NotFoundException('服务类型不存在，请先在「服务类型」中创建');
+    const prev = {
+      taskType: item.taskType,
+      taskTemplateId: item.taskTemplateId,
+      productLine: item.productLine,
+    };
+    const lines = Array.isArray(template.productLines) ? template.productLines : [];
+    let productLine = String(dto.productLine || item.productLine || '').trim() || null;
+    if (productLine) {
+      const matched = lines.find((p) => String(p.name || '').trim() === productLine) || null;
+      if (!matched) {
+        throw new BadRequestException(
+          lines.length
+            ? `产品线「${productLine}」不在服务类型「${template.name}」下（需精确同名），请先在「服务类型」新增该产品线`
+            : `服务类型「${template.name}」尚未配置产品线，案例需要「${productLine}」，请先在「服务类型」新增同名产品线`,
+        );
+      }
+      if (!matched.entries?.length) {
+        throw new BadRequestException(`产品线「${matched.name}」尚未配置检查条目`);
+      }
+      productLine = matched.name;
+    } else if (lines.length) {
+      throw new BadRequestException('该服务类型已配置产品线，请选择产品线');
+    } else {
+      if (!template.entries?.length) {
+        throw new BadRequestException('服务类型尚未配置检查条目');
+      }
+      productLine = null;
+    }
+
     item.taskTemplateId = template.id;
     item.taskType = String(template.name || '').slice(0, 128) || template.id;
+    item.productLine = productLine;
+    item.unitLabel = '台';
+    // 派单模式在派单时选择；报销由工程师按需填写
+    item.expenseEnabled = true;
+    if (!item.assignMode) item.assignMode = 'single';
+    if (item.assignMode === 'single') item.plannedUnits = 1;
     await this.cases.save(item);
     await this.logs.write(
       'service_case',
       caseId,
       'task_type',
       prev,
-      { taskType: item.taskType, taskTemplateId: item.taskTemplateId },
+      {
+        taskType: item.taskType,
+        taskTemplateId: item.taskTemplateId,
+        productLine: item.productLine,
+      },
       user.id,
-      `设置任务类型 → ${item.taskType}`,
+      productLine
+        ? `设置服务类型 → ${item.taskType} / ${productLine}`
+        : `设置服务类型 → ${item.taskType}`,
     );
     return item;
   }
@@ -173,7 +216,7 @@ export class CaseBridgeService {
   async batchCreateTasks(dto: BatchCreateTasksFromCasesDto, user: CurrentUserContext) {
     this.assertAdminOrManager(user);
     if (!dto.caseIds?.length) throw new BadRequestException('请选择案例');
-    if (!dto.inspectorId) throw new BadRequestException('请指定本站工程师');
+    if (!dto.inspectorId) throw new BadRequestException('请指定本网格工程师');
 
     const list = await this.cases.find({ where: { id: In(dto.caseIds) } });
     if (!list.length) throw new NotFoundException('未找到案例');
@@ -184,13 +227,21 @@ export class CaseBridgeService {
 
     for (const item of list) {
       if (!item.siteId) {
-        skipped.push({ caseId: item.id, reason: '未分配站点' });
+        skipped.push({ caseId: item.id, reason: '未分配网格' });
         continue;
       }
       this.assertSiteManage(user, item.siteId);
       if (!item.taskTemplateId && !item.taskType) {
-        skipped.push({ caseId: item.id, reason: '未设置任务类型' });
+        skipped.push({ caseId: item.id, reason: '未设置服务类型' });
         continue;
+      }
+      if (item.taskTemplateId) {
+        const tpl = await this.templates.findOne({ where: { id: item.taskTemplateId } });
+        const lines = Array.isArray(tpl?.productLines) ? tpl!.productLines : [];
+        if (lines.length && !String(item.productLine || '').trim()) {
+          skipped.push({ caseId: item.id, reason: '未选择产品线' });
+          continue;
+        }
       }
       if (item.status !== 'pending_assign') {
         skipped.push({ caseId: item.id, reason: '案例已派单或已进入后续状态' });
@@ -245,7 +296,7 @@ export class CaseBridgeService {
 
   private async getSite(id: string) {
     const site = await this.sites.findOne({ where: { id, deletedAt: IsNull() } });
-    if (!site) throw new NotFoundException('站点不存在');
+    if (!site) throw new NotFoundException('网格不存在');
     return site;
   }
 
@@ -258,14 +309,14 @@ export class CaseBridgeService {
   private assertCanAssignSite(user: CurrentUserContext, siteId: string) {
     if (user.role === UserRole.SUPER_ADMIN) return;
     if (!user.managedSiteIds?.includes(siteId)) {
-      throw new ForbiddenException('只能分配到自己管理的站点');
+      throw new ForbiddenException('只能分配到自己管理的网格');
     }
   }
 
   private assertSiteManage(user: CurrentUserContext, siteId: string) {
     if (user.role === UserRole.SUPER_ADMIN) return;
     if (!user.managedSiteIds?.includes(siteId)) {
-      throw new ForbiddenException('无权操作该站点案例');
+      throw new ForbiddenException('无权操作该网格案例');
     }
   }
 
@@ -278,7 +329,7 @@ export class CaseBridgeService {
         memberRole: SiteMemberRole.INSPECTOR,
       },
     });
-    if (!hit) throw new BadRequestException('工程师不属于该站点，请先入职');
+    if (!hit) throw new BadRequestException('工程师不属于该网格，请先入职');
   }
 
   private async ensureWorkRecord(item: ServiceCase, inspectorId: string) {

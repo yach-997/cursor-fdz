@@ -17,7 +17,7 @@ interface AuthState {
   hydrate: () => void;
 }
 
-/** H5 认证与当前站点 Store */
+/** H5 认证与当前网格 Store */
 export const useAuthStore = create<AuthState>((set) => ({
   token: null,
   user: null,

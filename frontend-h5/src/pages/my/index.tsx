@@ -7,7 +7,7 @@ import { mobileCacheKeys } from '../../utils/mobileCacheKeys';
 import { useCachedResource } from '../../utils/useCachedResource';
 import './my.css';
 
-/** 我的：头像、站点、统计、设置 */
+/** 我的：头像、网格、统计、设置 */
 export default function MyPage() {
   const navigate = useNavigate();
   const { user, currentSite, logout } = useAuthStore();
@@ -53,7 +53,7 @@ export default function MyPage() {
       <div className="my-body">
         <Cell.Group inset>
           <Cell
-            title="当前站点"
+            title="当前网格"
             value={currentSite?.name || '未选择'}
             isLink
             onClick={() => navigate('/m/sites')}

@@ -226,7 +226,7 @@ export class DeviceService {
 
       try {
         const siteCode = String(
-          row.site_code || row.siteCode || row['站点编码'] || '',
+          row.site_code || row.siteCode || row['网格编码'] || '',
         ).trim();
         const serialNumber = String(
           row.serial_number || row.serialNumber || row['序列号'] || '',
@@ -242,7 +242,7 @@ export class DeviceService {
         ).trim();
 
         if (!siteCode || !serialNumber || !deviceTypeRaw) {
-          throw new Error('站点编码、序列号、设备类型为必填');
+          throw new Error('网格编码、序列号、设备类型为必填');
         }
 
         const deviceType = this.parseDeviceType(deviceTypeRaw);
@@ -250,10 +250,10 @@ export class DeviceService {
           where: { code: siteCode, deletedAt: IsNull() },
         });
         if (!site) {
-          throw new Error(`站点编码不存在: ${siteCode}`);
+          throw new Error(`网格编码不存在: ${siteCode}`);
         }
         if (site.status !== CommonStatus.ACTIVE) {
-          throw new Error(`站点已停用: ${siteCode}`);
+          throw new Error(`网格已停用: ${siteCode}`);
         }
 
         this.assertSiteAccess(site.id, currentUser);
@@ -360,7 +360,7 @@ export class DeviceService {
     return type;
   }
 
-  /** 批量挂载站点，避免 join + orderBy 触发 TypeORM databaseName 错误 */
+  /** 批量挂载网格，避免 join + orderBy 触发 TypeORM databaseName 错误 */
   private async attachSites(devices: Device[]) {
     if (!devices.length) return;
     const siteIds = [...new Set(devices.map((d) => d.siteId).filter(Boolean))];
@@ -378,7 +378,7 @@ export class DeviceService {
       where: { id: siteId, deletedAt: IsNull() },
     });
     if (!site) {
-      throw new NotFoundException('站点不存在');
+      throw new NotFoundException('网格不存在');
     }
     return site;
   }
@@ -389,13 +389,13 @@ export class DeviceService {
     }
     if (currentUser.role === UserRole.SITE_MANAGER) {
       if (!currentUser.managedSiteIds.includes(siteId)) {
-        throw new ForbiddenException('无权操作该站点下的设备');
+        throw new ForbiddenException('无权操作该网格下的设备');
       }
       return;
     }
     if (currentUser.role === UserRole.INSPECTOR) {
       if (!currentUser.memberSiteIds.includes(siteId)) {
-        throw new ForbiddenException('无权访问该站点下的设备');
+        throw new ForbiddenException('无权访问该网格下的设备');
       }
     }
   }

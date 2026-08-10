@@ -123,7 +123,7 @@ async function resolveRole(db: ReturnType<typeof sb>, user: Record<string, unkno
     if (roles.includes('site_manager')) return 'site_manager';
     const { data: managed } = await db.from('sites').select('id').eq('manager_id', user.id).limit(1);
     if (managed?.length) return 'site_manager';
-    throw new Response(JSON.stringify({ code: 403, message: '该账号无管理端权限。请使用 H5 巡检端登录', data: null }), {
+    throw new Response(JSON.stringify({ code: 403, message: '该账号无管理端权限。请使用 H5 作业端登录', data: null }), {
       status: 403,
       headers: { ...cors, 'Content-Type': 'application/json' },
     });
@@ -131,7 +131,7 @@ async function resolveRole(db: ReturnType<typeof sb>, user: Record<string, unkno
   if (roles.includes('inspector')) return 'inspector';
   const { data: mem } = await db.from('site_members').select('id').eq('user_id', user.id).eq('status', 'active').limit(1);
   if (mem?.length) return 'inspector';
-  throw new Response(JSON.stringify({ code: 403, message: '该账号无巡检端权限。请使用 PC 管理端登录', data: null }), {
+  throw new Response(JSON.stringify({ code: 403, message: '该账号无作业端权限。请使用 PC 管理端登录', data: null }), {
     status: 403,
     headers: { ...cors, 'Content-Type': 'application/json' },
   });

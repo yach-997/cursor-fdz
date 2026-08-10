@@ -49,6 +49,10 @@ export default function PoOrdersPage() {
     [generating, setGenerating] = useState(false),
     [match, setMatch] = useState<PoOrder>(),
     [form] = Form.useForm();
+
+  useEffect(() => {
+    if (!admin && status === 'pending') setStatus('matched');
+  }, [admin, status]);
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -115,9 +119,14 @@ export default function PoOrdersPage() {
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="第二次导入：钉钉 PO 表（单文件）"
-        description="从钉钉导出的一张 PO Excel 即可（表很宽：左侧案例/产品信息，右侧专用与通用服务条目）。合并单元格格式不统一也可导入。按 GSP 案例号挂接第一次导入的案例并补全价格数量。未找到案例的 PO 进入「待匹配」。点击行左侧展开可查看专用/通用条目明细。"
+        message={admin ? '第二次导入：钉钉 PO 表（单文件）' : '本网格已匹配 PO'}
+        description={
+          admin
+            ? '从钉钉导出的一张 PO Excel 即可（表很宽：左侧案例/产品信息，右侧专用与通用服务条目）。合并单元格格式不统一也可导入。按 GSP 案例号挂接第一次导入的案例并补全价格数量。未找到案例的 PO 进入「待匹配」。点击行左侧展开可查看专用/通用条目明细。'
+            : '仅显示已挂接到本网格案例的 PO。未匹配、未分配网格的 PO 由管理员处理。'
+        }
       />
+      {admin && (
       <div className="finance-toolbar">
         <Button
           icon={<DownloadOutlined />}
@@ -139,16 +148,21 @@ export default function PoOrdersPage() {
           </Button>
         )}
       </div>
+      )}
       <Tabs
         activeKey={status}
         onChange={(v) => {
           setPage(1);
           setStatus(v as any);
         }}
-        items={[
-          { key: 'matched', label: '已匹配' },
-          { key: 'pending', label: '待匹配队列' },
-        ]}
+        items={
+          admin
+            ? [
+                { key: 'matched', label: '已匹配' },
+                { key: 'pending', label: '待匹配队列' },
+              ]
+            : [{ key: 'matched', label: '本网格已匹配 PO' }]
+        }
       />
       <Table
         rowKey="id"

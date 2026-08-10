@@ -76,7 +76,7 @@ export class QueryTaskDto extends PaginationDto {
   @IsPostgresUuid()
   siteId?: string;
 
-  /** 区域关键词：匹配站点省/市/区/名称 */
+  /** 区域关键词：匹配网格省/市/区/名称 */
   @IsOptional()
   @IsString()
   region?: string;

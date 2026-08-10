@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { InspectionTemplate, Site } from '../../entities';
+import { InspectionTemplate, Site, ServiceCase } from '../../entities';
 import { TemplateService } from './template.service';
 import { TemplateController } from './template.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([InspectionTemplate, Site])],
+  imports: [TypeOrmModule.forFeature([InspectionTemplate, Site, ServiceCase])],
   controllers: [TemplateController],
   providers: [TemplateService],
   exports: [TemplateService],

@@ -21,11 +21,25 @@ export interface FinanceCase {
   taskType?: string | null;
   taskTemplateId?: string | null;
   taskTypeName?: string | null;
+  assignMode?: 'single' | 'multi';
+  plannedUnits?: number;
+  completedUnits?: number;
+  expenseEnabled?: boolean;
+  unitLabel?: string;
+  productLine?: string | null;
   inspectorId?: string;
   inspectorName?: string | null;
   finishTime?: string;
   updatedAt: string;
   caseRevenue: string;
+  assignments?: Array<{
+    inspectorId: string;
+    inspectorName?: string;
+    username?: string;
+    phone?: string;
+    status?: string;
+    completedUnits?: number;
+  }>;
 }
 export interface PoItemRow {
   id: string;
@@ -108,6 +122,50 @@ export interface FinanceDashboard {
   trend: Array<{ month: string; income: string }>;
 }
 
+export interface FinanceVarianceDetail {
+  summary: {
+    income: number;
+    poTotalAmount: number;
+    varianceAmount: number;
+    varianceRate: number;
+    pendingPrice: number;
+    ignoredCount: number;
+    okCount: number;
+    unmatchedPoCount: number;
+    unmatchedPoAmount: number;
+    caseGapCount: number;
+    caseGapAmount: number;
+  };
+  buckets: Array<{
+    key: string;
+    label: string;
+    amount: number;
+    count: number;
+    tip: string;
+  }>;
+  cases: Array<{
+    caseId: string;
+    gspCaseNo: string;
+    projectName: string;
+    poTotalAmount: number;
+    caseRevenue: number;
+    gap: number;
+    pendingPrice: number;
+    ignoredCount: number;
+    okCount: number;
+    reason: string;
+  }>;
+  unmatchedPos: Array<{
+    id: string;
+    poNo: string;
+    gspCaseNo: string;
+    projectName: string;
+    poTotalAmount: number;
+    matchStatus: string;
+  }>;
+  ignoredItems: Array<{ itemCode: string; count: number; qty: number }>;
+}
+
 export interface FinanceAssessment {
   id?: string;
   month: string;
@@ -115,10 +173,15 @@ export interface FinanceAssessment {
   realName: string;
   username: string;
   region?: string;
-  userRole: string;
+  userRole: string; // site_manager | inspector | dual
+  siteId?: string | null;
+  siteName?: string | null;
   internalScore?: string;
   sungrowScore?: string;
   totalScore?: string;
+  /** 本网格参考名次（第几名，不发奖） */
+  siteRankResult?: string | null;
+  /** 全司正式排名 */
   rankResult?: string;
   rewardAmount?: string;
   eventPenalty?: string;
@@ -138,6 +201,8 @@ export interface AssessmentEventRow {
   id: string;
   month: string;
   userId: string;
+  userName?: string | null;
+  serviceCaseId?: string | null;
   category: string;
   content: string;
   unit: string;
@@ -162,6 +227,7 @@ export interface FinanceMonthlySettlement {
 export interface FinanceInspectorOption {
   id: string;
   realName: string;
+  username?: string;
   phone: string;
   region: string;
   available: boolean;
@@ -173,6 +239,7 @@ export interface FinanceReviewItem {
   gspCaseNo: string;
   projectName: string;
   region: string;
+  inspectorId?: string;
   inspectorName?: string;
   finishTime?: string;
   dueAt?: string;
@@ -180,12 +247,50 @@ export interface FinanceReviewItem {
   remainingHours?: number;
   perfBase: string;
   deduction: string;
+  /** 本案例已登记的事件扣罚合计 */
+  eventPenalty?: number | string;
   perfFinal: string;
   caseRevenue: string;
   reviewStatus: string;
   deductionStatus: string;
   missingPerf: number;
   approvalReady: boolean;
+  reviewTime?: string | null;
+  reviewComment?: string | null;
+}
+export interface ReviewAmountBreakdown {
+  caseId: string;
+  gspCaseNo: string;
+  projectName: string;
+  finishTime?: string | null;
+  caseRevenue: string;
+  perfBase: string;
+  deduction: string;
+  perfFinal: string;
+  eventPenalty: string;
+  items: Array<{
+    id: string;
+    poId: string;
+    itemCode: string;
+    itemName: string;
+    unit?: string | null;
+    qty: string;
+    settlePrice?: string | null;
+    itemRevenue: string;
+    perfPrice?: string | null;
+    itemPerf: string;
+    priceStatus?: string;
+  }>;
+  events: Array<{
+    id: string;
+    category?: string;
+    content: string;
+    amount: string;
+    remark?: string | null;
+    userId: string;
+    userName?: string | null;
+    createdAt?: string;
+  }>;
 }
 export interface ImportResult {
   preview?: unknown[];
@@ -196,6 +301,14 @@ export interface ImportResult {
   successRows?: number;
   failRows?: number;
   failures?: Array<{ row: number; reason: string }>;
+  warnings?: Array<{ row?: number; warning?: string }>;
+  matchWarnings?: Array<{
+    row?: number;
+    gspCaseNo?: string;
+    code?: string;
+    message: string;
+  }>;
+  matchedTypes?: number;
   batchId?: string;
   generatedCases?: number;
   matchedOrders?: number;

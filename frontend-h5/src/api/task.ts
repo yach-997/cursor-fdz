@@ -18,6 +18,7 @@ export interface TaskItem {
   startedAt?: string;
   createdAt?: string;
   serviceCaseId?: string | null;
+  workUnitId?: string | null;
   taskType?: 'inspection' | 'service' | string;
   site?: {
     id: string;

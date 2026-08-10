@@ -12,15 +12,25 @@ import { FinanceSettlementService } from '../services/finance-settlement.service
 export class FinanceMonthlySettlementController {
   constructor(private readonly service: FinanceSettlementService) {}
   @Get() list(@Query() query: MonthlyQueryDto, @CurrentUser() user: CurrentUserContext) {
-    return this.service.listMonthly(query.month, user);
+    return this.service.listMonthly(query.month, user, {
+      keyword: query.keyword,
+      siteId: query.siteId,
+      role: query.role,
+    });
   }
-  @Post(':month/correct') correct(@Param('month') month: string, @Body() dto: CorrectMonthlyDto, @CurrentUser() user: CurrentUserContext) {
+  @Post(':month/correct')
+  @Roles(UserRole.SUPER_ADMIN)
+  correct(@Param('month') month: string, @Body() dto: CorrectMonthlyDto, @CurrentUser() user: CurrentUserContext) {
     return this.service.correct(month, dto, user);
   }
-  @Post(':month/lock') lock(@Param('month') month: string, @CurrentUser() user: CurrentUserContext) {
+  @Post(':month/lock')
+  @Roles(UserRole.SUPER_ADMIN)
+  lock(@Param('month') month: string, @CurrentUser() user: CurrentUserContext) {
     return this.service.lock(month, user);
   }
-  @Get(':month/export') async export(
+  @Get(':month/export')
+  @Roles(UserRole.SUPER_ADMIN)
+  async export(
     @Param('month') month: string,
     @Query() query: MonthlyExportDto,
     @CurrentUser() user: CurrentUserContext,

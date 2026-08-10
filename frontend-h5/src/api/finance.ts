@@ -15,6 +15,48 @@ export interface CaseChecklistItem {
   note: string;
   order: number;
 }
+
+export interface TripExpenseClaim {
+  id: string;
+  workUnitId?: string | null;
+  unitSeq?: number | null;
+  unitTitle?: string | null;
+  /** 结算/核定额 */
+  amount: string;
+  /** 工程师申报额 */
+  claimAmount?: string;
+  note?: string | null;
+  voucherUrls?: string[];
+  startOdometerUrl?: string | null;
+  startNavUrl?: string | null;
+  startMileage?: string | null;
+  endOdometerUrl?: string | null;
+  endNavUrl?: string | null;
+  endMileage?: string | null;
+  mileageKm?: string | null;
+  /** 开工选择无行程 */
+  tripSkipped?: boolean;
+  status: string;
+  reviewNote?: string | null;
+  inspectorId?: string;
+  inspectorName?: string;
+}
+
+export interface TripExpensePayload {
+  startOdometerUrl?: string | null;
+  startNavUrl?: string | null;
+  startMileage?: number | null;
+  endOdometerUrl?: string | null;
+  endNavUrl?: string | null;
+  endMileage?: number | null;
+  amount?: number;
+  voucherUrls?: string[];
+  note?: string;
+  /** true=无行程；false=改为需要行程 */
+  tripSkipped?: boolean;
+  submit?: boolean;
+}
+
 export interface MobileFinanceCase {
   id: string;
   gspCaseNo: string;
@@ -27,6 +69,18 @@ export interface MobileFinanceCase {
   taskType?: 'inspection' | 'service' | string | null;
   taskTypeName?: string | null;
   taskTemplateId?: string | null;
+  assignMode?: 'single' | 'multi';
+  plannedUnits?: number;
+  completedUnits?: number;
+  expenseEnabled?: boolean;
+  unitLabel?: string;
+  expenses?: TripExpenseClaim[];
+  expenseSummary?: {
+    totalAmount: string;
+    approvedAmount: string;
+    submittedAmount: string;
+    count: number;
+  };
   taskEntries?: Array<{
     id: string;
     name: string;
@@ -36,10 +90,31 @@ export interface MobileFinanceCase {
     order: number;
   }>;
   checklist?: CaseChecklistItem[];
-  /** 关联的巡检任务（派单后自动创建） */
   inspectionTaskId?: string | null;
   inspectionTaskStatus?: string | null;
   inspectionDone?: boolean;
+  activeUnit?: {
+    id: string;
+    seq: number;
+    title?: string | null;
+    status: string;
+    inspectionTaskId?: string | null;
+  } | null;
+  myActiveUnits?: Array<{
+    id: string;
+    seq: number;
+    title?: string | null;
+    status: string;
+    inspectionTaskId?: string | null;
+  }>;
+  units?: Array<{
+    id: string;
+    seq: number;
+    title?: string | null;
+    status: string;
+    inspectorId?: string | null;
+    inspectionTaskId?: string | null;
+  }>;
   assignTime?: string;
   finishTime?: string;
   workRecord?: CaseWorkRecord | null;
@@ -56,6 +131,15 @@ export interface CaseWorkRecord {
   mileageScreenshotUrls: string[];
   workNote?: string;
 }
+export interface IncomeEventPenalty {
+  id: string;
+  category: string;
+  content: string;
+  qty: string;
+  unit: string;
+  amount: string;
+  remark?: string | null;
+}
 export interface IncomeLedger {
   id: string;
   gspCaseNo: string;
@@ -63,9 +147,23 @@ export interface IncomeLedger {
   deduction: string;
   deductionReason?: string;
   perfFinal: string;
+  casePerfFinal?: string;
+  myShareRatio?: string;
+  myCompletedUnits?: number | null;
+  plannedUnits?: number | null;
+  assignMode?: 'single' | 'multi';
+  isShared?: boolean;
   reviewStatus: 'pending' | 'approved' | 'rejected';
   serviceCase?: MobileFinanceCase;
-  items: Array<{ itemName: string; qty: string; perfPrice: string; itemPerf: string }>;
+  items: Array<{
+    itemName: string;
+    qty: string;
+    perfPrice: string;
+    itemPerf: string;
+    caseItemPerf?: string;
+  }>;
+  eventPenalties?: IncomeEventPenalty[];
+  eventPenaltyTotal?: string;
 }
 export interface MyIncome {
   month: string;
@@ -78,11 +176,33 @@ export interface MyIncome {
     totalScore: string;
     rankResult?: string;
     rewardAmount: string;
+    eventPenalty?: string;
     toolSubsidy: string;
     otherSubsidy: string;
     subsidyRemark?: string;
+    correctionAmount?: string;
+    correctionReason?: string | null;
   } | null;
-  monthlySettlement?: { finalAmount: string; status: string } | null;
+  monthlySettlement?: {
+    perfTotal?: string;
+    expenseTotal?: string;
+    rewardTotal?: string;
+    eventPenalty?: string;
+    subsidyTotal?: string;
+    correctionTotal?: string;
+    finalAmount: string;
+    status: string;
+  } | null;
+  expenses?: Array<{
+    id: string;
+    serviceCaseId: string;
+    amount: string;
+    note?: string | null;
+    month?: string | null;
+    projectName?: string | null;
+    gspCaseNo?: string | null;
+  }>;
+  otherEventPenalties?: IncomeEventPenalty[];
 }
 
 export async function fetchMyFinanceCases() {
@@ -107,8 +227,68 @@ export async function uploadFinanceWorkPhoto(id: string, file: File) {
     }),
   );
 }
-export async function finishFinanceCase(id: string) {
-  return unwrap(await request.post<ApiResponse<MobileFinanceCase>>(`/cases/${id}/finish`));
+export async function finishFinanceCase(id: string, opts?: { skipErrorToast?: boolean }) {
+  const res = await request.post<ApiResponse<MobileFinanceCase>>(
+    `/cases/${id}/finish`,
+    undefined,
+    { skipErrorToast: opts?.skipErrorToast } as never,
+  );
+  return unwrap(res);
+}
+export async function claimFinanceUnit(caseId: string, unitId: string) {
+  return unwrap(
+    await request.post<ApiResponse<{ inspectionTaskId: string; case: MobileFinanceCase }>>(
+      `/cases/${caseId}/units/${unitId}/claim`,
+    ),
+  );
+}
+export async function completeFinanceUnit(
+  caseId: string,
+  unitId: string,
+  opts?: { skipErrorToast?: boolean },
+) {
+  const res = await request.post<ApiResponse<MobileFinanceCase>>(
+    `/cases/${caseId}/units/${unitId}/complete`,
+    undefined,
+    { skipErrorToast: opts?.skipErrorToast } as never,
+  );
+  return unwrap(res);
+}
+export async function saveUnitTripExpense(
+  caseId: string,
+  unitId: string,
+  payload: TripExpensePayload,
+) {
+  return unwrap(
+    await request.post<ApiResponse<TripExpenseClaim>>(
+      `/cases/${caseId}/units/${unitId}/expense`,
+      payload,
+    ),
+  );
+}
+export async function ocrUnitMileage(
+  caseId: string,
+  unitId: string,
+  imageUrl: string,
+  kind: 'start' | 'end' = 'start',
+) {
+  return unwrap(
+    await request.post<
+      ApiResponse<{
+        mileage: number | null;
+        confidence: number;
+        rawText: string;
+        kind: string;
+      }>
+    >(`/cases/${caseId}/units/${unitId}/expense/ocr-mileage`, { imageUrl, kind }),
+  );
+}
+/** @deprecated 使用 saveUnitTripExpense */
+export async function saveFinanceExpense(
+  caseId: string,
+  payload: TripExpensePayload & { workUnitId?: string; amount?: number; voucherUrls?: string[] },
+) {
+  return unwrap(await request.post<ApiResponse<TripExpenseClaim>>(`/cases/${caseId}/expenses`, payload));
 }
 export async function fetchMyIncome(month?: string) {
   return unwrap(await request.get<ApiResponse<MyIncome>>('/my/income', { params: { month } }));

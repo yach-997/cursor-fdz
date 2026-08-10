@@ -42,6 +42,7 @@ export interface ParsedGspCase {
   gspCaseNo: string;
   projectName: string;
   serviceType: string | null;
+  productLine: string | null;
   creator: string | null;
   province: string | null;
   city: string | null;
@@ -332,6 +333,7 @@ export class ExcelParserService {
       案例号: 'gspCaseNo',
       项目名称: 'projectName',
       服务类型: 'serviceType',
+      产品线: 'productLine',
       创建人: 'creator',
       所属省份: 'province',
       省份: 'province',
@@ -374,6 +376,7 @@ export class ExcelParserService {
         gspCaseNo: raw.gspCaseNo,
         projectName,
         serviceType: raw.serviceType || null,
+        productLine: raw.productLine || null,
         creator: raw.creator || null,
         province: raw.province || null,
         city: raw.city || null,
@@ -655,6 +658,7 @@ export class ExcelParserService {
         '服务案例号',
         '项目名称',
         '服务类型',
+        '产品线',
         '创建人',
         '省份',
         '城市',
@@ -663,7 +667,8 @@ export class ExcelParserService {
       sheet.addRow([
         'GSP-示例-001',
         '示例光伏项目',
-        '巡检',
+        '故障恢复',
+        '地面-组串式',
         '张三',
         '云南',
         '昆明',
@@ -677,6 +682,7 @@ export class ExcelParserService {
       tip.addRow(['用途：第一次导入，建立服务案例']);
       tip.addRow(['必填：服务案例号']);
       tip.addRow(['可空：项目名称（空则系统用案例号占位，后续 PO 导入可补全）']);
+      tip.addRow(['服务类型 / 产品线：按系统「服务类型」配置精确匹配；匹配不上仍可导入，并提示去补配置']);
       tip.addRow(['导入入口：案例管理 → 导入案例']);
       const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
       return { filename: 'GSP案例导入模板.xlsx', buffer };

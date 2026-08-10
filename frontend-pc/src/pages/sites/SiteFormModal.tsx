@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { Button, Form, Input, InputNumber, Modal, Select, Space, Tag, message } from 'antd';
+import { Button, Form, Input, Modal, Select, Space, Tag, message } from 'antd';
 import { AimOutlined, EnvironmentOutlined, SearchOutlined } from '@ant-design/icons';
 import type { FormInstance } from 'antd';
 import MapPicker from '../../components/MapPicker';
@@ -36,7 +36,7 @@ function syncRegionFields(form: FormInstance, fullRaw?: string) {
   return Boolean(province && city && district);
 }
 
-/** 新增/编辑站点：完整地址输入 + 定位 */
+/** 新增/编辑网格：完整地址输入 + 定位 */
 export default function SiteFormModal({
   open,
   editing,
@@ -160,7 +160,7 @@ export default function SiteFormModal({
     const secondDistrict = local.detail.match(/^(.+?(?:区|县|旗|新区))/)?.[1];
     if (local.district && secondDistrict && secondDistrict !== local.district) {
       message.error(
-        `地址同时包含「${local.district}」和「${secondDistrict}」，请只保留站点实际所在的区/县后再解析`,
+        `地址同时包含「${local.district}」和「${secondDistrict}」，请只保留网格实际所在的区/县后再解析`,
       );
       return;
     }
@@ -210,7 +210,7 @@ export default function SiteFormModal({
 
   return (
     <Modal
-      title={editing ? '编辑站点' : '新增站点'}
+      title={editing ? '编辑网格' : '新增网格'}
       open={open}
       onCancel={onCancel}
       onOk={handleOk}
@@ -222,14 +222,14 @@ export default function SiteFormModal({
       <Form form={form} layout="vertical" requiredMark="optional">
         <Form.Item
           name="name"
-          label="站点名称"
-          rules={[{ required: true, message: '请输入站点名称' }]}
+          label="网格名称"
+          rules={[{ required: true, message: '请输入网格名称' }]}
         >
           <Input placeholder="如：西华大学光伏电站" />
         </Form.Item>
         <Form.Item
           name="code"
-          label="站点编码"
+          label="网格编码"
           rules={[{ required: true, message: '请输入编码' }]}
         >
           <Input placeholder="如：001" disabled={!!editing} />
@@ -323,28 +323,11 @@ export default function SiteFormModal({
           </div>
         </div>
 
-        <Form.Item name="latitude" hidden rules={[{ required: true, message: '请定位站点' }]}>
+        <Form.Item name="latitude" hidden rules={[{ required: true, message: '请定位网格' }]}>
           <Input type="hidden" />
         </Form.Item>
-        <Form.Item name="longitude" hidden rules={[{ required: true, message: '请定位站点' }]}>
+        <Form.Item name="longitude" hidden rules={[{ required: true, message: '请定位网格' }]}>
           <Input type="hidden" />
-        </Form.Item>
-
-        <Form.Item
-          name="inspectionRadiusMeters"
-          label="巡检定位范围"
-          initialValue={500}
-          rules={[{ required: true, message: '请设置巡检定位范围' }]}
-          extra="工程师只有在这个范围内才能现场拍照和提交报告。建议普通站点 300–500 米，大型园区可适当放宽。"
-        >
-          <InputNumber
-            min={50}
-            max={5000}
-            step={50}
-            precision={0}
-            addonAfter="米"
-            style={{ width: '100%' }}
-          />
         </Form.Item>
 
         {editing && (

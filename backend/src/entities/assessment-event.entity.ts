@@ -9,10 +9,14 @@ import {
 
 @Entity('assessment_event')
 @Index(['month', 'userId'])
+@Index(['serviceCaseId'])
 export class AssessmentEvent {
   @PrimaryGeneratedColumn({ type: 'bigint' }) id: string;
   @Column({ type: 'varchar', length: 7 }) month: string;
   @Column({ name: 'user_id', type: 'uuid' }) userId: string;
+  /** 关联服务案例（结算审核录入时必填；月度杂项可空） */
+  @Column({ name: 'service_case_id', type: 'bigint', nullable: true })
+  serviceCaseId: string | null;
   @Column({ name: 'category', type: 'varchar', length: 64 }) category: string;
   @Column({ name: 'content', type: 'text' }) content: string;
   @Column({ type: 'varchar', length: 16, default: '次' }) unit: string;

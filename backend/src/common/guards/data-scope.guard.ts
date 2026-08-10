@@ -11,8 +11,8 @@ import { CurrentUserContext } from '../interfaces';
  * 数据范围守卫（数据隔离中间件）
  * 规则：
  * 1. super_admin：跳过所有 site_id 过滤，全平台可见
- * 2. site_manager：查询自动限定在自己管理的站点；传 site_id 须属于该网格长
- * 3. inspector：只能查自己加入的站点；任务/记录进一步在业务层按本人过滤
+ * 2. site_manager：查询自动限定在自己管理的网格；传 site_id 须属于该网格长
+ * 3. inspector：只能查自己加入的网格；任务/记录进一步在业务层按本人过滤
  */
 @Injectable()
 export class DataScopeGuard implements CanActivate {
@@ -24,7 +24,7 @@ export class DataScopeGuard implements CanActivate {
       return true; // 公开接口无用户，交由 JwtAuthGuard 处理
     }
 
-    // 超级管理员：不限制站点范围
+    // 超级管理员：不限制网格范围
     if (user.role === UserRole.SUPER_ADMIN) {
       user.scopedSiteIds = [];
       request.dataScope = {
@@ -34,7 +34,7 @@ export class DataScopeGuard implements CanActivate {
       return true;
     }
 
-    // 网格长：限定管理站点
+    // 网格长：限定管理网格
     if (user.role === UserRole.SITE_MANAGER) {
       const managedIds = user.managedSiteIds || [];
       user.scopedSiteIds = managedIds;
@@ -51,13 +51,13 @@ export class DataScopeGuard implements CanActivate {
         request.body?.siteId;
 
       if (explicitSiteId && !managedIds.includes(explicitSiteId)) {
-        throw new ForbiddenException('无权访问该站点数据');
+        throw new ForbiddenException('无权访问该网格数据');
       }
 
       return true;
     }
 
-    // 工程师：限定加入的站点
+    // 工程师：限定加入的网格
     if (user.role === UserRole.INSPECTOR) {
       const memberIds = user.memberSiteIds || [];
       user.scopedSiteIds = memberIds;
@@ -74,7 +74,7 @@ export class DataScopeGuard implements CanActivate {
         request.body?.siteId;
 
       if (explicitSiteId && !memberIds.includes(explicitSiteId)) {
-        throw new ForbiddenException('无权访问该站点数据');
+        throw new ForbiddenException('无权访问该网格数据');
       }
 
       return true;

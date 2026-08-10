@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Card,
@@ -12,50 +12,58 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Upload,
   message,
 } from 'antd';
-import { PlusOutlined, EditOutlined, CopyOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, UploadOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import { useSearchParams } from 'react-router-dom';
 import {
   fetchTemplates,
   createTemplate,
   updateTemplate,
   deleteTemplate,
-  cloneTemplate,
   type TemplateItem,
   type TemplateEntry,
+  type TemplateProductLine,
 } from '../../api/template';
-import { fetchSites } from '../../api/site';
 import { useAuthStore } from '../../stores/auth';
-import type { DeviceType, SiteItem } from '../../types';
-import { DEVICE_TYPE_LABEL } from '../../types';
 import { uploadImage } from '../../api/upload';
 import { displayPhotoUrl } from '../../utils/photo-url';
 
-const DEVICE_TYPE_OPTIONS = (
-  Object.entries(DEVICE_TYPE_LABEL) as Array<[DeviceType, string]>
-).map(([value, label]) => ({ value, label }));
+function emptyEntry(order = 0): TemplateEntry {
+  return {
+    id: `tmp-${Date.now()}-${order}`,
+    name: `检查项${order + 1}`,
+    description: '',
+    isRequired: true,
+    order,
+    samplePhotos: [],
+    checkType: 'photo',
+  };
+}
 
-/** 任务类型：可新建组串/集中/储能等类型，并维护检查条目 */
+/** 服务类型（对齐 GSP / PO）：全司统一配置检查条目与产品线 */
 export default function TemplatesPage() {
   const currentUser = useAuthStore((s) => s.user);
-  const isAdmin = currentUser?.role === 'super_admin';
+  const canManage =
+    currentUser?.role === 'super_admin' || currentUser?.role === 'site_manager';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkHandled = useRef(false);
 
   const [keyword, setKeyword] = useState('');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [loading, setLoading] = useState(false);
   const [list, setList] = useState<TemplateItem[]>([]);
-  const [sites, setSites] = useState<SiteItem[]>([]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<TemplateItem | null>(null);
   const [form] = Form.useForm();
+  const [productLines, setProductLines] = useState<TemplateProductLine[]>([]);
+  /** 当前编辑的产品线 id */
+  const [activeLineId, setActiveLineId] = useState<string>('');
   const [entries, setEntries] = useState<TemplateEntry[]>([]);
-
-  const [cloneOpen, setCloneOpen] = useState(false);
-  const [cloneTpl, setCloneTpl] = useState<TemplateItem | null>(null);
-  const [cloneSiteId, setCloneSiteId] = useState<string>();
   const [uploadingEntry, setUploadingEntry] = useState<number | null>(null);
 
   const load = useCallback(async () => {
@@ -64,7 +72,7 @@ export default function TemplatesPage() {
       const data = await fetchTemplates({
         keyword: searchKeyword || undefined,
       });
-      setList(data);
+      setList(data.filter((t) => t.isGlobal));
     } finally {
       setLoading(false);
     }
@@ -74,116 +82,288 @@ export default function TemplatesPage() {
     load();
   }, [load]);
 
-  useEffect(() => {
-    fetchSites({ limit: 100, status: 'active' }).then((res) => setSites(res.list));
-  }, []);
+  const persistActiveEntries = useCallback(
+    (nextEntries: TemplateEntry[], lineId = activeLineId) => {
+      if (!lineId) return;
+      setProductLines((prev) =>
+        prev.map((p) => (p.id === lineId ? { ...p, entries: nextEntries } : p)),
+      );
+    },
+    [activeLineId],
+  );
 
-  const openCreate = () => {
+  const switchLine = (lineId: string) => {
+    if (!lineId || lineId === activeLineId) return;
+    persistActiveEntries(entries);
+    setActiveLineId(lineId);
+    const line = productLines.find((p) => p.id === lineId);
+    setEntries([...(line?.entries || [])]);
+  };
+
+  const openCreate = (presetName = '', presetLine = '') => {
+    if (!canManage) {
+      message.warning('无权新建服务类型');
+      return;
+    }
     setEditing(null);
     form.resetFields();
     form.setFieldsValue({
-      name: '',
-      isGlobal: isAdmin,
-      deviceType: 'string_inverter',
+      name: presetName || '',
     });
-    setEntries([
-      {
-        id: `tmp-${Date.now()}`,
-        name: '检查项1',
-        description: '',
-        isRequired: true,
-        order: 0,
-        samplePhotos: [],
-        checkType: 'photo',
-      },
-    ]);
+    const lineId = `pl-${Date.now()}`;
+    const line: TemplateProductLine = {
+      id: lineId,
+      name: String(presetLine || '').trim(),
+      entries: [emptyEntry(0)],
+    };
+    setProductLines([line]);
+    setActiveLineId(lineId);
+    setEntries(line.entries);
     setModalOpen(true);
+    if (presetLine) {
+      message.info(`请完善产品线「${presetLine}」的检查条目后保存`);
+    }
   };
 
-  const openEdit = (record: TemplateItem) => {
+  const openEdit = (record: TemplateItem, suggestedLine = '') => {
     setEditing(record);
     form.setFieldsValue(record);
-    setEntries([...(record.entries || [])].sort((a, b) => a.order - b.order));
+    const defs = [...(record.entries || [])].sort((a, b) => a.order - b.order);
+    let lines = [...(record.productLines || [])].map((p) => ({
+      ...p,
+      entries: [...(p.entries || [])].sort((a, b) => a.order - b.order),
+    }));
+    // 旧数据仅有通用条目：迁入一条产品线，预填名称避免空白无法保存
+    if (!lines.length && defs.length) {
+      const id = `pl-${Date.now()}`;
+      lines = [{ id, name: record.name?.trim() || '默认', entries: defs }];
+    }
+    const want = String(suggestedLine || '').trim();
+    if (want && !lines.some((p) => String(p.name || '').trim() === want)) {
+      const id = `pl-${Date.now()}-suggest`;
+      const newLine: TemplateProductLine = {
+        id,
+        name: want,
+        entries: [emptyEntry(0)],
+      };
+      lines = [...lines, newLine];
+      setProductLines(lines);
+      setActiveLineId(id);
+      setEntries([...(newLine.entries || [])]);
+      setModalOpen(true);
+      message.info(`已预填产品线「${want}」，请配置检查条目后保存`);
+      return;
+    }
+    setProductLines(lines);
+    if (want) {
+      const hit = lines.find((p) => String(p.name || '').trim() === want);
+      if (hit) {
+        setActiveLineId(hit.id);
+        setEntries([...(hit.entries || [])]);
+        setModalOpen(true);
+        message.info(`产品线「${want}」已存在，请确认检查条目后保存`);
+        return;
+      }
+    }
+    if (lines.length) {
+      setActiveLineId(lines[0].id);
+      setEntries([...(lines[0].entries || [])]);
+    } else {
+      setActiveLineId('');
+      setEntries([]);
+    }
     setModalOpen(true);
   };
 
+  // 从案例列表「待补产品线 / 待补类型」跳转：自动打开对应服务类型并预填产品线
+  useEffect(() => {
+    if (deepLinkHandled.current || loading) return;
+    const templateId = searchParams.get('templateId');
+    const createName = String(searchParams.get('createName') || '').trim();
+    const addLine = String(searchParams.get('addLine') || '').trim();
+    if (!templateId && !createName) return;
+    // list 尚空时等下一轮；有 createName 也可在空列表时新建
+    if (!list.length && templateId && !createName) return;
+    deepLinkHandled.current = true;
+    if (templateId) {
+      const tpl = list.find((t) => t.id === templateId);
+      if (tpl) openEdit(tpl, addLine);
+      else if (createName) openCreate(createName, addLine);
+      else message.warning('未找到对应服务类型');
+    } else if (createName) {
+      const exist = list.find((t) => t.name === createName);
+      if (exist) openEdit(exist, addLine);
+      else openCreate(createName, addLine);
+    }
+    setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅处理一次深链入参
+  }, [list, loading, searchParams, setSearchParams]);
+
   const moveEntry = useCallback((index: number, dir: -1 | 1) => {
-    const next = [...entries];
-    const target = index + dir;
-    if (target < 0 || target >= next.length) return;
-    [next[index], next[target]] = [next[target], next[index]];
-    setEntries(next.map((e, i) => ({ ...e, order: i })));
-  }, [entries]);
+    setEntries((prev) => {
+      const next = [...prev];
+      const target = index + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next.map((e, i) => ({ ...e, order: i }));
+    });
+  }, []);
 
   const submit = async () => {
-    const values = await form.validateFields();
-    if (!entries.length) {
-      message.warning('至少添加一个检查条目');
+    if (!canManage) {
+      setModalOpen(false);
       return;
+    }
+    const values = await form.validateFields();
+    const lines = productLines.map((p) =>
+      p.id === activeLineId ? { ...p, entries } : p,
+    );
+    if (!lines.length) {
+      message.warning('请至少添加一条产品线');
+      return;
+    }
+    for (const line of lines) {
+      if (!String(line.name || '').trim()) {
+        message.warning('产品线名称不能为空');
+        return;
+      }
+      if (!line.entries?.length) {
+        message.warning(`产品线「${line.name}」至少需要一个检查条目`);
+        return;
+      }
     }
     const payload = {
       ...values,
-      deviceType: values.deviceType,
-      entries: entries.map((e, i) => ({ ...e, order: i })),
-      siteId: values.isGlobal ? null : values.siteId,
+      isGlobal: true,
+      siteId: null,
+      unitLabel: '台',
+      assignMode: 'single',
+      expenseEnabledDefault: false,
+      entries: [],
+      productLines: lines.map((p) => ({
+        ...p,
+        name: String(p.name || '').trim(),
+        entries: (p.entries || []).map((e, i) => ({ ...e, order: i })),
+      })),
     };
+    delete (payload as { deviceType?: unknown }).deviceType;
     if (editing) {
-      await updateTemplate(editing.id, payload);
-      message.success(`任务类型已更新（版本将 +1）`);
+      const nextName = String(values.name || '').trim();
+      const prevName = String(editing.name || '').trim();
+      if (nextName && prevName && nextName !== prevName) {
+        const ok = await new Promise<boolean>((resolve) => {
+          Modal.confirm({
+            title: '确认修改服务类型名称？',
+            content: (
+              <div>
+                <p>
+                  将「{prevName}」改为「{nextName}」。
+                </p>
+                <p style={{ color: '#8c8c8c', marginBottom: 0 }}>
+                  已绑定到本类型的案例会同步改名为「{nextName}」；之后导入也请使用新名称才能自动匹配。
+                </p>
+              </div>
+            ),
+            okText: '确认改名',
+            cancelText: '取消',
+            onOk: () => resolve(true),
+            onCancel: () => resolve(false),
+          });
+        });
+        if (!ok) return;
+      }
+      const prevVersion = editing.version;
+      const saved = await updateTemplate(editing.id, payload);
+      const syncTip =
+        saved.syncedCases && saved.syncedCases > 0
+          ? `，已同步改名 ${saved.syncedCases} 个案例`
+          : '';
+      const rematchTip =
+        saved.rematchedCases && saved.rematchedCases > 0
+          ? `，另匹配 ${saved.rematchedCases} 个案例`
+          : '';
+      if (saved.versionChanged || saved.version !== prevVersion) {
+        message.success(`已更新，检查项变更 → v${saved.version}${syncTip}${rematchTip}`);
+      } else {
+        message.success(`已更新${syncTip}${rematchTip}`);
+      }
     } else {
-      await createTemplate(payload);
-      message.success('任务类型已创建');
+      const saved = await createTemplate(payload);
+      const rematchTip =
+        saved.rematchedCases && saved.rematchedCases > 0
+          ? `，已自动匹配 ${saved.rematchedCases} 个案例`
+          : '';
+      message.success(`服务类型已创建${rematchTip}`);
     }
     setModalOpen(false);
     load();
   };
 
   const columns: ColumnsType<TemplateItem> = [
-    { title: '任务类型名称', dataIndex: 'name' },
+    { title: '服务类型名称', dataIndex: 'name' },
     {
-      title: '分类标签',
-      dataIndex: 'deviceType',
-      width: 140,
-      render: (v: DeviceType) => DEVICE_TYPE_LABEL[v] || v,
+      title: '产品线',
+      width: 280,
+      render: (_, r) => {
+        const lines = r.productLines || [];
+        if (!lines.length) return <span style={{ color: '#bfbfbf' }}>未配置</span>;
+        return (
+          <Space size={[4, 4]} wrap>
+            {lines.slice(0, 4).map((p) => (
+              <Tag key={p.id} color="cyan">
+                {p.name}
+                {p.entries?.length ? ` · ${p.entries.length}项` : ''}
+              </Tag>
+            ))}
+            {lines.length > 4 ? <Tag>+{lines.length - 4}</Tag> : null}
+          </Space>
+        );
+      },
     },
     {
-      title: '范围',
-      width: 100,
-      render: (_, r) =>
-        r.isGlobal ? <Tag color="blue">全局</Tag> : <Tag color="green">站点</Tag>,
-    },
-    {
-      title: '条目数',
+      title: (
+        <span>
+          版本{' '}
+          <Tooltip title="仅检查项/产品线变更时递增；进行中任务仍用创建时快照">
+            <QuestionCircleOutlined style={{ color: '#999' }} />
+          </Tooltip>
+        </span>
+      ),
+      dataIndex: 'version',
       width: 80,
-      render: (_, r) => r.entries?.length || 0,
     },
-    { title: '版本', dataIndex: 'version', width: 70 },
     {
       title: '操作',
-      width: 260,
-      render: (_, record) => (
-        <Space>
-          <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(record)}>
-            编辑
-          </Button>
-          <Button
-            type="link"
-            icon={<CopyOutlined />}
-            onClick={() => {
-              setCloneTpl(record);
-              setCloneSiteId(sites[0]?.id);
-              setCloneOpen(true);
-            }}
-          >
-            克隆到站点
-          </Button>
-          <Popconfirm title="确认删除该任务类型？" onConfirm={() => deleteTemplate(record.id).then(load)}>
-            <Button type="link" danger icon={<DeleteOutlined />}>
-              删除
+      width: canManage ? 160 : 80,
+      render: (_, record) =>
+        canManage ? (
+          <Space>
+            <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(record)}>
+              编辑
             </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            <Popconfirm
+              title="确认删除该服务类型？"
+              description="已被案例引用时无法删除"
+              onConfirm={async () => {
+                try {
+                  await deleteTemplate(record.id);
+                  message.success('已删除');
+                  await load();
+                } catch {
+                  /* interceptor 已提示 */
+                }
+              }}
+            >
+              <Button type="link" danger icon={<DeleteOutlined />}>
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        ) : (
+          <Button type="link" onClick={() => openEdit(record)}>
+            查看
+          </Button>
+        ),
     },
   ];
 
@@ -320,9 +500,7 @@ export default function TemplatesPage() {
                   // multiple 时每个文件都会触发一次；只在最后一份时统一批量上传
                   if (file !== fileList[fileList.length - 1]) return false;
 
-                  const siteName = form.getFieldValue('siteId')
-                    ? sites.find((s) => s.id === form.getFieldValue('siteId'))?.name
-                    : '全局模板';
+                  const siteName = '服务类型';
                   const files = fileList.filter((f) => f.type?.startsWith('image/') || !f.type);
                   if (!files.length) {
                     message.warning('请选择图片文件');
@@ -430,7 +608,7 @@ export default function TemplatesPage() {
         </Button>
       </div>
     ),
-    [entries, form, moveEntry, sites, uploadingEntry],
+    [entries, form, moveEntry, uploadingEntry],
   );
 
   return (
@@ -438,15 +616,17 @@ export default function TemplatesPage() {
       <Space wrap style={{ marginBottom: 16 }}>
         <Input.Search
           allowClear
-          placeholder="搜索任务类型名称"
+          placeholder="搜索服务类型名称"
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           onSearch={(v) => setSearchKeyword(v.trim())}
           style={{ width: 260 }}
         />
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          新建任务类型
-        </Button>
+        {canManage && (
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>
+            新建服务类型
+          </Button>
+        )}
       </Space>
       <Table
         rowKey="id"
@@ -458,65 +638,108 @@ export default function TemplatesPage() {
       />
 
       <Modal
-        title={editing ? `编辑任务类型（当前 v${editing.version}）` : '新建任务类型'}
+        title={
+          editing
+            ? canManage
+              ? `编辑服务类型（当前 v${editing.version}）`
+              : `查看服务类型（v${editing.version}）`
+            : '新建服务类型'
+        }
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
-        onOk={submit}
+        onOk={() => void submit()}
+        okButtonProps={{ style: canManage ? undefined : { display: 'none' } }}
+        cancelText={canManage ? '取消' : '关闭'}
         width={720}
         destroyOnClose
       >
-        <Form form={form} layout="vertical">
-          <Form.Item name="name" label="任务类型名称" rules={[{ required: true }]}>
-            <Input placeholder="例如：组串式逆变器、集中式逆变器、储能系统、分布式" />
-          </Form.Item>
+        <Form form={form} layout="vertical" disabled={!canManage}>
           <Form.Item
-            name="deviceType"
-            label="分类标签"
-            rules={[{ required: true, message: '请选择分类标签' }]}
-            extra="用于归类；真正给案例选用的是上方「任务类型名称」"
+            name="name"
+            label="服务类型名称"
+            rules={[{ required: true }]}
+            extra="与 GSP「服务类型」、PO「需求类型」精确同名才会自动匹配。改名后，已绑定案例会同步改名；之后导入请用新名称。"
           >
-            <Select options={DEVICE_TYPE_OPTIONS} placeholder="选择分类标签" />
+            <Input placeholder="例如：巡检、故障恢复、整改、维护、交付" />
           </Form.Item>
-          {isAdmin && (
-            <Form.Item name="isGlobal" label="全局类型" valuePropName="checked">
-              <Checkbox>作为全局任务类型（所有站点可用）</Checkbox>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>产品线</div>
+            <p style={{ color: '#666', marginBottom: 8, fontSize: 12 }}>
+              产品线对应 PO「产品线」；改检查项只影响之后新建的任务。
+            </p>
+            <Space wrap style={{ marginBottom: 8 }}>
+              {productLines.map((line) => (
+                <Button
+                  key={line.id}
+                  type={activeLineId === line.id ? 'primary' : 'default'}
+                  size="small"
+                  onClick={() => switchLine(line.id)}
+                >
+                  {line.name?.trim() || '未命名'}
+                </Button>
+              ))}
+              {canManage ? (
+                <Button
+                  size="small"
+                  icon={<PlusOutlined />}
+                  onClick={() => {
+                    if (activeLineId) persistActiveEntries(entries);
+                    const id = `pl-${Date.now()}`;
+                    const line: TemplateProductLine = {
+                      id,
+                      name: '',
+                      entries: [emptyEntry(0)],
+                    };
+                    setProductLines((prev) => [...prev, line]);
+                    setActiveLineId(id);
+                    setEntries(line.entries);
+                  }}
+                >
+                  添加产品线
+                </Button>
+              ) : null}
+            </Space>
+            {activeLineId ? (
+              <Space style={{ marginBottom: 12, width: '100%' }} align="start">
+                <Input
+                  style={{ flex: 1, minWidth: 200 }}
+                  disabled={!canManage}
+                  value={productLines.find((p) => p.id === activeLineId)?.name || ''}
+                  placeholder="填写产品线名称，如：地面-组串式"
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    setProductLines((prev) =>
+                      prev.map((p) => (p.id === activeLineId ? { ...p, name } : p)),
+                    );
+                  }}
+                />
+                {canManage ? (
+                  <Button
+                    danger
+                    onClick={() => {
+                      const rest = productLines.filter((p) => p.id !== activeLineId);
+                      setProductLines(rest);
+                      if (rest.length) {
+                        setActiveLineId(rest[0].id);
+                        setEntries([...(rest[0].entries || [])]);
+                      } else {
+                        setActiveLineId('');
+                        setEntries([]);
+                      }
+                    }}
+                  >
+                    删除该产品线
+                  </Button>
+                ) : null}
+              </Space>
+            ) : null}
+          </div>
+          {activeLineId ? (
+            <Form.Item label="当前产品线检查条目" required>
+              {entryEditor}
             </Form.Item>
-          )}
-          <Form.Item noStyle shouldUpdate={(p, c) => p.isGlobal !== c.isGlobal}>
-            {() =>
-              !form.getFieldValue('isGlobal') ? (
-                <Form.Item name="siteId" label="所属站点" rules={[{ required: true }]}>
-                  <Select
-                    options={sites.map((s) => ({ value: s.id, label: s.name }))}
-                  />
-                </Form.Item>
-              ) : null
-            }
-          </Form.Item>
-          <Form.Item label="检查条目（工程师按此作业，可上下移动排序）" required>
-            {entryEditor}
-          </Form.Item>
+          ) : null}
         </Form>
-      </Modal>
-
-      <Modal
-        title={`克隆到站点 - ${cloneTpl?.name || ''}`}
-        open={cloneOpen}
-        onCancel={() => setCloneOpen(false)}
-        onOk={async () => {
-          if (!cloneTpl || !cloneSiteId) return;
-          await cloneTemplate(cloneTpl.id, cloneSiteId);
-          message.success('已克隆到站点');
-          setCloneOpen(false);
-          load();
-        }}
-      >
-        <Select
-          style={{ width: '100%' }}
-          value={cloneSiteId}
-          onChange={setCloneSiteId}
-          options={sites.map((s) => ({ value: s.id, label: `${s.name}（${s.code}）` }))}
-        />
       </Modal>
     </div>
   );

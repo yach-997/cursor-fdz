@@ -4,7 +4,7 @@ import { NavBar, Cell, Empty, Toast, Button, Tag } from 'react-vant';
 import { useAuthStore } from '../../stores/auth';
 import { fetchMyFinanceCases } from '../../api/finance';
 
-/** 站点选择页：展示各站待办数，方便切到有单的站 */
+/** 网格选择页：展示各网格待办数，方便切到有单的站 */
 export default function SitesPage() {
   const navigate = useNavigate();
   const { user, setCurrentSite, currentSite, fetchMe, logout } = useAuthStore();
@@ -36,7 +36,7 @@ export default function SitesPage() {
     try {
       await fetchMe();
       await loadPending();
-      Toast.success('已刷新站点列表');
+      Toast.success('已刷新网格列表');
     } catch {
       // 拦截器已提示
     } finally {
@@ -65,14 +65,14 @@ export default function SitesPage() {
   return (
     <div>
       <NavBar
-        title="选择站点"
+        title="选择网格"
         onClickLeft={() => navigate('/m', { replace: true })}
         rightText="退出"
         onClickRight={() => void onLogout()}
       />
       {sites.length === 0 ? (
         <div style={{ padding: '24px 16px' }}>
-          <Empty description="暂无可用站点" />
+          <Empty description="暂无可用网格" />
           <div
             style={{
               marginTop: 8,
@@ -83,7 +83,7 @@ export default function SitesPage() {
               textAlign: 'center',
             }}
           >
-            请先让网格长在电脑端「站点管理 → 人员」中聘用你为工程师。
+            请先让网格长在电脑端「网格管理 → 人员」中聘用你为工程师。
             <br />
             若刚完成聘用，请点下方「刷新列表」。
             <br />
@@ -122,7 +122,7 @@ export default function SitesPage() {
               lineHeight: 1.5,
             }}
           >
-            作业按站点查看；有待办的站点会显示数量，点选后进入该站列表。
+            作业按网格查看；有待办的网格会显示数量，点选后进入该网格列表。
           </div>
           {sites.map((site) => {
             const pending = pendingBySite[site.id] || 0;

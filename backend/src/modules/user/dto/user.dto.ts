@@ -26,6 +26,11 @@ export class CreateUserDto {
   realName: string;
 
   @IsString()
+  @IsNotEmpty({ message: '工号不能为空' })
+  @Matches(/^[\w\u4e00-\u9fa5-]{2,32}$/, { message: '工号格式不正确（2-32位）' })
+  employeeNo: string;
+
+  @IsString()
   @IsNotEmpty({ message: '手机号不能为空' })
   @Matches(/^1\d{10}$/, { message: '手机号格式不正确' })
   phone: string;
@@ -59,6 +64,11 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   realName?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[\w\u4e00-\u9fa5-]{2,32}$/, { message: '工号格式不正确（2-32位）' })
+  employeeNo?: string;
 
   @IsOptional()
   @IsString()

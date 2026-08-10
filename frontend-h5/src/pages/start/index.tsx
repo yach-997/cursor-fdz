@@ -11,7 +11,7 @@ const STATUS_TEXT: Record<string, string> = {
   working: '作业中',
 };
 
-/** 开检向导：地区 → 站点 → 已派案例（单站点时自动跳过前两步） */
+/** 开检向导：地区 → 网格 → 已派案例（单网格时自动跳过前两步） */
 export default function StartWizardPage() {
   const navigate = useNavigate();
   const { user, currentSite, setCurrentSite } = useAuthStore();
@@ -55,7 +55,7 @@ export default function StartWizardPage() {
       setCases(filtered);
       setStep('task');
       if (!filtered.length) {
-        Toast.info('该站点暂无已派案例，请联系网格长派单');
+        Toast.info('该网格暂无已派案例，请联系网格长派单');
       }
     } catch {
       /* 拦截器 */
@@ -64,7 +64,7 @@ export default function StartWizardPage() {
     }
   };
 
-  // 已选站点或仅一个站点：直接进入案例列表
+  // 已选网格或仅一个网格：直接进入案例列表
   useEffect(() => {
     if (currentSite?.id) {
       setProjectId(currentSite.id);
@@ -122,20 +122,20 @@ export default function StartWizardPage() {
           lineHeight: 1.65,
         }}
       >
-        作业由网格长导入案例后派单。选择站点后进入已派给你的工单。
+        作业由网格长导入案例后派单。选择网格后进入已派给你的工单。
       </div>
 
       {step !== 'task' && (
         <div style={{ padding: '12px 16px', fontSize: 13, color: '#666' }}>
           {step === 'region' && '第 1 步：选择所在地区'}
-          {step === 'project' && `第 2 步：选择站点（${region}）`}
+          {step === 'project' && `第 2 步：选择网格（${region}）`}
         </div>
       )}
 
       {step === 'region' && (
         <>
           {!regions.length ? (
-            <Empty description="暂无可用地区，请先联系网格长聘用到站点" />
+            <Empty description="暂无可用地区，请先联系网格长聘用到网格" />
           ) : (
             <Cell.Group inset>
               {regions.map((r) => (
@@ -162,7 +162,7 @@ export default function StartWizardPage() {
       {step === 'project' && (
         <>
           {!projects.length ? (
-            <Empty description="该地区暂无站点" />
+            <Empty description="该地区暂无网格" />
           ) : (
             <Cell.Group inset>
               {projects.map((s) => (

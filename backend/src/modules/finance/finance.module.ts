@@ -20,10 +20,15 @@ import {
   InspectionRecord,
   SiteMember,
   InspectionTemplate,
+  CaseAssignment,
+  CaseWorkUnit,
+  CasePerfShare,
+  CaseExpenseClaim,
 } from '../../entities';
 import { UploadModule } from '../upload/upload.module';
 import { TemplateModule } from '../template/template.module';
 import { TaskModule } from '../task/task.module';
+import { AiModule } from '../ai/ai.module';
 import { FinanceImportController } from './controllers/import.controller';
 import { FinanceCaseController } from './controllers/case.controller';
 import { FinancePoController } from './controllers/po-order.controller';
@@ -43,12 +48,14 @@ import { FinanceIncomeController } from './controllers/income.controller';
 import { FinanceAssessmentController } from './controllers/assessment.controller';
 import { FinanceMonthlySettlementController } from './controllers/monthly-settlement.controller';
 import { FinanceSettlementService } from './services/finance-settlement.service';
+import { FinanceMultiService } from './services/finance-multi.service';
 
 @Module({
   imports: [
     UploadModule,
     TemplateModule,
     TaskModule,
+    AiModule,
     TypeOrmModule.forFeature([
       User,
       ServiceCase,
@@ -69,6 +76,10 @@ import { FinanceSettlementService } from './services/finance-settlement.service'
       InspectionRecord,
       SiteMember,
       InspectionTemplate,
+      CaseAssignment,
+      CaseWorkUnit,
+      CasePerfShare,
+      CaseExpenseClaim,
     ]),
   ],
   controllers: [
@@ -92,6 +103,7 @@ import { FinanceSettlementService } from './services/finance-settlement.service'
     PriceMappingService,
     FinanceWorkflowService,
     FinanceSettlementService,
+    FinanceMultiService,
     CaseBridgeService,
   ],
 })

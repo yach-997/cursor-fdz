@@ -11,6 +11,7 @@ export interface UserInfo {
   id: string;
   username: string;
   realName: string;
+  employeeNo?: string;
   phone: string;
   email?: string;
   region?: string;
@@ -18,6 +19,7 @@ export interface UserInfo {
   role: UserRole;
   roles?: UserRole[];
   status: string;
+  createdAt?: string;
   siteMemberships?: SiteMembership[];
 }
 

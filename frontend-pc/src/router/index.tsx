@@ -3,6 +3,13 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { Spin } from 'antd';
 import AuthGuard from './AuthGuard';
 import BasicLayout from '../layouts/BasicLayout';
+import { useAuthStore } from '../stores/auth';
+
+/** 费用结算首页：管理员进经营看板，网格长进案例管理 */
+function FinanceHomeRedirect() {
+  const role = useAuthStore((s) => s.user?.role);
+  return <Navigate to={role === 'super_admin' ? 'dashboard' : 'cases'} replace />;
+}
 
 const PortalPage = lazy(() => import('../pages/portal'));
 const LoginPage = lazy(() => import('../pages/login'));
@@ -22,6 +29,7 @@ const FinanceCasesPage = lazy(() => import('../pages/finance/cases'));
 const FinancePoOrdersPage = lazy(() => import('../pages/finance/po-orders'));
 const FinancePricesPage = lazy(() => import('../pages/finance/prices'));
 const FinanceReviewPage = lazy(() => import('../pages/finance/review'));
+const FinanceExpensesPage = lazy(() => import('../pages/finance/expenses'));
 const FinanceAssessmentPage = lazy(() => import('../pages/finance/assessment'));
 const FinanceMonthlyPage = lazy(() => import('../pages/finance/monthly'));
 
@@ -191,13 +199,15 @@ export const router = createBrowserRouter([
           </AuthGuard>
         ),
         children: [
-          { index: true, element: <Navigate to="dashboard" replace /> },
+          { index: true, element: <FinanceHomeRedirect /> },
           {
             path: 'dashboard',
             element: (
-              <Lazy>
-                <FinanceDashboardPage />
-              </Lazy>
+              <AuthGuard roles={['super_admin']}>
+                <Lazy>
+                  <FinanceDashboardPage />
+                </Lazy>
+              </AuthGuard>
             ),
           },
           {
@@ -211,17 +221,21 @@ export const router = createBrowserRouter([
           {
             path: 'po-orders',
             element: (
-              <Lazy>
-                <FinancePoOrdersPage />
-              </Lazy>
+              <AuthGuard roles={['super_admin']}>
+                <Lazy>
+                  <FinancePoOrdersPage />
+                </Lazy>
+              </AuthGuard>
             ),
           },
           {
             path: 'prices',
             element: (
-              <Lazy>
-                <FinancePricesPage />
-              </Lazy>
+              <AuthGuard roles={['super_admin']}>
+                <Lazy>
+                  <FinancePricesPage />
+                </Lazy>
+              </AuthGuard>
             ),
           },
           {
@@ -229,6 +243,14 @@ export const router = createBrowserRouter([
             element: (
               <Lazy>
                 <FinanceReviewPage />
+              </Lazy>
+            ),
+          },
+          {
+            path: 'expenses',
+            element: (
+              <Lazy>
+                <FinanceExpensesPage />
               </Lazy>
             ),
           },

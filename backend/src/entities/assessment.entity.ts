@@ -11,7 +11,11 @@ export class Assessment {
   @Column({ name: 'sungrow_score', type: 'numeric', precision: 5, scale: 2, default: 0 }) sungrowScore: string;
   @Column({ name: 'total_score', type: 'numeric', precision: 5, scale: 2, default: 0 }) totalScore: string;
   @Column({ name: 'rank_group', type: 'varchar', length: 24 }) rankGroup: 'station_manager' | 'inspector';
+  /** 全司正式排名（管理员一键，联动奖罚） */
   @Column({ name: 'rank_result', type: 'varchar', length: 24, nullable: true }) rankResult: string | null;
+  /** 本网格参考名次（网格长一键，仅展示不发奖罚） */
+  @Column({ name: 'site_rank_result', type: 'varchar', length: 24, nullable: true })
+  siteRankResult: string | null;
   @Column({ name: 'reward_amount', type: 'numeric', precision: 12, scale: 2, default: 0 }) rewardAmount: string;
   @Column({ name: 'tool_subsidy', type: 'numeric', precision: 12, scale: 2, default: 0 }) toolSubsidy: string;
   @Column({ name: 'other_subsidy', type: 'numeric', precision: 12, scale: 2, default: 0 }) otherSubsidy: string;

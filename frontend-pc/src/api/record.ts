@@ -33,6 +33,17 @@ export interface RecordItem {
   deviceType: string;
   entries: RecordEntry[];
   reportPhotos?: string[] | null;
+  location?: {
+    status?: 'ok' | 'weak' | 'failed' | 'skipped';
+    latitude?: number | null;
+    longitude?: number | null;
+    accuracyMeters?: number;
+    capturedAt?: string;
+    address?: string;
+    distanceToSiteMeters?: number;
+    reasonCode?: string;
+    reason?: string;
+  } | null;
   status: string;
   submittedAt?: string;
   approvedAt?: string;
@@ -45,6 +56,14 @@ export interface RecordItem {
   aiSummary?: { pass: number; fail: number; pending: number; error: number };
   needsAudit?: boolean;
   createdAt: string;
+  groupKey?: string;
+  serviceCaseId?: string | null;
+  gspCaseNo?: string | null;
+  projectName?: string | null;
+  unitLabel?: string | null;
+  assignMode?: string | null;
+  workUnit?: { id: string; seq: number; title: string | null } | null;
+  inspectorName?: string | null;
   task?: {
     id: string;
     taskName: string;
@@ -53,6 +72,8 @@ export interface RecordItem {
     inspectorId: string;
     status: string;
     aiEnabled: boolean;
+    serviceCaseId?: string | null;
+    workUnitId?: string | null;
     templateSnapshot?: Array<{
       id: string;
       name: string;
@@ -62,10 +83,43 @@ export interface RecordItem {
   };
 }
 
+export interface RecordCaseGroup {
+  groupKey: string;
+  serviceCaseId: string | null;
+  gspCaseNo: string | null;
+  projectName: string | null;
+  unitLabel: string | null;
+  assignMode: string | null;
+  siteId: string | null;
+  recordCount: number;
+  pendingCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+  latestSubmittedAt: string | null;
+}
+
 export async function fetchRecords(params: Record<string, unknown>) {
   const { data } = await request.get<ApiResponse<Paginated<RecordItem>>>('/records', {
     params,
   });
+  return data.data;
+}
+
+export async function fetchRecordCaseGroups(params: Record<string, unknown>) {
+  const { data } = await request.get<ApiResponse<Paginated<RecordCaseGroup>>>(
+    '/records/case-groups',
+    { params },
+  );
+  return data.data;
+}
+
+export async function fetchRecordsByCase(
+  groupKey: string,
+  params: Record<string, unknown> = {},
+) {
+  const { data } = await request.get<
+    ApiResponse<Paginated<RecordItem> & { groupKey: string }>
+  >(`/records/by-case/${encodeURIComponent(groupKey)}`, { params });
   return data.data;
 }
 

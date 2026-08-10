@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth';
+import { brandMarkText, useBrandingStore } from '../../stores/branding';
 import { getHomePathByRole } from '../../router/menus';
 import './portal.css';
 
@@ -14,6 +15,7 @@ const H5_LOGIN_URL = IS_LOCAL_HOST
 export default function PortalPage() {
   const navigate = useNavigate();
   const { token, user, hydrate } = useAuthStore();
+  const branding = useBrandingStore((s) => s.branding);
 
   useEffect(() => {
     hydrate();
@@ -24,11 +26,15 @@ export default function PortalPage() {
       <div className="portal-page__inner">
         <div className="portal-brand">
           <div className="portal-brand__logo" aria-hidden>
-            光
+            {branding.logoUrl ? (
+              <img src={branding.logoUrl} alt="" />
+            ) : (
+              brandMarkText(branding.systemName)
+            )}
           </div>
-          <div className="portal-brand__eyebrow">智能能源巡检平台</div>
-          <h1 className="portal-brand__title">光伏储能巡检系统</h1>
-          <p className="portal-brand__subtitle">为管理与现场巡检提供清晰、可靠的一体化工作台</p>
+          <div className="portal-brand__eyebrow">{branding.subtitle || '阳光运维平台'}</div>
+          <h1 className="portal-brand__title">{branding.systemName}</h1>
+          <p className="portal-brand__subtitle">为管理与现场作业提供清晰、可靠的一体化工作台</p>
           {token && user && (
             <p className="portal-brand__subtitle" style={{ marginTop: 8, opacity: 0.9 }}>
               当前账号：{user.realName} ·{' '}
@@ -85,8 +91,8 @@ export default function PortalPage() {
             </svg>
           </span>
           <span className="portal-card__text">
-            <span className="portal-card__title">手机巡检端</span>
-            <span className="portal-card__desc">工程师现场巡检入口</span>
+            <span className="portal-card__title">手机作业端</span>
+            <span className="portal-card__desc">工程师现场作业入口</span>
           </span>
           <span className="portal-card__arrow">›</span>
         </button>

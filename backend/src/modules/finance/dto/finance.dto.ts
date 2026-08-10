@@ -2,6 +2,8 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsInt,
+  IsNotEmpty,
   IsNumber,
   IsObject,
   IsOptional,
@@ -34,9 +36,9 @@ export class FinanceCaseQueryDto extends PaginationDto {
   @IsOptional() @IsString() month?: string;
   @IsOptional() @IsString() keyword?: string;
   @IsOptional() @IsPostgresUuid() siteId?: string;
-  /** unassigned=未挂站点；assigned_site=已挂站点 */
+  /** unassigned=未挂网格点；assigned_site=已挂网格点 */
   @IsOptional() @IsIn(['unassigned', 'assigned_site']) siteBind?: 'unassigned' | 'assigned_site';
-  /** 按任务类型模板 id 筛选；兼容旧值 inspection/service */
+  /** 按服务类型模板 id 筛选；兼容旧值 inspection/service */
   @IsOptional() @IsString() @MaxLength(64) taskType?: string;
 }
 
@@ -52,16 +54,22 @@ export class BatchAssignCasesToSitesDto {
 }
 
 export class SetCaseTaskTypeDto {
-  /** 任务类型设置中的模板 id */
-  @IsPostgresUuid({ message: '请选择任务类型' })
+  /** 服务类型设置中的模板 id */
+  @IsPostgresUuid({ message: '请选择服务类型' })
   templateId: string;
+
+  /** 产品线名称（服务类型配置了产品线时必填） */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  productLine?: string;
 }
 
 export class BatchCreateTasksFromCasesDto {
   @IsArray()
   @IsString({ each: true })
   caseIds: string[];
-  /** 必填：派给本站工程师（案例作业，不依赖设备） */
+  /** 必填：派给本网格工程师（案例作业，不依赖设备） */
   @IsPostgresUuid() inspectorId: string;
 }
 
@@ -126,9 +134,70 @@ export class DashboardQueryDto {
 }
 
 export class AssignCaseDto {
-  /** 种子账号可能是非 RFC UUID，按 Postgres uuid 文本格式校验 */
-  @IsPostgresUuid({ message: '工程师ID格式不正确' }) inspectorId: string;
+  /** 兼容单人 */
+  @IsOptional() @IsPostgresUuid({ message: '工程师ID格式不正确' }) inspectorId?: string;
+  /** 多人派单 */
+  @IsOptional() @IsArray() @IsPostgresUuid({ each: true, message: '工程师ID格式不正确' })
+  inspectorIds?: string[];
+  /** 派单时选择：单人 / 多人（不再跟服务类型绑定） */
+  @IsOptional() @IsIn(['single', 'multi']) assignMode?: 'single' | 'multi';
+  /** 多人模式计划台数 */
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) plannedUnits?: number;
   @IsOptional() @IsString() @MaxLength(200) reason?: string;
+}
+
+export class SetCaseWorkPlanDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) plannedUnits?: number;
+  @IsOptional() @IsBoolean() expenseEnabled?: boolean;
+}
+
+/** @deprecated 兼容旧客户端；新流程用 SaveTripExpenseDto */
+export class SaveExpenseClaimDto {
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) amount?: number;
+  @IsOptional() @IsString() @MaxLength(1000) note?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) voucherUrls?: string[];
+  @IsOptional() @IsBoolean() submit?: boolean;
+  /** 行程报销挂载台 */
+  @IsOptional() @IsString() workUnitId?: string;
+  @IsOptional() @IsString() startOdometerUrl?: string;
+  @IsOptional() @IsString() startNavUrl?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) startMileage?: number;
+  @IsOptional() @IsString() endOdometerUrl?: string;
+  @IsOptional() @IsString() endNavUrl?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) endMileage?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) tollAmount?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) fuelAmount?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) otherAmount?: number;
+  @IsOptional() @IsArray() @IsString({ each: true }) tollVoucherUrls?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) fuelVoucherUrls?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) otherVoucherUrls?: string[];
+}
+
+export class SaveTripExpenseDto {
+  @IsOptional() @IsString() startOdometerUrl?: string;
+  @IsOptional() @IsString() startNavUrl?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) startMileage?: number;
+  @IsOptional() @IsString() endOdometerUrl?: string;
+  @IsOptional() @IsString() endNavUrl?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) endMileage?: number;
+  /** 工程师自算申报金额 */
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) amount?: number;
+  @IsOptional() @IsArray() @IsString({ each: true }) voucherUrls?: string[];
+  @IsOptional() @IsString() @MaxLength(1000) note?: string;
+  @IsOptional() @IsBoolean() submit?: boolean;
+  /** 开工选择无行程；可再改为 false 并补开始里程 */
+  @IsOptional() @IsBoolean() tripSkipped?: boolean;
+}
+
+export class OcrMileageDto {
+  @IsString() @IsNotEmpty() imageUrl: string;
+  @IsOptional() @IsIn(['start', 'end']) kind?: 'start' | 'end';
+}
+
+export class ReviewExpenseDto {
+  @IsOptional() @IsString() @MaxLength(500) note?: string;
+  /** 核定报销金额；不传则按工程师申报金额通过 */
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) approvedAmount?: number;
 }
 
 export class SaveCaseWorkDto {
@@ -163,6 +232,17 @@ export class IncomeQueryDto {
 
 export class AssessmentQueryDto {
   @IsString() month: string;
+  @IsOptional() @IsString() @MaxLength(64) keyword?: string;
+  @IsOptional() @IsPostgresUuid() siteId?: string;
+  @IsOptional() @IsIn(['site_manager', 'inspector']) role?: 'site_manager' | 'inspector';
+}
+
+export class RankAssessmentDto {
+  /** site_preview=本网格仅看名次(1/2/3…)；company_*=全司正式排名+奖罚 */
+  @IsIn(['site_preview', 'company_inspectors', 'company_managers'])
+  mode: 'site_preview' | 'company_inspectors' | 'company_managers';
+  /** 管理员对本网格参考排名时可选网格；网格长忽略，固定本网格 */
+  @IsOptional() @IsPostgresUuid() siteId?: string;
 }
 
 export class SaveAssessmentDto {
@@ -185,10 +265,24 @@ export class CreateAssessmentEventDto {
   /** 自定义金额项必填；标准项可省略（按标准×次数） */
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) amount?: number;
   @IsOptional() @IsString() @MaxLength(500) remark?: string;
+  /** 关联案例：结算审核录入时应带上，便于一单一算追溯（service_case.id） */
+  @IsOptional() @IsString() @MaxLength(32) serviceCaseId?: string;
 }
 
 export class MonthlyQueryDto {
   @IsString() month: string;
+  @IsOptional() @IsString() @MaxLength(64) keyword?: string;
+  @IsOptional() @IsPostgresUuid() siteId?: string;
+  @IsOptional() @IsIn(['site_manager', 'inspector']) role?: 'site_manager' | 'inspector';
+}
+
+export class ReviewPendingQueryDto {
+  @IsOptional() @IsString() @MaxLength(64) keyword?: string;
+  @IsOptional() @IsPostgresUuid() siteId?: string;
+  @IsOptional() @IsString() month?: string;
+  @IsOptional() @IsIn(['true', 'false', '1', '0']) overdue?: string;
+  /** pending=待审(默认)；approved=已通过；rejected=已驳回；all=全部 */
+  @IsOptional() @IsIn(['pending', 'approved', 'rejected', 'all']) reviewStatus?: string;
 }
 
 export class CorrectMonthlyDto {

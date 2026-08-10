@@ -104,12 +104,29 @@ export class UploadService {
         // 环境变量格式错误时不放行。
       }
     }
+    // 历史测试域名 / CDN 域名：文件仍在桶内，代理允许读，回源走 S3
+    const host = parsed.host.toLowerCase();
+    const isQiniuCdnHost =
+      host.endsWith('.clouddn.com') ||
+      host.endsWith('.qiniucdn.com') ||
+      host.endsWith('.qnssl.com') ||
+      host.endsWith('.qbox.me');
+    if (isQiniuCdnHost) allowed.add(host);
+
     const minioHost = (process.env.MINIO_ENDPOINT || 'localhost').trim();
     const minioPort = (process.env.MINIO_PORT || '9000').trim();
     allowed.add(`${minioHost}:${minioPort}`.toLowerCase());
 
     if (!allowed.has(parsed.host.toLowerCase())) {
       throw new BadRequestException('该图片域名不允许代理');
+    }
+
+    // 七牛测试域名常过期/无证书：优先 S3 兼容源站，避免前端样本图裂图
+    if (isQiniuCdnHost) {
+      const fromBucket = await this.qiniu.getObjectByUrl(parsed.toString());
+      if (fromBucket && fromBucket.bytes.length && fromBucket.bytes.length <= 15 * 1024 * 1024) {
+        return fromBucket;
+      }
     }
 
     const candidates = [parsed.toString()];
@@ -145,6 +162,13 @@ export class UploadService {
         lastError = err as Error;
       }
     }
+
+    // CDN 失败后再试一次源站（兼容非 isQiniuCdnHost 的历史域名）
+    const fromBucket = await this.qiniu.getObjectByUrl(parsed.toString());
+    if (fromBucket && fromBucket.bytes.length <= 15 * 1024 * 1024) {
+      return fromBucket;
+    }
+
     throw new BadRequestException(`图片读取失败: ${lastError?.message || '未知错误'}`);
   }
 

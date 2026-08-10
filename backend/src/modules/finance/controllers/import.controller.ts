@@ -50,7 +50,7 @@ export class FinanceImportController {
     return this.service.importGsp(file, user, query.preview === 'true');
   }
   @Post('po-orders')
-  @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
+  @Roles(UserRole.SUPER_ADMIN)
   @UseInterceptors(FileInterceptor('file', excelOptions))
   po(
     @UploadedFile() file: Express.Multer.File,

@@ -173,7 +173,7 @@ export class TaskService {
     };
   }
 
-  /** 批量挂载站点/设备/工程师，避免 find relations 的 TypeORM orderBy 缺陷 */
+  /** 批量挂载网格/设备/工程师，避免 find relations 的 TypeORM orderBy 缺陷 */
   private async attachRelations(tasks: InspectionTask[]) {
     if (!tasks.length) return;
     const siteIds = [...new Set(tasks.map((t) => t.siteId))];
@@ -256,7 +256,7 @@ export class TaskService {
     };
   }
 
-  /** 创建任务：管理员/工程师均可；按站点+序列号关联设备，存模板快照 */
+  /** 创建任务：管理员/工程师均可；按网格+序列号关联设备，存模板快照 */
   async create(dto: CreateTaskDto, currentUser: CurrentUserContext) {
     if (
       currentUser.role !== UserRole.SUPER_ADMIN &&
@@ -270,7 +270,7 @@ export class TaskService {
     const site = await this.siteRepo.findOne({
       where: { id: dto.siteId, deletedAt: IsNull() },
     });
-    if (!site) throw new NotFoundException('站点不存在');
+    if (!site) throw new NotFoundException('网格不存在');
 
     const device = await this.resolveDevice(dto.siteId, dto.deviceId, dto.serialNumber);
 
@@ -462,7 +462,7 @@ export class TaskService {
   }
 
   /**
-   * 删除未完成任务（管理员本站 / 工程师本人）
+   * 删除未完成任务（管理员本网格 / 工程师本人）
    * 已提交、已通过的不可删
    */
   async remove(id: string, currentUser: CurrentUserContext) {
@@ -545,7 +545,7 @@ export class TaskService {
       throw new NotFoundException('设备不存在，请核对序列号或先建档设备');
     }
     if (device.siteId !== siteId) {
-      throw new BadRequestException('该设备不属于所选站点/现场');
+      throw new BadRequestException('该设备不属于所选网格/现场');
     }
     return device;
   }
@@ -569,7 +569,7 @@ export class TaskService {
     });
     if (member) return;
 
-    // 正网格长 / 副网格长可兼做本站巡检任务
+    // 正网格长 / 副网格长可兼做本网格巡检任务
     const site = await this.siteRepo.findOne({ where: { id: siteId, deletedAt: IsNull() } });
     if (site?.managerId === inspectorId) return;
 
@@ -583,7 +583,7 @@ export class TaskService {
     });
     if (deputy) return;
 
-    throw new BadRequestException('该工程师未聘用到本站点，无法分配任务');
+    throw new BadRequestException('该工程师未聘用到本网格，无法分配任务');
   }
 
   private async getTaskOrThrow(id: string) {
@@ -596,13 +596,13 @@ export class TaskService {
     if (currentUser.role === UserRole.SUPER_ADMIN) return;
     if (currentUser.role === UserRole.SITE_MANAGER) {
       if (!currentUser.managedSiteIds.includes(siteId)) {
-        throw new ForbiddenException('无权操作该站点');
+        throw new ForbiddenException('无权操作该网格');
       }
       return;
     }
     if (currentUser.role === UserRole.INSPECTOR) {
       if (!currentUser.memberSiteIds.includes(siteId)) {
-        throw new ForbiddenException('无权访问该站点');
+        throw new ForbiddenException('无权访问该网格');
       }
     }
   }

@@ -3,6 +3,7 @@ import type { ApiResponse } from '../types';
 import type {
   FinanceCase,
   FinanceDashboard,
+  FinanceVarianceDetail,
   FinancePage,
   ImportResult,
   PoOrder,
@@ -10,6 +11,7 @@ import type {
   ItemPriceMappingList,
   FinanceInspectorOption,
   FinanceReviewItem,
+  ReviewAmountBreakdown,
   FinanceAssessment,
   AssessmentEventCatalogItem,
   AssessmentEventRow,
@@ -35,22 +37,55 @@ export async function clearFinanceCases() {
   );
 }
 
-export async function fetchFinanceAssessments(month: string) {
-  return unwrap(await request.get<ApiResponse<FinanceAssessment[]>>('/assessments', { params: { month } }));
+export async function clearFinanceAssessments() {
+  return unwrap(
+    await request.delete<
+      ApiResponse<{
+        deleted: { assessmentEvent: number; monthlySettlement: number; assessment: number };
+      }>
+    >('/assessments/clear', {
+      params: { confirm: '清空' },
+    }),
+  );
+}
+export async function fetchFinanceAssessments(params: {
+  month: string;
+  keyword?: string;
+  siteId?: string;
+  role?: string;
+}) {
+  return unwrap(await request.get<ApiResponse<FinanceAssessment[]>>('/assessments', { params }));
 }
 export async function saveFinanceAssessment(payload: Record<string, unknown>) {
   return unwrap(await request.post<ApiResponse<FinanceAssessment>>('/assessments', payload));
 }
-export async function rankFinanceAssessments(month: string) {
-  return unwrap(await request.post<ApiResponse<FinanceAssessment[]>>(`/assessments/${month}/rank`));
+export async function rankFinanceAssessments(
+  month: string,
+  mode: 'site_preview' | 'company_inspectors' | 'company_managers',
+  siteId?: string,
+) {
+  return unwrap(
+    await request.post<ApiResponse<FinanceAssessment[]>>(`/assessments/${month}/rank`, {
+      mode,
+      ...(siteId ? { siteId } : {}),
+    }),
+  );
 }
 export async function fetchAssessmentEventCatalog() {
   return unwrap(await request.get<ApiResponse<AssessmentEventCatalogItem[]>>('/assessments/event-catalog'));
 }
-export async function fetchAssessmentEvents(month: string, userId: string) {
+export async function fetchAssessmentEvents(
+  month: string,
+  userId?: string,
+  serviceCaseId?: string,
+) {
   return unwrap(
     await request.get<ApiResponse<AssessmentEventRow[]>>('/assessments/events', {
-      params: { month, userId },
+      params: {
+        month,
+        ...(userId ? { userId } : {}),
+        ...(serviceCaseId ? { serviceCaseId } : {}),
+      },
     }),
   );
 }
@@ -60,8 +95,15 @@ export async function createAssessmentEvent(payload: Record<string, unknown>) {
 export async function deleteAssessmentEvent(id: string) {
   return unwrap(await request.delete<ApiResponse<{ id: string }>>(`/assessments/events/${id}`));
 }
-export async function fetchMonthlySettlements(month: string) {
-  return unwrap(await request.get<ApiResponse<FinanceMonthlySettlement[]>>('/monthly-settlements', { params: { month } }));
+export async function fetchMonthlySettlements(params: {
+  month: string;
+  keyword?: string;
+  siteId?: string;
+  role?: string;
+}) {
+  return unwrap(
+    await request.get<ApiResponse<FinanceMonthlySettlement[]>>('/monthly-settlements', { params }),
+  );
 }
 export async function correctMonthlySettlement(month: string, userId: string, amount: number, reason: string) {
   return unwrap(await request.post<ApiResponse<FinanceMonthlySettlement>>(`/monthly-settlements/${month}/correct`, { userId, amount, reason }));
@@ -102,14 +144,77 @@ export async function fetchFinanceInspectors(caseId: string) {
     await request.get<ApiResponse<FinanceInspectorOption[]>>(`/cases/${caseId}/inspectors`),
   );
 }
-export async function assignFinanceCase(caseId: string, inspectorId: string, reason?: string) {
+export async function assignFinanceCase(
+  caseId: string,
+  inspectorIdOrIds: string | string[],
+  reason?: string,
+  options?: { assignMode?: 'single' | 'multi'; plannedUnits?: number },
+) {
+  const body =
+    typeof inspectorIdOrIds === 'string'
+      ? { inspectorId: inspectorIdOrIds, reason, ...options }
+      : { inspectorIds: inspectorIdOrIds, reason, ...options };
+  return unwrap(await request.post<ApiResponse<FinanceCase>>(`/cases/${caseId}/assign`, body));
+}
+export async function withdrawFinanceAssignee(caseId: string, inspectorId: string) {
   return unwrap(
-    await request.post<ApiResponse<FinanceCase>>(`/cases/${caseId}/assign`, {
-      inspectorId,
-      reason,
+    await request.post<ApiResponse<unknown>>(
+      `/cases/${caseId}/assignees/${inspectorId}/withdraw`,
+    ),
+  );
+}
+export async function setFinanceCaseWorkPlan(
+  caseId: string,
+  payload: { plannedUnits?: number; expenseEnabled?: boolean },
+) {
+  return unwrap(
+    await request.put<ApiResponse<unknown>>(`/cases/${caseId}/work-plan`, payload),
+  );
+}
+export async function fetchPendingExpenses(params?: {
+  status?: 'pending' | 'approved' | 'rejected' | 'all';
+  keyword?: string;
+  month?: string;
+}) {
+  return unwrap(
+    await request.get<ApiResponse<ExpenseReviewRow[]>>('/cases/expenses/pending', {
+      params,
     }),
   );
 }
+export async function reviewExpense(
+  expenseId: string,
+  pass: boolean,
+  note?: string,
+  approvedAmount?: number,
+) {
+  return unwrap(
+    await request.post<ApiResponse<unknown>>(
+      `/cases/expenses/${expenseId}/${pass ? 'approve' : 'reject'}`,
+      {
+        note,
+        ...(pass && approvedAmount !== undefined ? { approvedAmount } : {}),
+      },
+    ),
+  );
+}
+
+export type ExpenseReviewRow = {
+  id: string;
+  serviceCaseId: string;
+  gspCaseNo?: string;
+  projectName?: string;
+  inspectorId: string;
+  inspectorName?: string;
+  amount: string;
+  note?: string | null;
+  voucherUrls?: string[];
+  status: string;
+  month?: string | null;
+  reviewNote?: string | null;
+  reviewAt?: string | null;
+  createdAt?: string;
+};
 export async function setFinanceCaseSite(caseId: string, siteId: string) {
   return unwrap(
     await request.put<ApiResponse<FinanceCase>>(`/cases/${caseId}/site`, { siteId }),
@@ -127,9 +232,16 @@ export async function batchAssignFinanceCasesToSites(caseIds: string[], siteId: 
     >('/cases/assign-sites', { caseIds, siteId }),
   );
 }
-export async function setFinanceCaseTaskType(caseId: string, templateId: string) {
+export async function setFinanceCaseTaskType(
+  caseId: string,
+  templateId: string,
+  productLine?: string,
+) {
   return unwrap(
-    await request.put<ApiResponse<FinanceCase>>(`/cases/${caseId}/task-type`, { templateId }),
+    await request.put<ApiResponse<FinanceCase>>(`/cases/${caseId}/task-type`, {
+      templateId,
+      productLine: productLine || undefined,
+    }),
   );
 }
 export async function batchCreateTasksFromCases(payload: {
@@ -147,8 +259,21 @@ export async function batchCreateTasksFromCases(payload: {
     >('/cases/batch-create-tasks', payload),
   );
 }
-export async function fetchPendingFinanceReviews() {
-  return unwrap(await request.get<ApiResponse<FinanceReviewItem[]>>('/review/pending'));
+export async function fetchPendingFinanceReviews(params?: {
+  keyword?: string;
+  siteId?: string;
+  month?: string;
+  overdue?: string;
+  reviewStatus?: 'pending' | 'approved' | 'rejected' | 'all';
+}) {
+  return unwrap(
+    await request.get<ApiResponse<FinanceReviewItem[]>>('/review/pending', { params }),
+  );
+}
+export async function fetchReviewAmountBreakdown(caseId: string) {
+  return unwrap(
+    await request.get<ApiResponse<ReviewAmountBreakdown>>(`/review/${caseId}/amount-breakdown`),
+  );
 }
 export async function approveFinanceReview(caseId: string, comment?: string) {
   return unwrap(await request.post<ApiResponse<Record<string, unknown>>>(`/review/${caseId}/approve`, { comment }));
@@ -173,7 +298,7 @@ export async function reviewFinanceDeduction(caseId: string, approved: boolean, 
   );
 }
 export async function fetchFinanceCase(id: string) {
-  return unwrap(await request.get<ApiResponse<Record<string, unknown>>>(`/cases/${id}`));
+  return unwrap(await request.get<ApiResponse<FinanceCase>>(`/cases/${id}`));
 }
 export async function fetchPoOrders(params: Record<string, unknown>) {
   return unwrap(await request.get<ApiResponse<FinancePage<PoOrder>>>('/po-orders', { params }));
@@ -244,6 +369,11 @@ export async function generateCasesFromPo() {
 }
 export async function fetchFinanceDashboard(params: Record<string, unknown> = {}) {
   return unwrap(await request.get<ApiResponse<FinanceDashboard>>('/finance/dashboard', { params }));
+}
+export async function fetchFinanceVarianceDetail(params: Record<string, unknown> = {}) {
+  return unwrap(
+    await request.get<ApiResponse<FinanceVarianceDetail>>('/finance/dashboard/variance', { params }),
+  );
 }
 export async function uploadFinanceExcel(
   kind: 'gsp' | 'po' | 'price' | 'perf-price',

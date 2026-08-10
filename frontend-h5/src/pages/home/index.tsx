@@ -39,7 +39,7 @@ type OtherSiteTip = {
 };
 
 function primaryAction(item?: HomeItem) {
-  if (!item) return { title: '查看全部作业', hint: '本站暂无待办，可切换站点或等待派单' };
+  if (!item) return { title: '查看全部作业', hint: '本网格暂无待办，可切换网格或等待派单' };
   if (item.status === 'rejected') return { title: '去返工', hint: item.title };
   if (item.status === 'assigned' || item.status === 'pending') {
     return { title: '去接单', hint: item.title };
@@ -99,12 +99,17 @@ export default function HomePage() {
 
       if (currentSite?.id && c.siteId === currentSite.id) {
         const linked = taskByCaseId.get(String(c.id));
-        const status = linked?.status || c.status;
-        const statusLabel = linked
-          ? linked.statusLabel && linked.statusLabel !== '草稿'
-            ? linked.statusLabel
-            : STATUS_TEXT[linked.status] || '进行中'
-          : STATUS_TEXT[c.status] || c.status;
+        const rejectTask =
+          linked?.status === 'rejected'
+            ? linked
+            : allTasks.find(
+                (t) => String(t.serviceCaseId) === String(c.id) && t.status === 'rejected',
+              );
+        const status = rejectTask?.status === 'rejected' ? 'rejected' : c.status;
+        const statusLabel =
+          rejectTask?.status === 'rejected'
+            ? '需返工'
+            : STATUS_TEXT[c.status] || c.status;
         list.push({
           key: `case-${c.id}`,
           title: c.projectName || c.gspCaseNo,
@@ -167,16 +172,16 @@ export default function HomePage() {
               <b>现场作业台</b>
             </div>
             <button type="button" className="home-site-switch" onClick={() => navigate('/m/sites')}>
-              切换站点 ›
+              切换网格 ›
             </button>
           </div>
           <div className="home-hero__site">
-            <small>当前站点</small>
-            <h1>{currentSite?.name || '尚未选择站点'}</h1>
+            <small>当前网格</small>
+            <h1>{currentSite?.name || '尚未选择网格'}</h1>
             <p>
               {currentSite
                 ? `${currentSite.province || ''}${currentSite.city || ''} · ${currentSite.code}`
-                : '请先选择今日要作业的站点'}
+                : '请先选择今日要作业的网格'}
             </p>
           </div>
         </header>
@@ -192,10 +197,10 @@ export default function HomePage() {
           )}
 
           {otherSiteTips.length > 0 && (
-            <section className="home-other-sites" aria-label="其他站点待办提醒">
+            <section className="home-other-sites" aria-label="其他网格待办提醒">
               <div className="home-other-sites__head">
-                <b>其他站点有待办</b>
-                <span>共 {otherTotal} 单，点站点即可切换查看</span>
+                <b>其他网格有待办</b>
+                <span>共 {otherTotal} 单，点网格即可切换查看</span>
               </div>
               <div className="home-other-sites__list">
                 {otherSiteTips.map((tip) => (
@@ -265,8 +270,8 @@ export default function HomePage() {
             >
               <span className="home-start__icon">→</span>
               <span>
-                <b>{!currentSite ? '先选择站点' : action.title}</b>
-                <small>{!currentSite ? '选择站点后查看本站已派工单' : action.hint}</small>
+                <b>{!currentSite ? '先选择网格' : action.title}</b>
+                <small>{!currentSite ? '选择网格后查看本网格已派工单' : action.hint}</small>
               </span>
               <i>›</i>
             </button>
@@ -274,8 +279,8 @@ export default function HomePage() {
 
           <div className="home-section-title">
             <div>
-              <h3>本站待办</h3>
-              <span>{currentSite ? `仅显示 ${currentSite.name}` : '请先选择站点'}</span>
+              <h3>本网格待办</h3>
+              <span>{currentSite ? `仅显示 ${currentSite.name}` : '请先选择网格'}</span>
             </div>
             <button type="button" onClick={() => navigate('/m/tasks')}>
               全部 ›
@@ -294,15 +299,15 @@ export default function HomePage() {
             </button>
           ) : !currentSite ? (
             <div className="home-empty">
-              <Empty description="请先选择站点" />
+              <Empty description="请先选择网格" />
             </div>
           ) : items.length === 0 ? (
             <div className="home-empty">
               <Empty
                 description={
                   otherSiteTips.length
-                    ? '本站暂无待办，可点上方提示切换到有单的站点'
-                    : '本站暂无待办，等待网格长派单'
+                    ? '本网格暂无待办，可点上方提示切换到有单的网格'
+                    : '本网格暂无待办，等待网格长派单'
                 }
               />
             </div>

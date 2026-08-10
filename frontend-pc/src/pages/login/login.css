@@ -72,6 +72,14 @@
   font-weight: 800;
   background: linear-gradient(145deg, #3bd49c, #178660);
   box-shadow: 0 10px 28px rgba(18, 66, 50, .24), inset 0 1px rgba(255,255,255,.35);
+  overflow: hidden;
+}
+.pc-login-visual__mark img,
+.pc-login-brand__logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 .pc-login-visual__mark { width: 38px; height: 38px; border-radius: 12px; }
 .pc-login-visual__main { margin: auto 0; max-width: 500px; }

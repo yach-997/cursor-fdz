@@ -27,7 +27,7 @@ export enum AlertStatus {
   RESOLVED = 'resolved',
 }
 
-/** 站点预警阈值配置 */
+/** 网格预警阈值配置 */
 @Entity('alert_configs')
 export class AlertConfig {
   @PrimaryGeneratedColumn('uuid')

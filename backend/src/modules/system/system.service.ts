@@ -1,12 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { InspectionRecord } from '../../entities';
+import { InspectionRecord, SystemBranding } from '../../entities';
 import { CheckResult } from '../../common/enums';
 import { VisionService } from '../ai/vision.service';
 import { RedisService } from '../redis/redis.service';
 import { MinioService } from '../upload/minio.service';
 import { QiniuService } from '../upload/qiniu.service';
+import { UpdateBrandingDto } from './dto/branding.dto';
+
+const DEFAULT_BRANDING = {
+  id: 'default',
+  systemName: '阳光运维系统',
+  subtitle: '阳光运维平台',
+  logoUrl: null as string | null,
+};
 
 @Injectable()
 export class SystemService {
@@ -18,7 +26,52 @@ export class SystemService {
     private readonly minio: MinioService,
     @InjectRepository(InspectionRecord)
     private readonly recordRepo: Repository<InspectionRecord>,
+    @InjectRepository(SystemBranding)
+    private readonly brandingRepo: Repository<SystemBranding>,
   ) {}
+
+  async getBranding() {
+    const row = await this.ensureBrandingRow();
+    return {
+      systemName: row.systemName || DEFAULT_BRANDING.systemName,
+      subtitle: row.subtitle ?? DEFAULT_BRANDING.subtitle,
+      logoUrl: row.logoUrl || null,
+      updatedAt: row.updatedAt?.toISOString?.() ?? null,
+    };
+  }
+
+  async updateBranding(dto: UpdateBrandingDto) {
+    const row = await this.ensureBrandingRow();
+    if (dto.systemName !== undefined) {
+      const name = String(dto.systemName || '').trim();
+      if (!name) throw new BadRequestException('系统名称不能为空');
+      if (name.length > 64) throw new BadRequestException('系统名称过长');
+      row.systemName = name;
+    }
+    if (dto.subtitle !== undefined) {
+      const sub = String(dto.subtitle || '').trim();
+      row.subtitle = sub || null;
+    }
+    if (dto.logoUrl !== undefined) {
+      const url = dto.logoUrl == null ? '' : String(dto.logoUrl).trim();
+      row.logoUrl = url || null;
+    }
+    await this.brandingRepo.save(row);
+    return this.getBranding();
+  }
+
+  private async ensureBrandingRow() {
+    let row = await this.brandingRepo.findOne({ where: { id: 'default' } });
+    if (!row) {
+      row = this.brandingRepo.create({ ...DEFAULT_BRANDING });
+      try {
+        await this.brandingRepo.save(row);
+      } catch {
+        row = (await this.brandingRepo.findOne({ where: { id: 'default' } })) || row;
+      }
+    }
+    return row;
+  }
 
   async getStatus() {
     const checkedAt = new Date();

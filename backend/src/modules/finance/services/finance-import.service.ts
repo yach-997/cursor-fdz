@@ -9,10 +9,12 @@ import {
   PriceLibrary,
   ServiceCase,
   ItemPriceMapping,
+  InspectionTemplate,
 } from '../../../entities';
 import { CurrentUserContext } from '../../../common/interfaces';
 import { ExcelParserService, ParsedPoOrder } from './excel-parser.service';
 import { isIgnoredItem, modelMatches, pickMappedPrice } from './item-matcher';
+import { applyDemandTypeForCases } from './demand-type-match';
 
 const money = (value: number) => (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2);
 const PO_CHUNK = 40;
@@ -36,6 +38,8 @@ export class FinanceImportService {
     @InjectRepository(PriceLibrary) private readonly prices: Repository<PriceLibrary>,
     @InjectRepository(CasePerformance) private readonly performance: Repository<CasePerformance>,
     @InjectRepository(ItemPriceMapping) private readonly mappings: Repository<ItemPriceMapping>,
+    @InjectRepository(InspectionTemplate)
+    private readonly templates: Repository<InspectionTemplate>,
   ) {}
 
   async importGsp(file: Express.Multer.File, user: CurrentUserContext, preview = false) {
@@ -81,15 +85,32 @@ export class FinanceImportService {
     for (let i = 0; i < toSave.length; i += PRICE_CHUNK) {
       await this.cases.save(toSave.slice(i, i + PRICE_CHUNK));
     }
+    // 精确匹配服务类型/产品线；匹配不上只进警告，不拒绝入库
+    const matchResult = await applyDemandTypeForCases(this.cases, this.templates, toSave);
+    const rowByGsp = new Map(parsed.cases.map((c) => [c.gspCaseNo, c.sourceRow]));
+    const matchWarnings = matchResult.warnings.map((w) => ({
+      row: w.gspCaseNo ? rowByGsp.get(w.gspCaseNo) : undefined,
+      gspCaseNo: w.gspCaseNo,
+      code: w.code,
+      message: w.message,
+    }));
     await this.finishBatch(batch, success, failures);
     return {
       batchId: batch.id,
       totalRows: batch.totalRows,
       successRows: success,
       failRows: failures.length,
-      warnings: parsed.cases
-        .filter((x) => x.warning)
-        .map((x) => ({ row: x.sourceRow, warning: x.warning })),
+      matchedTypes: matchResult.matched,
+      matchWarnings,
+      warnings: [
+        ...parsed.cases
+          .filter((x) => x.warning)
+          .map((x) => ({ row: x.sourceRow, warning: x.warning })),
+        ...matchWarnings.map((w) => ({
+          row: w.row,
+          warning: w.message,
+        })),
+      ],
     };
   }
 
@@ -595,6 +616,14 @@ export class FinanceImportService {
               (!serviceCase.projectName || serviceCase.projectName.startsWith('待补全-'))
             ) {
               serviceCase.projectName = parsed.projectName;
+              if (!casesToPatch.includes(serviceCase)) casesToPatch.push(serviceCase);
+            }
+            if (parsed.productLine && !serviceCase.productLine) {
+              serviceCase.productLine = String(parsed.productLine).trim().slice(0, 64);
+              if (!casesToPatch.includes(serviceCase)) casesToPatch.push(serviceCase);
+            }
+            if (parsed.demandType && !serviceCase.serviceType) {
+              serviceCase.serviceType = String(parsed.demandType).trim().slice(0, 32);
               if (!casesToPatch.includes(serviceCase)) casesToPatch.push(serviceCase);
             }
             touchedCaseIds.add(serviceCase.id);

@@ -43,19 +43,20 @@ function statusClass(status: string, label?: string) {
   return 'is-todo';
 }
 
-function inspectionStatusText(t: TaskItem) {
-  if (t.status === 'pending') return '未开始';
-  if (t.status === 'submitted' || t.status === 'approved') return '已完成';
-  if (t.status === 'rejected') return '需返工';
-  if (t.status === 'archived') return '已归档';
-  return '进行中';
-}
-
-function financeStatusText(status: string) {
-  if (status === 'assigned') return '未开始';
-  if (status === 'working') return '进行中';
-  if (['finished', 'settle_review', 'settled', 'month_locked'].includes(status)) return '已完成';
-  return status;
+function financeStatusText(c: MobileFinanceCase) {
+  if (['finished', 'settle_review', 'settled', 'month_locked'].includes(c.status)) {
+    return '已完成';
+  }
+  if (c.status === 'working') {
+    const planned = Number(c.plannedUnits) || 0;
+    const done = Number(c.completedUnits) || 0;
+    if ((c.assignMode === 'multi' || planned > 1) && planned > 0) {
+      return `进行中 ${done}/${planned}`;
+    }
+    return '进行中';
+  }
+  if (c.status === 'assigned') return '待接单';
+  return c.status;
 }
 
 function financeMatchesTab(status: string, tab: (typeof FILTERS)[number]['key']) {
@@ -131,18 +132,18 @@ export default function TasksPage() {
       if (currentSite?.id && !c.siteId) continue;
 
       const linked = taskByCaseId.get(String(c.id));
-      const tabStatus = linked
-        ? linked.status === 'pending'
-          ? 'assigned'
-          : linked.status === 'submitted' || linked.status === 'approved'
-            ? 'finished'
-            : 'working'
-        : c.status;
-      if (!financeMatchesTab(tabStatus, tab)) continue;
+      if (!financeMatchesTab(c.status, tab)) continue;
       if (kw && !`${c.projectName} ${c.gspCaseNo}`.toLowerCase().includes(kw)) continue;
-      const label = linked ? inspectionStatusText(linked) : financeStatusText(c.status);
-      const statusForClass = linked?.status || c.status;
-      const reject = linked?.record?.rejectReason?.reason;
+      const rejectTask =
+        linked?.status === 'rejected'
+          ? linked
+          : allTasks.find(
+              (t) => String(t.serviceCaseId) === String(c.id) && t.status === 'rejected',
+            );
+      const label =
+        rejectTask?.status === 'rejected' ? '需返工' : financeStatusText(c);
+      const statusForClass = rejectTask?.status === 'rejected' ? 'rejected' : c.status;
+      const reject = rejectTask?.record?.rejectReason?.reason;
       items.push({
         key: `case-${c.id}`,
         title: c.projectName || c.gspCaseNo,
@@ -151,8 +152,8 @@ export default function TasksPage() {
         meta: `${c.gspCaseNo} · ${c.taskTypeName || '未设类型'}`,
         rejectReason: reject
           ? `驳回：${reject}${
-              linked?.record?.rejectReason?.entryIds?.length
-                ? `（${linked.record.rejectReason.entryIds.length} 项需返工）`
+              rejectTask?.record?.rejectReason?.entryIds?.length
+                ? `（${rejectTask.record.rejectReason.entryIds.length} 项需返工）`
                 : ''
             }`
           : undefined,
@@ -176,8 +177,8 @@ export default function TasksPage() {
         <h1 className="tasks-page__title">作业</h1>
         <p className="tasks-page__sub">
           {currentSite?.name
-            ? `当前站点 · ${currentSite.name}`
-            : '未选择站点，请先在首页切换站点'}
+            ? `当前网格 · ${currentSite.name}`
+            : '未选择网格，请先在首页切换网格'}
         </p>
       </header>
 
@@ -200,26 +201,40 @@ export default function TasksPage() {
       )}
 
       <div className="tasks-page__search">
-        <span aria-hidden style={{ color: '#9aaba2', fontSize: 16 }}>
-          ⌕
+        <span className="tasks-page__search-icon" aria-hidden>
+          搜
         </span>
         <input
           value={keyword}
           placeholder="搜索项目名 / 案例号"
-          onChange={(e) => setKeyword(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setKeyword(v);
+            if (!v.trim() && appliedKeyword) setAppliedKeyword('');
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') setAppliedKeyword(keyword.trim());
           }}
         />
-        {(keyword || appliedKeyword) && (
+        {keyword && (
           <button
             type="button"
-            className="tasks-page__search-go"
-            onClick={() => setAppliedKeyword(keyword.trim())}
+            className="tasks-page__search-clear"
+            onClick={() => {
+              setKeyword('');
+              setAppliedKeyword('');
+            }}
           >
-            搜索
+            清除
           </button>
         )}
+        <button
+          type="button"
+          className="tasks-page__search-go"
+          onClick={() => setAppliedKeyword(keyword.trim())}
+        >
+          搜索
+        </button>
       </div>
 
       <div className="tasks-page__filters" role="tablist">
@@ -253,7 +268,7 @@ export default function TasksPage() {
               <Empty
                 description={
                   otherTips.length
-                    ? '本站暂无作业，可切换到上方有待办的站点'
+                    ? '本网格暂无作业，可切换到上方有待办的网格'
                     : '暂无作业，请等待网格长派单'
                 }
               />

@@ -186,7 +186,7 @@ export default function HardRulesPage() {
         }
       >
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          仅超级管理员可配置。硬规则会插入视觉模型提示词，并控制二次复核强度；与「任务类型」里的检查说明互补——说明给人看，硬规则负责系统强制判定。
+          仅超级管理员可配置。硬规则会插入视觉模型提示词，并控制二次复核强度；与「服务类型」里的检查说明互补——说明给人看，硬规则负责系统强制判定。
           修改后对新发起的分析立即生效（不改历史结论）。
         </Typography.Paragraph>
         <Table

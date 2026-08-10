@@ -16,6 +16,13 @@ export interface TemplateEntry {
   isOptionalModule?: boolean;
 }
 
+/** 服务类型下的产品线变体（一套独立检查条目） */
+export interface TemplateProductLine {
+  id: string;
+  name: string;
+  entries: TemplateEntry[];
+}
+
 /** 巡检模板实体 */
 @Entity('inspection_templates')
 export class InspectionTemplate {
@@ -32,16 +39,36 @@ export class InspectionTemplate {
   })
   deviceType: DeviceType;
 
+  /**
+   * 默认/通用检查条目。
+   * 未配置 productLines 时使用；已配置产品线时仅作兼容回退。
+   */
   @Column({ type: 'jsonb' })
   entries: TemplateEntry[];
+
+  /** 产品线变体（故障恢复 → 组串/集中/充电…） */
+  @Column({ name: 'product_lines', type: 'jsonb', default: () => "'[]'" })
+  productLines: TemplateProductLine[];
 
   /** true=管理员全局模板 */
   @Column({ name: 'is_global', default: true })
   isGlobal: boolean;
 
-  /** null=全局，有值=站点自定义 */
+  /** null=全局，有值=网格自定义 */
   @Column({ name: 'site_id', type: 'uuid', nullable: true })
   siteId: string | null;
+
+  /** single | multi */
+  @Column({ name: 'assign_mode', type: 'varchar', length: 16, default: 'single' })
+  assignMode: 'single' | 'multi';
+
+  /** 多人模式单元名称，如网格/整改项 */
+  @Column({ name: 'unit_label', type: 'varchar', length: 32, default: '台' })
+  unitLabel: string;
+
+  /** 新建案例时是否默认开启报销 */
+  @Column({ name: 'expense_enabled_default', type: 'boolean', default: false })
+  expenseEnabledDefault: boolean;
 
   @Column({ default: 1 })
   version: number;

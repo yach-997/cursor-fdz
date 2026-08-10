@@ -1,58 +1,58 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Button,
-  Card,
-  Drawer,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Select,
-  Space,
-  Table,
-  Tag,
-  message,
-} from 'antd';
+import { useCallback, useEffect, useState } from 'react';
+import { Button, Card, Input, InputNumber, Select, Space, Table, Tag, message } from 'antd';
+import { DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
-  createAssessmentEvent,
-  deleteAssessmentEvent,
-  fetchAssessmentEventCatalog,
-  fetchAssessmentEvents,
+  clearFinanceAssessments,
   fetchFinanceAssessments,
   rankFinanceAssessments,
   saveFinanceAssessment,
 } from '../../../api/finance';
-import type { AssessmentEventCatalogItem, AssessmentEventRow, FinanceAssessment } from '../../../types/finance';
+import { fetchSites } from '../../../api/site';
+import type { FinanceAssessment } from '../../../types/finance';
+import type { SiteItem } from '../../../types';
 import { useAuthStore } from '../../../stores/auth';
+import { canUseDangerousClear, confirmDangerousClear } from '../../../utils/finance-clear';
 
 export default function FinanceAssessmentPage() {
-  const isAdmin = useAuthStore((state) => state.user?.role === 'super_admin');
+  const user = useAuthStore((state) => state.user);
+  const isAdmin = user?.role === 'super_admin';
+  const isManager = user?.role === 'site_manager';
   const [month, setMonth] = useState(dayjs().format('YYYY-MM'));
+  const [keyword, setKeyword] = useState('');
+  const [role, setRole] = useState<string>();
+  const [siteId, setSiteId] = useState<string>();
+  const [sites, setSites] = useState<SiteItem[]>([]);
   const [rows, setRows] = useState<FinanceAssessment[]>([]);
   const [loading, setLoading] = useState(false);
-  const [catalog, setCatalog] = useState<AssessmentEventCatalogItem[]>([]);
-  const [eventUser, setEventUser] = useState<FinanceAssessment>();
-  const [events, setEvents] = useState<AssessmentEventRow[]>([]);
-  const [eventOpen, setEventOpen] = useState(false);
-  const [form] = Form.useForm();
+  const [clearing, setClearing] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    void fetchSites({ page: 1, limit: 100 })
+      .then((res) => setSites(res.list || []))
+      .catch(() => setSites([]));
+  }, [isAdmin]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setRows(await fetchFinanceAssessments(month));
+      setRows(
+        await fetchFinanceAssessments({
+          month,
+          keyword: keyword || undefined,
+          siteId: isAdmin ? siteId : undefined,
+          role: isAdmin ? role : undefined,
+        }),
+      );
     } finally {
       setLoading(false);
     }
-  }, [month]);
+  }, [month, keyword, siteId, role, isAdmin]);
 
   useEffect(() => {
     void load();
   }, [load]);
-
-  useEffect(() => {
-    void fetchAssessmentEventCatalog().then(setCatalog).catch(() => setCatalog([]));
-  }, []);
 
   const patchRow = (userId: string, key: keyof FinanceAssessment, value: unknown) =>
     setRows((current) =>
@@ -60,6 +60,10 @@ export default function FinanceAssessmentPage() {
     );
 
   const save = async (row: FinanceAssessment) => {
+    if (isManager && row.userId === user?.id) {
+      message.warning('不能给自己打分，请由管理员录入');
+      return;
+    }
     await saveFinanceAssessment({
       month,
       userId: row.userId,
@@ -73,105 +77,197 @@ export default function FinanceAssessmentPage() {
     await load();
   };
 
-  const openEvents = async (row: FinanceAssessment) => {
-    setEventUser(row);
-    setEventOpen(true);
-    setEvents(await fetchAssessmentEvents(month, row.userId));
-    form.resetFields();
-  };
-
-  const selectedCatalogId = Form.useWatch('catalogId', form);
-  const selectedCatalog = useMemo(
-    () => catalog.find((item) => item.id === selectedCatalogId),
-    [catalog, selectedCatalogId],
-  );
-
-  const submitEvent = async () => {
-    if (!eventUser) return;
-    const values = await form.validateFields();
-    await createAssessmentEvent({
-      month,
-      userId: eventUser.userId,
-      catalogId: values.catalogId,
-      qty: values.qty,
-      amount: values.amount,
-      remark: values.remark,
-    });
-    message.success('事件扣罚已登记');
-    setEvents(await fetchAssessmentEvents(month, eventUser.userId));
-    form.resetFields();
+  const rank = async (mode: 'site_preview' | 'company_inspectors' | 'company_managers') => {
+    if (mode === 'site_preview' && isAdmin && !siteId) {
+      message.warning('请先选择网格，再生成网格内名次');
+      return;
+    }
+    await rankFinanceAssessments(month, mode, mode === 'site_preview' ? siteId : undefined);
+    message.success(
+      mode === 'site_preview'
+        ? '本网格名次已按分数生成（第1/2/3…名，不发奖罚）'
+        : mode === 'company_inspectors'
+          ? '全公司工程师正式排名与奖罚已更新'
+          : '全公司网格长正式排名与奖罚已更新',
+    );
     await load();
   };
 
-  const removeEvent = (id: string) => {
-    Modal.confirm({
-      title: '删除该事件扣罚？',
-      onOk: async () => {
-        if (!eventUser) return;
-        await deleteAssessmentEvent(id);
-        setEvents(await fetchAssessmentEvents(month, eventUser.userId));
-        await load();
-        message.success('已删除');
-      },
+  const onClear = async () => {
+    const ok = await confirmDangerousClear({
+      title: '清空全部考核数据？',
+      description:
+        '将删除所有考核分数、排名奖罚、事件扣罚与月度结算草稿。不影响案例、PO、价格库与账号。',
     });
+    if (!ok) return;
+    setClearing(true);
+    try {
+      const result = await clearFinanceAssessments();
+      message.success(
+        `已清空考核 ${result.deleted.assessment}、事件 ${result.deleted.assessmentEvent}、月结 ${result.deleted.monthlySettlement}`,
+      );
+      await load();
+    } finally {
+      setClearing(false);
+    }
   };
 
-  const input = (row: FinanceAssessment, key: keyof FinanceAssessment, max?: number) => (
+  const isSelfRow = (row: FinanceAssessment) => isManager && row.userId === user?.id;
+
+  const input = (
+    row: FinanceAssessment,
+    key: keyof FinanceAssessment,
+    max?: number,
+    disabled?: boolean,
+  ) => (
     <InputNumber
       min={key === 'rewardAmount' ? undefined : 0}
       max={max}
+      disabled={disabled}
       value={Number(row[key] || 0)}
       onChange={(value) => patchRow(row.userId, key, value || 0)}
     />
   );
 
+  const companyRankTag = (v?: string | null) => {
+    if (!v) return <Tag>待排名</Tag>;
+    return (
+      <Tag color={v === '优秀' ? 'green' : v === '不称职' || v === '待提升' ? 'red' : 'default'}>
+        {v}
+      </Tag>
+    );
+  };
+
+  const roleLabel = (v?: string) => {
+    if (v === 'dual') return '网格长兼工程师';
+    if (v === 'site_manager') return '网格长';
+    return '工程师';
+  };
+
+  const siteRankTag = (row: FinanceAssessment) => {
+    if (row.userRole === 'site_manager') return <Tag>-</Tag>;
+    if (!row.siteRankResult) {
+      return <Tag>{row.siteName ? '待排名' : '未挂网格'}</Tag>;
+    }
+    if (/^\d+$/.test(row.siteRankResult)) {
+      return (
+        <Tag color="blue">
+          第{row.siteRankResult}名{row.siteName ? ` · ${row.siteName}` : ''}
+        </Tag>
+      );
+    }
+    return <Tag>{row.siteRankResult}</Tag>;
+  };
+
   return (
     <Card className="finance-card" title="月度考核与补助">
       <div className="finance-review-tip">
-        月度考核 = 打分排名考核 + 专业指标事件考核。内部考核表按总分排名（网格长优劣各 1
-        名±500，工程师优劣各 3 名±300）；事件按细则按件扣罚。已取消原「内部 60% + 阳光 40%」加权。
+        {isManager
+          ? '本页给本网格已聘工程师打分（含自己兼工程师且已聘网格）。不能改自己的分数，本人考核由管理员录入。网格内名次仅参考；全司奖罚：兼岗只进网格长池。列表为空请先「聘用到网格」。'
+          : '说明：网格内名次按各网格；全司工程师优/劣各3±300，网格长优/劣各1±500。网格长兼工程师只参加网格长全司排名，不重复进工程师池。'}
       </div>
-      <Space className="finance-toolbar">
+      <Space className="finance-toolbar" wrap>
         <Input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
+        <Input
+          allowClear
+          placeholder="姓名/账号"
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+          style={{ width: 160 }}
+        />
+        {isAdmin && (
+          <>
+            <Select
+              allowClear
+              placeholder="角色"
+              value={role}
+              onChange={setRole}
+              style={{ width: 140 }}
+              options={[
+                { value: 'inspector', label: '工程师' },
+                { value: 'site_manager', label: '网格长' },
+              ]}
+            />
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              placeholder="网格"
+              value={siteId}
+              onChange={setSiteId}
+              style={{ width: 180 }}
+              options={sites.map((site) => ({ value: site.id, label: site.name }))}
+            />
+          </>
+        )}
         <Button onClick={load}>查询</Button>
-        <Button
-          type="primary"
-          onClick={async () => {
-            await rankFinanceAssessments(month);
-            message.success('分组排名已更新，奖罚已按规则联动');
-            await load();
-          }}
-        >
-          一键分组排名并联动奖罚
-        </Button>
+        {isManager && (
+          <Button type="primary" onClick={() => void rank('site_preview')}>
+            一键排名本网格工程师
+          </Button>
+        )}
+        {isAdmin && (
+          <>
+            <Button onClick={() => void rank('site_preview')}>按当前网格生成网格内名次</Button>
+            <Button type="primary" onClick={() => void rank('company_inspectors')}>
+              一键排名全公司工程师
+            </Button>
+            <Button type="primary" onClick={() => void rank('company_managers')}>
+              一键排名全公司网格长
+            </Button>
+            {canUseDangerousClear() && (
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                loading={clearing}
+                onClick={() => void onClear()}
+              >
+                清空考核数据
+              </Button>
+            )}
+          </>
+        )}
       </Space>
       <Table
         rowKey="userId"
         loading={loading}
         dataSource={rows}
-        scroll={{ x: 1400 }}
+        scroll={{ x: 1500 }}
+        locale={{
+          emptyText: isManager
+            ? '本网格暂无已聘工程师。请到用户管理「聘用到网格」，兼工程师的网格长也需聘到本网格后才会出现。'
+            : '暂无考核人员',
+        }}
         columns={[
           { title: '姓名', dataIndex: 'realName', fixed: 'left', width: 110 },
           {
             title: '角色',
             dataIndex: 'userRole',
-            width: 110,
-            render: (v) => (v === 'site_manager' ? '网格长' : '工程师'),
+            width: 140,
+            render: (v) => roleLabel(v),
+          },
+          {
+            title: '所属网格',
+            dataIndex: 'siteName',
+            width: 140,
+            render: (v, row) => (row.userRole === 'site_manager' ? '-' : v || '未挂网格'),
           },
           {
             title: '内部考核总分',
             width: 130,
-            render: (_, row) => input(row, 'internalScore', 100),
+            render: (_, row) => input(row, 'internalScore', 100, isSelfRow(row)),
           },
           {
-            title: '排名',
+            title: '网格内名次',
+            dataIndex: 'siteRankResult',
+            width: 160,
+            render: (_, row) => siteRankTag(row),
+          },
+          {
+            title: '全司排名',
             dataIndex: 'rankResult',
             width: 100,
-            render: (v) => (
-              <Tag color={v === '优秀' ? 'green' : v === '不称职' || v === '待提升' ? 'red' : 'default'}>
-                {v || '待排名'}
-              </Tag>
-            ),
+            render: (v) => companyRankTag(v),
           },
           {
             title: '排名奖罚',
@@ -180,21 +276,21 @@ export default function FinanceAssessmentPage() {
               isAdmin ? input(row, 'rewardAmount') : `¥${Number(row.rewardAmount || 0).toFixed(2)}`,
           },
           {
-            title: '事件扣罚',
-            width: 110,
-            render: (_, row) => (
-              <Button type="link" onClick={() => void openEvents(row)}>
-                ¥{Number(row.eventPenalty || 0).toFixed(2)}
-              </Button>
-            ),
+            title: '工具补助',
+            width: 120,
+            render: (_, row) => input(row, 'toolSubsidy', undefined, isSelfRow(row)),
           },
-          { title: '工具补助', width: 120, render: (_, row) => input(row, 'toolSubsidy') },
-          { title: '其他补助', width: 120, render: (_, row) => input(row, 'otherSubsidy') },
+          {
+            title: '其他补助',
+            width: 120,
+            render: (_, row) => input(row, 'otherSubsidy', undefined, isSelfRow(row)),
+          },
           {
             title: '补助说明',
             width: 160,
             render: (_, row) => (
               <Input
+                disabled={isSelfRow(row)}
                 value={row.subsidyRemark}
                 onChange={(event) => patchRow(row.userId, 'subsidyRemark', event.target.value)}
               />
@@ -203,85 +299,18 @@ export default function FinanceAssessmentPage() {
           {
             title: '操作',
             fixed: 'right',
-            width: 150,
-            render: (_, row) => (
-              <Space>
+            width: 100,
+            render: (_, row) =>
+              isSelfRow(row) ? (
+                <Tag>管理员录入</Tag>
+              ) : (
                 <Button type="link" onClick={() => void save(row)}>
                   保存
                 </Button>
-                <Button type="link" onClick={() => void openEvents(row)}>
-                  事件
-                </Button>
-              </Space>
-            ),
+              ),
           },
         ]}
       />
-
-      <Drawer
-        width={720}
-        open={eventOpen}
-        onClose={() => setEventOpen(false)}
-        title={`专业指标事件考核 · ${eventUser?.realName || ''}`}
-      >
-        <Form form={form} layout="vertical" initialValues={{ qty: 1 }}>
-          <Form.Item name="catalogId" label="考核细则" rules={[{ required: true, message: '请选择细则' }]}>
-            <Select
-              showSearch
-              optionFilterProp="label"
-              options={catalog.map((item) => ({
-                value: item.id,
-                label: `${item.category}｜${item.content}（${item.unitAmount == null ? '自定义金额' : `${item.unitAmount}元/${item.unit}`}）`,
-              }))}
-            />
-          </Form.Item>
-          <Form.Item name="qty" label="次数/天数" rules={[{ required: true }]}>
-            <InputNumber min={0.01} style={{ width: '100%' }} />
-          </Form.Item>
-          {selectedCatalog?.unitAmount == null && (
-            <Form.Item name="amount" label="自定义扣罚金额" rules={[{ required: true, message: '请填写金额' }]}>
-              <InputNumber min={0} style={{ width: '100%' }} />
-            </Form.Item>
-          )}
-          <Form.Item name="remark" label="备注">
-            <Input.TextArea rows={2} />
-          </Form.Item>
-          <Button type="primary" onClick={() => void submitEvent()}>
-            登记扣罚
-          </Button>
-        </Form>
-        <Table
-          style={{ marginTop: 24 }}
-          rowKey="id"
-          size="small"
-          dataSource={events}
-          pagination={false}
-          columns={[
-            { title: '类别', dataIndex: 'category', width: 140 },
-            { title: '内容', dataIndex: 'content' },
-            {
-              title: '数量',
-              width: 90,
-              render: (_, row) => `${row.qty}${row.unit}`,
-            },
-            {
-              title: '扣罚',
-              dataIndex: 'amount',
-              width: 90,
-              render: (v) => `¥${Number(v).toFixed(2)}`,
-            },
-            {
-              title: '操作',
-              width: 80,
-              render: (_, row) => (
-                <Button type="link" danger onClick={() => removeEvent(row.id)}>
-                  删除
-                </Button>
-              ),
-            },
-          ]}
-        />
-      </Drawer>
     </Card>
   );
 }
