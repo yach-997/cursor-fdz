@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useAuthStore } from '../../stores/auth';
 import {
   Cell,
   Button,
@@ -206,6 +207,7 @@ function PhotoThumbnail({
 export default function InspectionPage() {
   const { taskId } = useParams();
   const navigate = useNavigate();
+  const userId = useAuthStore((s) => s.user?.id);
   const [task, setTask] = useState<TaskItem | null>(null);
   const [record, setRecord] = useState<RecordItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -494,19 +496,29 @@ export default function InspectionPage() {
       if (t.serviceCaseId) {
         try {
           const c = await fetchMyFinanceCase(t.serviceCaseId);
+          const me = userId || '';
+          // 只认本任务台 / 本人认领台，禁止回落到案例第 0 台或别人的费用单
           const resolvedUnit =
             t.workUnitId ||
-            c.activeUnit?.id ||
+            c.myActiveUnits?.find((u) => u.inspectionTaskId === t.id)?.id ||
             c.myActiveUnits?.[0]?.id ||
-            c.units?.find((u) => u.inspectorId && ['claimed', 'submitted', 'completed'].includes(u.status))?.id ||
-            c.units?.[0]?.id ||
+            c.activeUnit?.id ||
+            c.units?.find(
+              (u) =>
+                u.inspectorId === me &&
+                ['claimed', 'submitted', 'completed'].includes(u.status),
+            )?.id ||
             '';
           setTripUnitId(resolvedUnit);
           const claim = resolvedUnit
-            ? (c.expenses || []).find((e) => e.workUnitId === resolvedUnit)
-            : (c.expenses || [])[0];
+            ? (c.expenses || []).find(
+                (e) =>
+                  e.workUnitId === resolvedUnit &&
+                  (!e.inspectorId || !me || e.inspectorId === me),
+              )
+            : undefined;
           setTripForm(tripFormFromClaim(claim));
-          // 有费用案例就走有/无行程选择（不再因缺 workUnitId 跳过）
+          // 本台本人尚无行程结论 → undecided，弹出有/无行程（与单人一致）
           setTripMode(resolveTripMode(claim));
           // 用案例服务类型覆盖任务上的 inspection 默认文案
           if (c.taskTypeName || c.serviceType) {
@@ -539,7 +551,7 @@ export default function InspectionPage() {
     } finally {
       setLoading(false);
     }
-  }, [taskId]);
+  }, [taskId, userId]);
 
   useEffect(() => {
     void load().catch(() => undefined);
