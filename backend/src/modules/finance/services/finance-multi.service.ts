@@ -291,15 +291,25 @@ export class FinanceMultiService {
           ? 'multi'
           : 'single';
     if (nextMode !== serviceCase.assignMode && serviceCase.status !== 'pending_assign') {
-      const hasProgress = await this.units.count({
+      // 仅「已提交/已完成」算实质进度。单人派单会自动认领台位(claimed)，完成 0 台时也应允许改多人。
+      const hasRealProgress = await this.units.count({
         where: {
           serviceCaseId: caseId,
-          status: In(['claimed', 'submitted', 'accepted', 'settled']),
+          status: In(['submitted', 'completed', 'accepted', 'settled']),
         },
       });
-      if (hasProgress > 0) {
-        throw new BadRequestException('已有作业进度，不能切换单人/多人模式');
+      const activeAssignRows = await this.assignments.find({
+        where: {
+          serviceCaseId: caseId,
+          status: In(['assigned', 'working', 'done']),
+        },
+      });
+      const hasDoneUnits = activeAssignRows.some((a) => Number(a.completedUnits || 0) > 0);
+      if (hasRealProgress > 0 || hasDoneUnits) {
+        throw new BadRequestException('已有提交或完成的作业台，不能切换单人/多人模式');
       }
+      // 切模式前释放仅认领未提交的台，避免单人自动认领卡住多人抢台
+      await this.releaseUnsubmittedClaims(caseId);
     }
     serviceCase.assignMode = nextMode;
     serviceCase.unitLabel = '台';
@@ -1127,6 +1137,30 @@ export class FinanceMultiService {
    * 多人模式：撤回一名工程师（零完成台、无已提交报告）。
    * 单人请走「改派/换人」，不要用撤回。
    */
+  /** 释放仅认领、尚未提交的作业台（及其未提交巡检任务），用于单人/多人模式切换 */
+  private async releaseUnsubmittedClaims(caseId: string) {
+    const claimed = await this.units.find({
+      where: {
+        serviceCaseId: caseId,
+        status: In(['claimed']),
+      },
+    });
+    for (const u of claimed) {
+      if (u.inspectionTaskId) {
+        await this.cases.manager.query(`DELETE FROM inspection_records WHERE task_id = $1`, [
+          u.inspectionTaskId,
+        ]);
+        await this.tasks.delete({ id: u.inspectionTaskId });
+      }
+      u.status = 'open';
+      u.inspectorId = null;
+      u.claimedAt = null;
+      u.submittedAt = null;
+      u.inspectionTaskId = null;
+      await this.units.save(u);
+    }
+  }
+
   async withdrawAssignee(caseId: string, inspectorId: string, user: CurrentUserContext) {
     const serviceCase = await this.caseForManager(caseId, user);
     if (['finished', 'settle_review', 'settled', 'month_locked'].includes(serviceCase.status)) {
