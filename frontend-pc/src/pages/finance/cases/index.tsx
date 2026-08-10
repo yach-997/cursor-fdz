@@ -1147,6 +1147,9 @@ export default function FinanceCasesPage() {
         } · ${assigning?.gspCaseNo || ''}`}
         okText={(() => {
           if (assigning?.status === 'pending_assign') return '确认派单';
+          const convertingToSingle =
+            (assigning?.assignMode || 'single') === 'multi' && assignMode === 'single';
+          if (convertingToSingle) return '确认改单人';
           if (assignMode !== 'multi') return '确认换人';
           const adding = inspectorIds.filter(
             (id) => !activeAssignees.some((a) => a.id === id),
@@ -1174,7 +1177,12 @@ export default function FinanceCasesPage() {
               }
               return false;
             }
-            return !inspectorId;
+            // 单人 / 多人改单人
+            const keepId = inspectorId || activeAssignees[0]?.id;
+            if ((assigning?.assignMode || 'single') === 'multi' && assignMode === 'single') {
+              return !keepId || activeAssignees.length > 1;
+            }
+            return !keepId;
           })(),
         }}
         onCancel={() => {
@@ -1260,13 +1268,38 @@ export default function FinanceCasesPage() {
                   : `已追加 ${toSend.length} 名工程师`,
             );
           } else {
-            if (!inspectorId) return;
-            await assignFinanceCase(assigning.id, inspectorId, assignReason || undefined, {
+            const keepId = inspectorId || activeAssignees[0]?.id;
+            if (!keepId) {
+              message.warning('请先保留一名工程师再改回单人');
+              return;
+            }
+            const convertingToSingle =
+              !isFirst && (assigning.assignMode || 'single') === 'multi';
+            if (convertingToSingle && activeAssignees.length > 1) {
+              message.warning('请先撤回多余工程师，只留 1 人后再改回单人');
+              return;
+            }
+            // 多人改单人：先撤回非保留人员（若仍有残留）
+            if (convertingToSingle) {
+              for (const a of activeAssignees) {
+                if (a.id === keepId) continue;
+                try {
+                  await withdrawFinanceAssignee(assigning.id, a.id);
+                } catch {
+                  /* ignore */
+                }
+              }
+            }
+            await assignFinanceCase(assigning.id, keepId, assignReason || undefined, {
               assignMode: 'single',
               plannedUnits: 1,
             });
             message.success(
-              isFirst ? '派单成功，工程师可在手机端接单作业' : '已换人，原工程师派单已撤回',
+              isFirst
+                ? '派单成功，工程师可在手机端接单作业'
+                : convertingToSingle
+                  ? '已改为单人模式'
+                  : '已换人，原工程师派单已撤回',
             );
           }
           setAssigning(undefined);
@@ -1280,16 +1313,18 @@ export default function FinanceCasesPage() {
             style={{ width: '100%' }}
             value={assignMode}
             disabled={
-              // 已是多人且有在派人：锁定为多人（加人/撤回）；单人已派允许改多人
+              // 多人且仍有超过1人在派：须先撤回多余人，才能改回单人
               assigning?.status !== 'pending_assign' &&
               (assigning?.assignMode || 'single') === 'multi' &&
-              activeAssignees.length > 0
+              activeAssignees.length > 1
             }
             onChange={(v: 'single' | 'multi') => {
               assignModeTouched.current = true;
               setAssignMode(v);
               if (v === 'single') {
-                setInspectorIds(inspectorId ? [inspectorId] : []);
+                const keepId = activeAssignees[0]?.id || inspectorId;
+                setInspectorId(keepId);
+                setInspectorIds(keepId ? [keepId] : []);
                 setPlannedUnits(1);
               } else if (
                 assigning?.status !== 'pending_assign' &&
@@ -1308,6 +1343,14 @@ export default function FinanceCasesPage() {
           {assigning?.status === 'pending_assign' ? (
             <div style={{ marginTop: 6, color: '#8c8c8c', fontSize: 12 }}>
               默认单人；需要多人作业时在此切换，并自行填写计划台数。
+            </div>
+          ) : (assigning?.assignMode || 'single') === 'multi' && activeAssignees.length > 1 ? (
+            <div style={{ marginTop: 6, color: '#8c8c8c', fontSize: 12 }}>
+              多人改回单人：请先「撤回」到只剩 1 人，再切换为单人模式并确认。
+            </div>
+          ) : (assigning?.assignMode || 'single') === 'multi' && activeAssignees.length <= 1 ? (
+            <div style={{ marginTop: 6, color: '#8c8c8c', fontSize: 12 }}>
+              当前仅剩 1 人，可改回「单人模式」后点确认；有提交/完成台时不可切换。
             </div>
           ) : (assigning?.assignMode || 'single') === 'single' && assignMode === 'multi' ? (
             <div style={{ marginTop: 6, color: '#8c8c8c', fontSize: 12 }}>
