@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Loading, Toast } from 'react-vant';
 import {
@@ -54,6 +54,8 @@ export default function FinanceCaseDetailPage() {
   const [showCompletedAll, setShowCompletedAll] = useState(false);
   /** 本地聚焦台：可在已认领多台之间切换，不必等当前台完成 */
   const [focusUnitId, setFocusUnitId] = useState<string | null>(null);
+  /** 进入页时自动补完「已提交未完结」的台，避免误显示「完成本台」 */
+  const autoCompleteTried = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     void fetchMyFinanceCase(id).then((data) => {
@@ -66,6 +68,39 @@ export default function FinanceCaseDetailPage() {
     setGridLimit(GRID_PAGE);
     setShowCompletedAll(false);
   }, [unitFilter, id]);
+
+  useEffect(() => {
+    if (!item || !id || !userId) return;
+    if (!['assigned', 'working'].includes(item.status)) return;
+    const planned = Math.max(1, Number(item.plannedUnits) || 1);
+    if (planned <= 1 && item.assignMode !== 'multi') return;
+    const stuck = (item.units || []).filter(
+      (u) =>
+        u.inspectorId === userId &&
+        u.status === 'submitted' &&
+        !!u.inspectionTaskId &&
+        !autoCompleteTried.current.has(u.id),
+    );
+    if (!stuck.length) return;
+    let cancelled = false;
+    void (async () => {
+      for (const u of stuck) {
+        autoCompleteTried.current.add(u.id);
+        try {
+          const next = await completeFinanceUnit(id, u.id, { skipErrorToast: true });
+          if (cancelled) return;
+          setItem(next);
+          setFocusUnitId(next.myActiveUnits?.[0]?.id || next.activeUnit?.id || null);
+        } catch {
+          // 缺结束里程等：保留补救入口，允许稍后重试
+          autoCompleteTried.current.delete(u.id);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, userId, item]);
 
   const isMulti = item?.assignMode === 'multi';
   const unitLabel = item?.unitLabel || '台';
@@ -275,25 +310,39 @@ export default function FinanceCaseDetailPage() {
     (useUnitFlow
       ? !!myActive && myActive.status === 'claimed'
       : !item.inspectionDone);
-  // 正常路径：提交报告后自动完工；仅异常卡住时才显示补救按钮
-  const reportReady =
-    item.inspectionDone ||
-    item.inspectionTaskStatus === 'submitted' ||
-    item.inspectionTaskStatus === 'approved' ||
-    myActive?.status === 'submitted';
-  const tripEndUnitId = myActive?.id || item.units?.[0]?.id;
+  // 分台：只针对「本人仍卡在已提交、未完结」的那一台；不要用整案 inspectionDone 误判
+  const finishTargetUnit = useUnitFlow
+    ? myInProgress.find((u) => u.status === 'submitted') ||
+      (myActive?.status === 'submitted' ? myActive : null) ||
+      null
+    : null;
+  // 正常路径：提交报告后自动完成本台；仅异常卡住时才显示补救按钮
+  const reportReady = useUnitFlow
+    ? !!finishTargetUnit
+    : item.inspectionDone ||
+      item.inspectionTaskStatus === 'submitted' ||
+      item.inspectionTaskStatus === 'approved' ||
+      myActive?.status === 'submitted';
+  const tripEndUnitId = useUnitFlow
+    ? finishTargetUnit?.id || null
+    : myActive?.id || item.units?.[0]?.id || null;
   const needsTripEndAfterSubmit =
     item.status === 'working' &&
+    !!tripEndUnitId &&
     reportReady &&
     hasTripStartFilled(tripEndUnitId) &&
     !isTripSkipped(tripEndUnitId) &&
     !hasTripEnd(tripEndUnitId);
   const tripEndReadyForFinish =
+    !tripEndUnitId ||
     isTripSkipped(tripEndUnitId) ||
     !hasTripStartFilled(tripEndUnitId) ||
     hasTripEnd(tripEndUnitId);
   const needsManualFinish =
-    item.status === 'working' && reportReady && tripEndReadyForFinish;
+    item.status === 'working' &&
+    reportReady &&
+    !!tripEndUnitId &&
+    tripEndReadyForFinish;
   const finished = !['assigned', 'working'].includes(item.status);
   const workType = resolveWorkTypeLabel(item);
   const multiWorking = useUnitFlow && ['assigned', 'working'].includes(item.status);
@@ -738,12 +787,12 @@ export default function FinanceCaseDetailPage() {
         <section className="mobile-finance-card">
           <h3>
             {useUnitFlow
-              ? `本单元${workActionLabel(workType, 'submitted')}`
+              ? `${unitLabel} #${finishTargetUnit?.seq ?? myActive?.seq ?? ''} ${workActionLabel(workType, 'submitted')}`
               : workActionLabel(workType, 'submitted')}
           </h3>
           <p className="mobile-finance-muted">
             {useUnitFlow
-              ? `本${unitLabel}报告与结束行程已齐，点下方完结（正常应已自动完成）。`
+              ? `本${unitLabel}报告与结束行程已齐，点下方完结本台（提交成功后一般会自动完成）。整案需全部 ${item.plannedUnits || 1} ${unitLabel}完成后才会自动结案。`
               : '报告与结束行程已齐，点下方完结（正常应已自动完工）。'}
           </p>
           <button
@@ -752,7 +801,7 @@ export default function FinanceCaseDetailPage() {
             style={{ width: '100%', marginTop: 12 }}
             disabled={busy}
             onClick={() => {
-              const unitId = myActive?.id || item.units?.[0]?.id;
+              const unitId = finishTargetUnit?.id || myActive?.id || item.units?.[0]?.id;
               void (async () => {
                 setBusy(true);
                 try {
@@ -775,7 +824,11 @@ export default function FinanceCaseDetailPage() {
             }}
           >
             {useUnitFlow
-              ? `完成本${unitLabel}${myActive ? ` #${myActive.seq}` : ''}`
+              ? `完成本${unitLabel}${
+                  finishTargetUnit || myActive
+                    ? ` #${(finishTargetUnit || myActive)!.seq}`
+                    : ''
+                }`
               : '确认完工'}
           </button>
         </section>
