@@ -247,7 +247,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'expenses',
-            element: <Navigate to="/finance/review?scope=expense" replace />,
+            element: <Navigate to="/finance/review" replace />,
           },
           {
             path: 'assessment',

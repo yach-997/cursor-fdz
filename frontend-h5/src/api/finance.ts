@@ -167,6 +167,18 @@ export interface IncomeLedger {
   }>;
   eventPenalties?: IncomeEventPenalty[];
   eventPenaltyTotal?: string;
+  expenses?: Array<{
+    id: string;
+    serviceCaseId: string;
+    workUnitId?: string | null;
+    unitSeq?: number | null;
+    amount: string;
+    claimAmount?: string | null;
+    note?: string | null;
+    status: string;
+    mileageKm?: string | null;
+    tripSkipped?: boolean;
+  }>;
 }
 export interface MyIncome {
   month: string;

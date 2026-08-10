@@ -1,7 +1,24 @@
 import { useEffect, useState } from 'react';
-import { Drawer, Empty, Spin, Table, Tooltip, Typography } from 'antd';
-import { fetchReviewAmountBreakdown } from '../../../api/finance';
-import type { ReviewAmountBreakdown } from '../../../types/finance';
+import {
+  Button,
+  Drawer,
+  Empty,
+  Form,
+  Image,
+  Input,
+  InputNumber,
+  Modal,
+  Space,
+  Spin,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+  message,
+} from 'antd';
+import { fetchReviewAmountBreakdown, reviewExpense } from '../../../api/finance';
+import type { ReviewAmountBreakdown, ReviewCaseExpense } from '../../../types/finance';
+import { displayPhotoUrl } from '../../../utils/photo-url';
 
 const money = (v: string | number | null | undefined) => `¥${Number(v || 0).toFixed(2)}`;
 
@@ -10,11 +27,71 @@ type Props = {
   caseId?: string;
   caseLabel?: string;
   onClose: () => void;
+  /** 报销核定/驳回后回调（刷新列表徽章等） */
+  onChanged?: () => void;
 };
 
-export default function SettlementAmountDrawer({ open, caseId, caseLabel, onClose }: Props) {
+function statusTag(status?: string) {
+  if (status === 'approved') return <Tag color="green">已通过</Tag>;
+  if (status === 'rejected') return <Tag color="red">已驳回</Tag>;
+  if (status === 'draft') return <Tag>草稿</Tag>;
+  return <Tag color="gold">待审核</Tag>;
+}
+
+function VoucherThumbs({ urls }: { urls: string[] }) {
+  if (!urls.length) return <span>-</span>;
+  const displayUrls = urls.map((url) => displayPhotoUrl(url));
+  return (
+    <Image.PreviewGroup>
+      <Space size={6} align="center">
+        <Image
+          src={displayUrls[0]}
+          width={48}
+          height={48}
+          style={{ objectFit: 'cover', borderRadius: 8, cursor: 'pointer' }}
+        />
+        {displayUrls.slice(1).map((url) => (
+          <Image key={url} src={url} style={{ display: 'none' }} />
+        ))}
+        <Tag style={{ marginInlineEnd: 0 }}>共 {urls.length} 张</Tag>
+      </Space>
+    </Image.PreviewGroup>
+  );
+}
+
+function collectVouchers(row: ReviewCaseExpense): string[] {
+  const urls = [...(row.voucherUrls || [])];
+  if (row.startOdometerUrl) urls.push(row.startOdometerUrl);
+  if (row.startNavUrl) urls.push(row.startNavUrl);
+  if (row.endOdometerUrl) urls.push(row.endOdometerUrl);
+  if (row.endNavUrl) urls.push(row.endNavUrl);
+  return [...new Set(urls.filter(Boolean))];
+}
+
+export default function SettlementAmountDrawer({
+  open,
+  caseId,
+  caseLabel,
+  onClose,
+  onChanged,
+}: Props) {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ReviewAmountBreakdown>();
+  const [current, setCurrent] = useState<ReviewCaseExpense>();
+  const [action, setAction] = useState<'approve' | 'reject' | 'view'>();
+  const [form] = Form.useForm();
+
+  const reload = async () => {
+    if (!caseId) return;
+    setLoading(true);
+    try {
+      setData(await fetchReviewAmountBreakdown(caseId));
+    } catch {
+      setData(undefined);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!open || !caseId) return;
@@ -35,12 +112,35 @@ export default function SettlementAmountDrawer({ open, caseId, caseLabel, onClos
     };
   }, [open, caseId]);
 
+  const submitExpense = async () => {
+    if (!current || (action !== 'approve' && action !== 'reject')) return;
+    const values = await form.validateFields();
+    await reviewExpense(
+      current.id,
+      action === 'approve',
+      action === 'approve' ? values.note : values.reason,
+      action === 'approve' ? Number(values.approvedAmount) : undefined,
+    );
+    message.success(
+      action === 'approve'
+        ? `已核定报销 ¥${Number(values.approvedAmount).toFixed(2)}`
+        : '已驳回报销',
+    );
+    setCurrent(undefined);
+    setAction(undefined);
+    form.resetFields();
+    await reload();
+    onChanged?.();
+  };
+
+  const expenses = data?.expenses || [];
+
   return (
     <Drawer
       open={open}
       onClose={onClose}
-      width={720}
-      title={caseLabel ? `金额明细 · ${caseLabel}` : '金额明细'}
+      width={820}
+      title={caseLabel ? `案例明细 · ${caseLabel}` : '案例明细'}
       destroyOnClose
     >
       {loading ? (
@@ -52,7 +152,7 @@ export default function SettlementAmountDrawer({ open, caseId, caseLabel, onClos
       ) : (
         <>
           <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-            案例收入按结算单价汇总；计件绩效按内部绩效单价汇总；事件扣罚单独登记，三者不是同一套价格。
+            案例收入按结算单价汇总；计件绩效按内部绩效单价汇总；行程报销按台核定；事件扣罚单独登记。
           </Typography.Paragraph>
 
           <div className="settle-amount-summary">
@@ -80,6 +180,118 @@ export default function SettlementAmountDrawer({ open, caseId, caseLabel, onClos
           )}
 
           <Typography.Title level={5} style={{ marginTop: 8 }}>
+            行程报销（按台）
+            {Number(data.pendingExpenseCount || 0) > 0 ? (
+              <Tag color="gold" style={{ marginLeft: 8 }}>
+                待审 {data.pendingExpenseCount}
+              </Tag>
+            ) : null}
+          </Typography.Title>
+          <Table
+            size="small"
+            rowKey="id"
+            pagination={false}
+            dataSource={expenses}
+            locale={{ emptyText: '本案例暂无行程报销' }}
+            scroll={{ x: 720 }}
+            columns={[
+              {
+                title: '台',
+                width: 70,
+                render: (_, row) =>
+                  row.unitSeq != null ? `${row.unitLabel || '台'}#${row.unitSeq}` : '-',
+              },
+              {
+                title: '工程师',
+                dataIndex: 'inspectorName',
+                width: 90,
+                ellipsis: true,
+                render: (v, row) => v || row.inspectorId,
+              },
+              {
+                title: '行程',
+                width: 80,
+                render: (_, row) =>
+                  row.tripSkipped ? (
+                    <Tag color="orange">无行程</Tag>
+                  ) : (
+                    <Tag color="blue">有行程</Tag>
+                  ),
+              },
+              {
+                title: '申报',
+                width: 90,
+                render: (_, row) => money(row.claimAmount ?? row.amount),
+              },
+              {
+                title: '核定',
+                width: 90,
+                render: (_, row) =>
+                  row.status === 'approved' ? money(row.amount) : statusTag(row.status),
+              },
+              {
+                title: '里程差',
+                width: 80,
+                render: (_, row) =>
+                  row.mileageKm != null && row.mileageKm !== '' ? `${row.mileageKm} km` : '-',
+              },
+              {
+                title: '凭证',
+                width: 140,
+                render: (_, row) => <VoucherThumbs urls={collectVouchers(row)} />,
+              },
+              {
+                title: '操作',
+                width: 150,
+                fixed: 'right',
+                render: (_, row) => {
+                  if (row.status === 'submitted') {
+                    return (
+                      <Space>
+                        <Button
+                          type="link"
+                          onClick={() => {
+                            setCurrent(row);
+                            setAction('approve');
+                            form.setFieldsValue({
+                              approvedAmount: Number(row.claimAmount ?? row.amount ?? 0),
+                              note: undefined,
+                            });
+                          }}
+                        >
+                          核定
+                        </Button>
+                        <Button
+                          type="link"
+                          danger
+                          onClick={() => {
+                            setCurrent(row);
+                            setAction('reject');
+                            form.resetFields();
+                          }}
+                        >
+                          驳回
+                        </Button>
+                      </Space>
+                    );
+                  }
+                  return (
+                    <Button
+                      type="link"
+                      onClick={() => {
+                        setCurrent(row);
+                        setAction('view');
+                      }}
+                    >
+                      详情
+                    </Button>
+                  );
+                },
+              },
+            ]}
+          />
+
+          <Typography.Title level={5} style={{ marginTop: 24 }}>
             案例收入明细
           </Typography.Title>
           <Table
@@ -173,7 +385,8 @@ export default function SettlementAmountDrawer({ open, caseId, caseLabel, onClos
                 dataIndex: 'perfPrice',
                 width: 100,
                 align: 'right' as const,
-                render: (v) => (v == null ? <span style={{ color: '#b54708' }}>未配</span> : money(v)),
+                render: (v) =>
+                  v == null ? <span style={{ color: '#b54708' }}>未配</span> : money(v),
               },
               {
                 title: '小计',
@@ -223,6 +436,85 @@ export default function SettlementAmountDrawer({ open, caseId, caseLabel, onClos
           />
         </>
       )}
+
+      <Modal
+        open={!!current && !!action}
+        title={
+          action === 'approve'
+            ? '核定通过本台报销'
+            : action === 'reject'
+              ? '驳回本台报销'
+              : '行程报销详情'
+        }
+        onCancel={() => {
+          setCurrent(undefined);
+          setAction(undefined);
+        }}
+        onOk={action === 'view' ? undefined : () => void submitExpense()}
+        footer={
+          action === 'view'
+            ? [
+                <Button
+                  key="close"
+                  type="primary"
+                  onClick={() => {
+                    setCurrent(undefined);
+                    setAction(undefined);
+                  }}
+                >
+                  关闭
+                </Button>,
+              ]
+            : undefined
+        }
+        okText={action === 'approve' ? '确认核定通过' : '确认驳回'}
+        okButtonProps={{ danger: action === 'reject' }}
+        width={640}
+        destroyOnClose
+      >
+        {current && (
+          <>
+            <p style={{ color: '#61756b' }}>
+              {current.unitSeq != null
+                ? `${current.unitLabel || '台'} #${current.unitSeq}`
+                : '未分台'}{' '}
+              · {current.inspectorName || current.inspectorId} · 申报{' '}
+              {money(current.claimAmount ?? current.amount)}
+            </p>
+            {current.note ? <p>备注：{current.note}</p> : null}
+            <div style={{ marginBottom: 12 }}>
+              <VoucherThumbs urls={collectVouchers(current)} />
+            </div>
+            {action !== 'view' && (
+              <Form form={form} layout="vertical">
+                {action === 'approve' ? (
+                  <>
+                    <Form.Item
+                      name="approvedAmount"
+                      label="核定报销金额（元）"
+                      rules={[{ required: true, message: '请填写核定金额' }]}
+                      extra="可按凭证改为实际可报金额"
+                    >
+                      <InputNumber min={0} precision={2} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item name="note" label="备注（选填）">
+                      <Input.TextArea rows={2} placeholder="可选审核说明" />
+                    </Form.Item>
+                  </>
+                ) : (
+                  <Form.Item
+                    name="reason"
+                    label="驳回原因"
+                    rules={[{ required: true, message: '请填写驳回原因' }]}
+                  >
+                    <Input.TextArea rows={3} placeholder="请说明驳回原因" />
+                  </Form.Item>
+                )}
+              </Form>
+            )}
+          </>
+        )}
+      </Modal>
     </Drawer>
   );
 }

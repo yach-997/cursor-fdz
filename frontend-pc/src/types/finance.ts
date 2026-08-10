@@ -254,9 +254,36 @@ export interface FinanceReviewItem {
   reviewStatus: string;
   deductionStatus: string;
   missingPerf: number;
+  /** 本案例待核定行程报销条数 */
+  pendingExpenseCount?: number;
   approvalReady: boolean;
   reviewTime?: string | null;
   reviewComment?: string | null;
+}
+export interface ReviewCaseExpense {
+  id: string;
+  serviceCaseId: string;
+  workUnitId?: string | null;
+  unitSeq?: number | null;
+  unitLabel?: string | null;
+  inspectorId: string;
+  inspectorName?: string;
+  amount: string;
+  claimAmount?: string | null;
+  note?: string | null;
+  voucherUrls?: string[];
+  startOdometerUrl?: string | null;
+  startNavUrl?: string | null;
+  startMileage?: string | null;
+  endOdometerUrl?: string | null;
+  endNavUrl?: string | null;
+  endMileage?: string | null;
+  mileageKm?: string | null;
+  tripSkipped?: boolean;
+  status: string;
+  reviewNote?: string | null;
+  reviewAt?: string | null;
+  createdAt?: string;
 }
 export interface ReviewAmountBreakdown {
   caseId: string;
@@ -268,6 +295,7 @@ export interface ReviewAmountBreakdown {
   deduction: string;
   perfFinal: string;
   eventPenalty: string;
+  pendingExpenseCount?: number;
   items: Array<{
     id: string;
     poId: string;
@@ -291,6 +319,7 @@ export interface ReviewAmountBreakdown {
     userName?: string | null;
     createdAt?: string;
   }>;
+  expenses?: ReviewCaseExpense[];
 }
 export interface ImportResult {
   preview?: unknown[];

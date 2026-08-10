@@ -110,7 +110,16 @@ function CaseSheet({
   const earned = Number(item.perfFinal || 0);
   const caseTotal = Number(item.casePerfFinal || item.perfFinal || 0);
   const shared = !!item.isShared || (caseTotal > 0 && Math.abs(caseTotal - earned) > 0.009);
-  const net = earned - penaltyTotal;
+  const myExpenses = item.expenses || [];
+  const approvedExpense = myExpenses
+    .filter((e) => e.status === 'approved')
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const net = earned + approvedExpense - penaltyTotal;
+  const expenseStatusLabel: Record<string, string> = {
+    submitted: '待审',
+    approved: '已通过',
+    rejected: '已驳回',
+  };
 
   return (
     <div className="inc-bill-sheet">
@@ -140,6 +149,8 @@ function CaseSheet({
 
       <div className="inc-bill-sheet-formula">
         <span>计件 {money(earned)}</span>
+        <i>+</i>
+        <span>报销 {approvedExpense > 0 ? money(approvedExpense) : '¥0'}</span>
         <i>−</i>
         <span>扣罚 {penaltyTotal > 0 ? `¥${penaltyTotal.toFixed(2)}` : '¥0'}</span>
         <i>=</i>
@@ -153,6 +164,26 @@ function CaseSheet({
             ? ` · 本人约 ${(Number(item.myShareRatio) * 100).toFixed(0)}%`
             : ''}
         </p>
+      )}
+
+      {myExpenses.length > 0 && (
+        <div className="inc-bill-sheet-block">
+          <h4>本单报销</h4>
+          <ul className="inc-bill-items">
+            {myExpenses.map((e) => (
+              <li key={e.id}>
+                <span>
+                  {e.unitSeq != null ? `台 #${e.unitSeq}` : '报销'}
+                  {e.note ? ` · ${e.note}` : ''}
+                  {` · ${expenseStatusLabel[e.status] || e.status}`}
+                </span>
+                <b className={e.status === 'approved' ? 'is-pos' : undefined}>
+                  ¥{Number(e.status === 'approved' ? e.amount : e.claimAmount ?? e.amount).toFixed(2)}
+                </b>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {penalties.length > 0 && (
@@ -201,7 +232,6 @@ export default function MyIncomePage() {
   const [month, setMonth] = useState(currentMonth);
   const [data, setData] = useState<MyIncome>();
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'cases' | 'extra'>('cases');
   const [active, setActive] = useState<IncomeLedger>();
   const [pickOpen, setPickOpen] = useState(false);
   const [dayFilter, setDayFilter] = useState<string>('all');
@@ -222,8 +252,6 @@ export default function MyIncomePage() {
   const settlement = data?.monthlySettlement;
   const assessment = data?.assessment;
   const otherPenalties = data?.otherEventPenalties || [];
-  const expenses = data?.expenses || [];
-  const extraCount = expenses.length + otherPenalties.length;
 
   const dayGroups = useMemo(() => {
     const list = data?.list || [];
@@ -260,11 +288,6 @@ export default function MyIncomePage() {
     return dayGroups.filter((g) => g.key === dayFilter);
   }, [dayGroups, dayFilter]);
 
-  const visibleCaseCount = useMemo(
-    () => visibleGroups.reduce((n, g) => n + g.items.length, 0),
-    [visibleGroups],
-  );
-
   const breakdown = useMemo(() => {
     if (!data) return null;
     const perf = Number(settlement?.perfTotal ?? data.approvedAmount);
@@ -294,48 +317,12 @@ export default function MyIncomePage() {
   const selectDay = (ymd: string) => {
     setDayFilter(ymd);
     setPickOpen(false);
-    setTab('cases');
   };
 
   const clearDay = () => setDayFilter('all');
 
   const dayLabel =
     dayFilter !== 'all' && dayFilter !== 'unknown' ? fmtDayFromKey(dayFilter) : '';
-
-  const caseTitleById = useMemo(() => {
-    const map = new Map<string, { projectName: string; gspCaseNo: string }>();
-    for (const item of data?.list || []) {
-      const id = item.serviceCase?.id;
-      if (!id) continue;
-      map.set(id, {
-        projectName: item.serviceCase?.projectName || item.gspCaseNo,
-        gspCaseNo: item.gspCaseNo,
-      });
-    }
-    return map;
-  }, [data?.list]);
-
-  const resolveExpenseCase = (e: {
-    serviceCaseId: string;
-    projectName?: string | null;
-    gspCaseNo?: string | null;
-  }) => {
-    const fromApi = e.projectName || e.gspCaseNo;
-    if (fromApi) {
-      return {
-        title: e.projectName || e.gspCaseNo || '关联案例',
-        sub: e.gspCaseNo && e.projectName ? e.gspCaseNo : '',
-      };
-    }
-    const linked = caseTitleById.get(e.serviceCaseId);
-    if (linked) {
-      return {
-        title: linked.projectName,
-        sub: linked.gspCaseNo,
-      };
-    }
-    return { title: '未找到关联案例', sub: '' };
-  };
 
   return (
     <div className="inc-bill-page">
@@ -412,28 +399,7 @@ export default function MyIncomePage() {
       <div className="inc-bill-body">
         {!loading && data && (
           <>
-            <div className="inc-bill-seg" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                className={tab === 'cases' ? 'is-on' : ''}
-                onClick={() => setTab('cases')}
-              >
-                案例
-                <em>{dayFilter === 'all' ? data.list.length : visibleCaseCount}</em>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                className={tab === 'extra' ? 'is-on' : ''}
-                onClick={() => setTab('extra')}
-              >
-                报销与其他
-                <em>{extraCount}</em>
-              </button>
-            </div>
-
-            {tab === 'cases' && dayGroups.length > 0 && (
+            {dayGroups.length > 0 && (
               <div className="inc-bill-days" role="listbox" aria-label="按日筛选">
                 <button
                   type="button"
@@ -457,116 +423,89 @@ export default function MyIncomePage() {
               </div>
             )}
 
-            {tab === 'cases' && (
-              <section className="inc-bill-panel">
-                {!data.list.length ? (
-                  <Empty description="该月暂无案例收入" />
-                ) : dayFilter !== 'all' && !visibleGroups.length ? (
-                  <div className="inc-bill-empty">
-                    <Empty description={`${dayLabel || '该日'}暂无案例`} />
-                    <button type="button" className="inc-bill-text-btn" onClick={clearDay}>
-                      看整月
-                    </button>
-                  </div>
-                ) : (
-                  visibleGroups.map((group) => (
-                    <div key={group.key} className="inc-bill-group">
-                      {dayFilter === 'all' && (
-                        <div className="inc-bill-group-head">
-                          <div className="inc-bill-group-date">
-                            <strong>{group.dayNum}</strong>
-                            <span>{group.weekday ? `周${group.weekday}` : ''}</span>
-                          </div>
-                          <em>
-                            {group.items.length} 单 · {money(group.sum)}
-                          </em>
+            <section className="inc-bill-panel">
+              {!data.list.length ? (
+                <Empty description="该月暂无案例收入" />
+              ) : dayFilter !== 'all' && !visibleGroups.length ? (
+                <div className="inc-bill-empty">
+                  <Empty description={`${dayLabel || '该日'}暂无案例`} />
+                  <button type="button" className="inc-bill-text-btn" onClick={clearDay}>
+                    看整月
+                  </button>
+                </div>
+              ) : (
+                visibleGroups.map((group) => (
+                  <div key={group.key} className="inc-bill-group">
+                    {dayFilter === 'all' && (
+                      <div className="inc-bill-group-head">
+                        <div className="inc-bill-group-date">
+                          <strong>{group.dayNum}</strong>
+                          <span>{group.weekday ? `周${group.weekday}` : ''}</span>
                         </div>
-                      )}
-                      <ul className="inc-bill-list">
-                        {group.items.map((item) => {
-                          const earned = Number(item.perfFinal || 0);
-                          const penaltyTotal = Number(item.eventPenaltyTotal || 0);
-                          const net = earned - penaltyTotal;
-                          const caseTotal = Number(
-                            item.casePerfFinal || item.perfFinal || 0,
-                          );
-                          const shared =
-                            !!item.isShared ||
-                            (caseTotal > 0 && Math.abs(caseTotal - earned) > 0.009);
-                          return (
-                            <li key={item.id}>
-                              <button
-                                type="button"
-                                className="inc-bill-row"
-                                onClick={() => setActive(item)}
-                              >
-                                <div className="inc-bill-row-main">
-                                  <h3>
-                                    {item.serviceCase?.projectName || item.gspCaseNo}
-                                  </h3>
-                                  <p>
-                                    <span
-                                      className={`inc-bill-tag ${
-                                        item.reviewStatus === 'approved'
-                                          ? 'ok'
-                                          : item.reviewStatus === 'rejected'
-                                            ? 'bad'
-                                            : 'wait'
-                                      }`}
-                                    >
-                                      {reviewLabel[item.reviewStatus]}
-                                    </span>
-                                    {shared ? <span>分账</span> : null}
-                                    {penaltyTotal > 0 ? (
-                                      <span>扣后 {money(net)}</span>
-                                    ) : null}
-                                  </p>
-                                </div>
-                                <strong>{money(earned)}</strong>
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  ))
-                )}
-              </section>
-            )}
-
-            {tab === 'extra' && (
-              <section className="inc-bill-panel">
-                {!extraCount ? (
-                  <Empty description="该月暂无报销或其他扣罚" />
-                ) : (
-                  <>
-                    {expenses.length > 0 && (
-                      <div className="inc-bill-block">
-                        <h4>已通过报销</h4>
-                        {expenses.map((e) => {
-                          const linked = resolveExpenseCase(e);
-                          return (
-                            <div key={e.id} className="inc-bill-expense">
-                              <div className="inc-bill-expense-main">
-                                <h3>{linked.title}</h3>
+                        <em>
+                          {group.items.length} 单 · {money(group.sum)}
+                        </em>
+                      </div>
+                    )}
+                    <ul className="inc-bill-list">
+                      {group.items.map((item) => {
+                        const earned = Number(item.perfFinal || 0);
+                        const penaltyTotal = Number(item.eventPenaltyTotal || 0);
+                        const expenseOk = (item.expenses || [])
+                          .filter((e) => e.status === 'approved')
+                          .reduce((n, e) => n + Number(e.amount || 0), 0);
+                        const net = earned + expenseOk - penaltyTotal;
+                        const caseTotal = Number(item.casePerfFinal || item.perfFinal || 0);
+                        const shared =
+                          !!item.isShared ||
+                          (caseTotal > 0 && Math.abs(caseTotal - earned) > 0.009);
+                        return (
+                          <li key={item.id}>
+                            <button
+                              type="button"
+                              className="inc-bill-row"
+                              onClick={() => setActive(item)}
+                            >
+                              <div className="inc-bill-row-main">
+                                <h3>
+                                  {item.serviceCase?.projectName || item.gspCaseNo}
+                                </h3>
                                 <p>
-                                  {[linked.sub, e.note || '报销'].filter(Boolean).join(' · ')}
+                                  <span
+                                    className={`inc-bill-tag ${
+                                      item.reviewStatus === 'approved'
+                                        ? 'ok'
+                                        : item.reviewStatus === 'rejected'
+                                          ? 'bad'
+                                          : 'wait'
+                                    }`}
+                                  >
+                                    {reviewLabel[item.reviewStatus]}
+                                  </span>
+                                  {shared ? <span>分账</span> : null}
+                                  {expenseOk > 0 ? <span>含报销</span> : null}
+                                  {penaltyTotal > 0 || expenseOk > 0 ? (
+                                    <span>净 {money(net)}</span>
+                                  ) : null}
                                 </p>
                               </div>
-                              <b className="is-pos">¥{Number(e.amount).toFixed(2)}</b>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {otherPenalties.length > 0 && (
-                      <div className="inc-bill-block">
-                        <h4>其他扣罚</h4>
-                        <PenaltyList items={otherPenalties} />
-                      </div>
-                    )}
-                  </>
-                )}
+                              <strong>{money(earned)}</strong>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))
+              )}
+            </section>
+
+            {otherPenalties.length > 0 && (
+              <section className="inc-bill-panel" style={{ marginTop: 12 }}>
+                <div className="inc-bill-block">
+                  <h4>其他扣罚（未关联案例）</h4>
+                  <PenaltyList items={otherPenalties} />
+                </div>
               </section>
             )}
           </>

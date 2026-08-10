@@ -863,6 +863,61 @@ export class FinanceWorkflowService {
       Number(ledger?.perfBase ?? 0) ||
       items.reduce((sum, i) => sum + Number(i.itemPerf || 0), 0);
 
+    const expenseRows = await this.expenses.find({
+      where: { serviceCaseId: caseId },
+      order: { createdAt: 'ASC' },
+    });
+    const expenseUnitIds = [
+      ...new Set(expenseRows.map((e) => e.workUnitId).filter(Boolean) as string[]),
+    ];
+    const expenseUnits = expenseUnitIds.length
+      ? await this.units.find({ where: { id: In(expenseUnitIds) } })
+      : [];
+    const unitMap = new Map(expenseUnits.map((u) => [u.id, u]));
+    const expenseUserIds = [...new Set(expenseRows.map((e) => e.inspectorId).filter(Boolean))];
+    const expensePeople = expenseUserIds.length
+      ? await this.users.find({ where: { id: In(expenseUserIds) } })
+      : [];
+    const expenseNameMap = new Map(
+      expensePeople.map((p) => [p.id, p.realName || p.username]),
+    );
+    const parseUrls = (v: unknown) =>
+      Array.isArray(v) ? v : typeof v === 'string' ? JSON.parse(v || '[]') : [];
+    const expenses = expenseRows
+      .filter(
+        (e) =>
+          ['submitted', 'approved', 'rejected'].includes(e.status) ||
+          (e.status === 'draft' && e.tripSkipped),
+      )
+      .map((e) => {
+        const unit = e.workUnitId ? unitMap.get(e.workUnitId) : undefined;
+        return {
+          id: e.id,
+          serviceCaseId: e.serviceCaseId,
+          workUnitId: e.workUnitId,
+          unitSeq: unit?.seq ?? null,
+          unitLabel: serviceCase.unitLabel || '台',
+          inspectorId: e.inspectorId,
+          inspectorName: expenseNameMap.get(e.inspectorId) || e.inspectorId,
+          amount: e.amount,
+          claimAmount: e.claimAmount,
+          note: e.note,
+          voucherUrls: parseUrls(e.voucherUrls),
+          startOdometerUrl: e.startOdometerUrl,
+          startNavUrl: e.startNavUrl,
+          startMileage: e.startMileage,
+          endOdometerUrl: e.endOdometerUrl,
+          endNavUrl: e.endNavUrl,
+          endMileage: e.endMileage,
+          mileageKm: e.mileageKm,
+          tripSkipped: !!e.tripSkipped,
+          status: e.status,
+          reviewNote: e.reviewNote,
+          reviewAt: e.reviewAt,
+          createdAt: e.createdAt,
+        };
+      });
+
     return {
       caseId: serviceCase.id,
       gspCaseNo: serviceCase.gspCaseNo,
@@ -873,6 +928,7 @@ export class FinanceWorkflowService {
       deduction: Number(ledger?.deduction || 0).toFixed(2),
       perfFinal: Number(ledger?.perfFinal || Math.max(0, perfBase - Number(ledger?.deduction || 0))).toFixed(2),
       eventPenalty: eventPenalty.toFixed(2),
+      pendingExpenseCount: expenses.filter((e) => e.status === 'submitted').length,
       items,
       events: events.map((e) => ({
         id: e.id,
@@ -884,6 +940,7 @@ export class FinanceWorkflowService {
         userName: nameMap.get(e.userId) || null,
         createdAt: e.createdAt,
       })),
+      expenses,
     };
   }
 
@@ -936,6 +993,9 @@ export class FinanceWorkflowService {
           WHERE po.service_case_id=c.id
             AND pi.price_status <> 'ignored'
             AND pi.perf_price IS NULL) AS "missingPerf"`,
+        `(SELECT COUNT(*) FROM case_expense_claim cec
+          WHERE cec.service_case_id = c.id
+            AND cec.status = 'submitted') AS "pendingExpenseCount"`,
       ])
       .where("c.status IN ('settle_review','settled')");
     if (statusFilter === 'approved') {
@@ -988,6 +1048,7 @@ export class FinanceWorkflowService {
         return {
           ...row,
           missingPerf: Number(row.missingPerf || 0),
+          pendingExpenseCount: Number(row.pendingExpenseCount || 0),
           eventPenalty: Number(row.eventPenalty || 0),
           approvalReady: !!row.inspectorName && Number(row.missingPerf || 0) === 0,
           dueAt,
@@ -1193,6 +1254,18 @@ export class FinanceWorkflowService {
             }),
           eventPenalties: caseEvents.map(mapEvent),
           eventPenaltyTotal: eventPenaltyTotal.toFixed(2),
+          expenses: [] as Array<{
+            id: string;
+            serviceCaseId: string;
+            workUnitId?: string | null;
+            unitSeq?: number | null;
+            amount: string;
+            claimAmount?: string | null;
+            note?: string | null;
+            status: string;
+            mileageKm?: string | null;
+            tripSkipped?: boolean;
+          }>,
         };
       })
       .filter(Boolean)
@@ -1209,10 +1282,66 @@ export class FinanceWorkflowService {
       .filter((item) => item!.reviewStatus !== 'approved')
       .reduce((sum, item) => sum + Number(item!.perfFinal), 0);
 
-    const approvedExpenses = await this.expenses.find({
-      where: { inspectorId: user.id, month: selectedMonth, status: 'approved' },
+    const myExpenseRows = await this.expenses.find({
+      where: {
+        inspectorId: user.id,
+        month: selectedMonth,
+        status: In(['submitted', 'approved', 'rejected']),
+      },
       order: { createdAt: 'DESC' },
     });
+    const extraExpenses =
+      caseIds.length === 0
+        ? []
+        : await this.expenses.find({
+            where: {
+              inspectorId: user.id,
+              serviceCaseId: In(caseIds),
+              status: In(['submitted', 'approved', 'rejected']),
+            },
+            order: { createdAt: 'DESC' },
+          });
+    const expenseById = new Map<string, CaseExpenseClaim>();
+    for (const e of [...myExpenseRows, ...extraExpenses]) {
+      if (e.month && e.month !== selectedMonth) continue;
+      if (!e.month && !caseIdSet.has(e.serviceCaseId)) continue;
+      expenseById.set(e.id, e);
+    }
+    const allMyExpenses = [...expenseById.values()];
+    const expenseUnitIds = [
+      ...new Set(allMyExpenses.map((e) => e.workUnitId).filter(Boolean) as string[]),
+    ];
+    const expenseUnits = expenseUnitIds.length
+      ? await this.units.find({ where: { id: In(expenseUnitIds) } })
+      : [];
+    const expenseUnitMap = new Map(expenseUnits.map((u) => [u.id, u]));
+    const mapExpense = (e: CaseExpenseClaim) => {
+      const unit = e.workUnitId ? expenseUnitMap.get(e.workUnitId) : undefined;
+      return {
+        id: e.id,
+        serviceCaseId: e.serviceCaseId,
+        workUnitId: e.workUnitId,
+        unitSeq: unit?.seq ?? null,
+        amount: e.amount,
+        claimAmount: e.claimAmount,
+        note: e.note,
+        status: e.status,
+        mileageKm: e.mileageKm,
+        tripSkipped: !!e.tripSkipped,
+      };
+    };
+    const expensesByCase = new Map<string, ReturnType<typeof mapExpense>[]>();
+    for (const e of allMyExpenses) {
+      const list = expensesByCase.get(e.serviceCaseId) || [];
+      list.push(mapExpense(e));
+      expensesByCase.set(e.serviceCaseId, list);
+    }
+    for (const d of details) {
+      if (!d) continue;
+      const cid = String(d.serviceCase?.id || '');
+      d.expenses = cid ? expensesByCase.get(cid) || [] : [];
+    }
+    const approvedExpenses = allMyExpenses.filter((e) => e.status === 'approved');
     const expenseCaseIds = [...new Set(approvedExpenses.map((e) => e.serviceCaseId).filter(Boolean))];
     const expenseCases = expenseCaseIds.length
       ? await this.cases.find({
