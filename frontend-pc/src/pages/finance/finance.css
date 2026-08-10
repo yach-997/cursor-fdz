@@ -133,6 +133,34 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+.finance-review-ops {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 4px;
+  max-width: 188px;
+}
+.finance-review-ops .ant-btn-sm {
+  height: 28px;
+  padding: 0 10px;
+  line-height: 26px;
+}
+.finance-review-ops .ant-btn-primary.ant-btn-sm,
+.finance-review-ops .ant-btn-dangerous.ant-btn-sm {
+  min-width: 52px;
+  padding-inline: 12px;
+}
+.finance-review-ops .ant-btn-link {
+  height: 28px;
+  padding-inline: 4px;
+  margin-inline: 0;
+}
+.finance-review-tip {
+  color: #61756b;
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
 .settle-amount-link:hover {
   color: #087b59;
 }

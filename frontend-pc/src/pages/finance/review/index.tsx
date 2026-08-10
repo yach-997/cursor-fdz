@@ -273,10 +273,14 @@ export default function FinanceReviewPage() {
           },
           {
             title: colTip('报销', '本案例待核定的行程报销台数；点「明细」可审凭证。'),
-            width: 110,
+            width: 100,
             render: (_, row) => {
               const n = Number(row.pendingExpenseCount || 0);
-              return n > 0 ? <Tag color="gold">报销待审 {n}</Tag> : <span style={{ color: '#98a29c' }}>—</span>;
+              return n > 0 ? (
+                <Tag color="gold">待审 {n}</Tag>
+              ) : (
+                <span style={{ color: '#98a29c' }}>—</span>
+              );
             },
           },
           {
@@ -284,49 +288,60 @@ export default function FinanceReviewPage() {
               '审核条件',
               '可结算 = 已派工程师，且全部未忽略 PO 条目已配置内部绩效价。与现场照片是否齐全无关。',
             ),
-            width: 135,
+            width: 120,
             render: (_, row) =>
               row.approvalReady ? (
                 <Tag color="green">可结算</Tag>
               ) : (
                 <Tag color="orange">
-                  {!row.inspectorName ? '未派工程师' : `缺绩效价 ${row.missingPerf} 项`}
+                  {!row.inspectorName ? '未派工' : `缺价 ${row.missingPerf}`}
                 </Tag>
               ),
           },
           {
             title: '完工时间',
             dataIndex: 'finishTime',
-            width: 160,
-            render: (v) => formatDateTime(v),
+            width: 132,
+            render: (v) => {
+              if (!v) return '-';
+              const d = dayjs(v);
+              return d.isValid() ? d.format('MM-DD HH:mm') : formatDateTime(v);
+            },
           },
           ...(tab === 'approved'
             ? [
                 {
                   title: '审核时间',
                   dataIndex: 'reviewTime',
-                  width: 160,
-                  render: (v: string | null | undefined) => formatDateTime(v),
+                  width: 132,
+                  render: (v: string | null | undefined) => {
+                    if (!v) return '-';
+                    const d = dayjs(v);
+                    return d.isValid() ? d.format('MM-DD HH:mm') : formatDateTime(v);
+                  },
                 },
               ]
             : [
                 {
                   title: '审核时限',
-                  width: 130,
+                  width: 108,
                   render: (_: unknown, row: FinanceReviewItem) =>
                     row.reviewStatus === 'approved' ? (
                       <Tag color="green">已完成</Tag>
                     ) : row.overdue ? (
                       <Tag color="red">已超期</Tag>
                     ) : (
-                      <Tag color="gold">剩余 {Math.max(0, row.remainingHours || 0)} 小时</Tag>
+                      <Tag color="gold">
+                        剩 {Math.max(0, row.remainingHours || 0)}h
+                      </Tag>
                     ),
                 },
               ]),
           {
             title: colTip('案例收入', 'Σ(条目数量 × 结算单价)。点操作列「明细」可看条目拆分。'),
             dataIndex: 'caseRevenue',
-            width: 110,
+            width: 100,
+            align: 'right' as const,
             render: (v) => moneyText(v),
           },
           {
@@ -335,32 +350,35 @@ export default function FinanceReviewPage() {
               'Σ(条目数量 × 内部绩效单价)，与案例收入不是同一套价格。点「明细」可看拆分。',
             ),
             dataIndex: 'perfBase',
-            width: 110,
+            width: 100,
+            align: 'right' as const,
             render: (v) => moneyText(v),
           },
           {
             title: colTip('事件扣罚', '本案例已登记的事件扣罚合计。点「明细」可看原因与对象。'),
             dataIndex: 'eventPenalty',
-            width: 100,
+            width: 92,
+            align: 'right' as const,
             render: (v) => moneyText(v),
           },
           {
             title: '操作',
             fixed: 'right' as const,
-            width: tab === 'approved' ? 160 : 280,
+            width: tab === 'approved' ? 132 : 200,
             render: (_: unknown, row: FinanceReviewItem) => (
-              <Space>
-                <Button type="link" onClick={() => setAmountCase(row)}>
+              <div className="finance-review-ops">
+                <Button type="link" size="small" onClick={() => setAmountCase(row)}>
                   明细
                 </Button>
-                <Button type="link" onClick={() => openEventPenalty(row)}>
-                  事件扣罚
+                <Button type="link" size="small" onClick={() => openEventPenalty(row)}>
+                  扣罚
                 </Button>
                 {canAudit(row) &&
                   row.deductionStatus === 'pending' &&
                   user?.role === 'super_admin' && (
                     <Button
                       type="link"
+                      size="small"
                       onClick={async () => {
                         await reviewFinanceDeduction(row.id, true);
                         message.success('历史特殊扣减已复核');
@@ -373,7 +391,7 @@ export default function FinanceReviewPage() {
                 {canAudit(row) && (
                   <>
                     <Button
-                      type="link"
+                      size="small"
                       danger
                       onClick={() => {
                         setCurrent(row);
@@ -383,6 +401,7 @@ export default function FinanceReviewPage() {
                       驳回
                     </Button>
                     <Button
+                      size="small"
                       type="primary"
                       disabled={!row.approvalReady || row.deductionStatus === 'pending'}
                       onClick={() => openApprove(row)}
@@ -394,6 +413,7 @@ export default function FinanceReviewPage() {
                 {row.reviewStatus === 'approved' && row.reviewComment && (
                   <Button
                     type="link"
+                    size="small"
                     onClick={() =>
                       Modal.info({
                         title: '审核意见',
@@ -404,7 +424,7 @@ export default function FinanceReviewPage() {
                     意见
                   </Button>
                 )}
-              </Space>
+              </div>
             ),
           },
         ]}
