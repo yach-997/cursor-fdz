@@ -17,6 +17,7 @@ import AssessmentEventDrawer, {
   type AssessmentEventAssignee,
 } from '../components/AssessmentEventDrawer';
 import SettlementAmountDrawer from '../components/SettlementAmountDrawer';
+import { formatDateTime } from '../../../utils/displayLabels';
 
 type Action = 'approve' | 'reject';
 type ReviewTab = 'pending' | 'approved' | 'rejected' | 'all';
@@ -256,7 +257,7 @@ export default function FinanceReviewPage() {
             title: '完工时间',
             dataIndex: 'finishTime',
             width: 160,
-            render: (v) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-'),
+            render: (v) => formatDateTime(v),
           },
           ...(tab === 'approved'
             ? [
@@ -264,8 +265,7 @@ export default function FinanceReviewPage() {
                   title: '审核时间',
                   dataIndex: 'reviewTime',
                   width: 160,
-                  render: (v: string | null | undefined) =>
-                    v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-',
+                  render: (v: string | null | undefined) => formatDateTime(v),
                 },
               ]
             : [

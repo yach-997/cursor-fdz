@@ -33,7 +33,7 @@ import { fetchInspectorPool } from '../../api/user';
 import { downloadRecordsExport } from '../../api/stats';
 import type { SiteItem, DeviceItem } from '../../types';
 import { displayPhotoUrl } from '../../utils/photo-url';
-import { CHECK_RESULT_LABEL } from '../../utils/displayLabels';
+import { CHECK_RESULT_LABEL, formatDateTime } from '../../utils/displayLabels';
 
 const STATUS_MAP: Record<string, { color: string; text: string }> = {
   submitted: { color: 'processing', text: '待审核' },
@@ -374,7 +374,7 @@ export default function RecordsPage() {
       title: '最近提交',
       width: 170,
       render: (_, row) =>
-        row.latestSubmittedAt ? new Date(row.latestSubmittedAt).toLocaleString() : '-',
+        row.latestSubmittedAt ? formatDateTime(row.latestSubmittedAt) : '-',
     },
     {
       title: '操作',
@@ -422,7 +422,7 @@ export default function RecordsPage() {
       title: '提交时间',
       dataIndex: 'submittedAt',
       width: 170,
-      render: (v?: string) => (v ? new Date(v).toLocaleString() : '-'),
+      render: (v?: string) => formatDateTime(v),
     },
     {
       title: '操作',
@@ -453,7 +453,7 @@ export default function RecordsPage() {
               {ev.byName ? ` · ${ev.byName}` : ''}
             </div>
             <div style={{ color: '#888', fontSize: 12 }}>
-              {ev.at ? new Date(ev.at).toLocaleString() : ''}
+              {ev.at ? formatDateTime(ev.at) : ''}
             </div>
             {ev.summary ? <div style={{ marginTop: 4 }}>{ev.summary}</div> : null}
             {ev.reason ? (
@@ -623,7 +623,7 @@ export default function RecordsPage() {
             <div style={{ marginBottom: 12, color: '#666' }}>
               工程师：{detail.inspectorName || '-'}
               {detail.submittedAt
-                ? ` · 提交于 ${new Date(detail.submittedAt).toLocaleString()}`
+                ? ` · 提交于 ${formatDateTime(detail.submittedAt)}`
                 : ''}
             </div>
             <div style={{ marginBottom: 20 }}>
@@ -702,7 +702,7 @@ export default function RecordsPage() {
                     ? ` · 距归属网格约 ${detail.location.distanceToSiteMeters} 米`
                     : ''}
                   {detail.location.capturedAt
-                    ? ` · ${new Date(detail.location.capturedAt).toLocaleString()}`
+                    ? ` · ${formatDateTime(detail.location.capturedAt)}`
                     : ''}
                   {detail.location.reason &&
                   detail.location.latitude != null
@@ -795,7 +795,7 @@ export default function RecordsPage() {
               <div style={{ fontWeight: 600, marginBottom: 8 }}>{unitTitle(rec)}</div>
               <div style={{ color: '#888', fontSize: 12, marginBottom: 8 }}>
                 {rec.submittedAt
-                  ? new Date(rec.submittedAt).toLocaleDateString()
+                  ? formatDateTime(rec.submittedAt)
                   : rec.id.slice(0, 8)}
               </div>
               <Tag>{STATUS_MAP[rec.status]?.text || '未知状态'}</Tag>

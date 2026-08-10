@@ -7,6 +7,7 @@ import { useAuthStore } from '../../stores/auth';
 import SiteMapView from '../../components/SiteMapView';
 import './dashboard.css';
 import { DEVICE_TYPE_LABEL } from '../../types';
+import { formatDateTime } from '../../utils/displayLabels';
 
 type StatItem = {
   key: string;
@@ -256,7 +257,7 @@ export default function DashboardPage() {
                   title: '提交时间',
                   dataIndex: 'submittedAt',
                   width: 160,
-                  render: (v?: string) => (v ? new Date(v).toLocaleString() : '-'),
+                  render: (v?: string) => formatDateTime(v),
                 },
               ]}
               locale={{ emptyText: '暂无待审核报告' }}

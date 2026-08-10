@@ -26,7 +26,7 @@ import {
 import { fetchSites } from '../../api/site';
 import type { SiteItem } from '../../types';
 import { useNavigate } from 'react-router-dom';
-import { ALERT_SEVERITY_LABEL } from '../../utils/displayLabels';
+import { ALERT_SEVERITY_LABEL, formatDateTime } from '../../utils/displayLabels';
 
 const TYPE_LABEL: Record<string, string> = {
   high_fail_rate: '合格率预警',
@@ -153,7 +153,7 @@ export default function AlertsPage() {
       title: '时间',
       dataIndex: 'createdAt',
       width: 170,
-      render: (v: string) => new Date(v).toLocaleString(),
+      render: (v: string) => formatDateTime(v),
     },
     {
       title: '操作',

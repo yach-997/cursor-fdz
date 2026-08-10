@@ -7,6 +7,7 @@ import {
   type IncomeLedger,
   type MyIncome,
 } from '../../api/finance';
+import { formatDateTime } from '../../utils/displayLabels';
 import './finance.css';
 
 const reviewLabel = { pending: '待审', approved: '已审', rejected: '已驳' };
@@ -30,13 +31,6 @@ const fmtDayKey = (iso?: string | null) => {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return 'unknown';
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
-
-const fmtDateTime = (iso?: string | null) => {
-  if (!iso) return '-';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '-';
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
 const fmtMonthLabel = (ym: string) => {
@@ -131,7 +125,7 @@ function CaseSheet({
               : ''}
           </p>
           <p className="inc-bill-sheet-day">
-            完工日 {fmtDateTime(item.serviceCase?.finishTime)}
+            完工日 {formatDateTime(item.serviceCase?.finishTime)}
           </p>
         </div>
         <button type="button" className="inc-bill-sheet-close" onClick={onClose}>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button, Card, Col, Descriptions, Row, Space, Spin, Tag, Timeline } from 'antd';
 import { CheckCircleOutlined, ExclamationCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { fetchSystemStatus, type SystemStatus } from '../../api/system';
+import { formatDateTime } from '../../utils/displayLabels';
 
 const statusMeta = {
   healthy: { color: 'success', text: '运行正常', icon: <CheckCircleOutlined /> },
@@ -49,7 +50,7 @@ export default function MonitoringPage() {
             <Tag color={statusMeta[data.overall].color} icon={statusMeta[data.overall].icon}>
               {statusMeta[data.overall].text}
             </Tag>
-            <span>最近检测：{new Date(data.checkedAt).toLocaleString()}</span>
+            <span>最近检测：{formatDateTime(data.checkedAt)}</span>
           </Space>
           <Space>
             <Button onClick={downloadReport}>导出状态报告</Button>

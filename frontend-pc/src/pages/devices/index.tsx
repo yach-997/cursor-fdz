@@ -35,7 +35,7 @@ import {
 import { fetchSites } from '../../api/site';
 import type { DeviceItem, SiteItem, DeviceType } from '../../types';
 import { DEVICE_TYPE_LABEL } from '../../types';
-import { RECORD_STATUS_LABEL, TASK_STATUS_LABEL } from '../../utils/displayLabels';
+import { RECORD_STATUS_LABEL, TASK_STATUS_LABEL, formatDateTime } from '../../utils/displayLabels';
 
 /** 设备管理：表格 + 网格筛选 + 批量导入 Excel + 历史 */
 export default function DevicesPage() {
@@ -387,7 +387,12 @@ export default function DevicesPage() {
               width: 100,
               render: (value) => RECORD_STATUS_LABEL[String(value)] || '未知状态',
             },
-            { title: '提交时间', dataIndex: 'submittedAt', width: 180 },
+            {
+              title: '提交时间',
+              dataIndex: 'submittedAt',
+              width: 180,
+              render: (v?: string) => formatDateTime(v),
+            },
           ]}
         />
       </Modal>

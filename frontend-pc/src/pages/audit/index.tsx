@@ -24,7 +24,7 @@ import {
   type AuditTrailEvent,
 } from '../../api/record';
 import { displayPhotoUrl } from '../../utils/photo-url';
-import { CHECK_RESULT_LABEL } from '../../utils/displayLabels';
+import { CHECK_RESULT_LABEL, formatDateTime } from '../../utils/displayLabels';
 
 const STATUS_MAP: Record<string, { color: string; text: string }> = {
   submitted: { color: 'processing', text: '待审核' },
@@ -186,7 +186,7 @@ export default function AuditPage() {
       title: '最近提交',
       width: 180,
       render: (_, row) =>
-        row.latestSubmittedAt ? new Date(row.latestSubmittedAt).toLocaleString() : '-',
+        row.latestSubmittedAt ? formatDateTime(row.latestSubmittedAt) : '-',
     },
     {
       title: '操作',
@@ -239,7 +239,7 @@ export default function AuditPage() {
       title: '提交时间',
       dataIndex: 'submittedAt',
       width: 170,
-      render: (v?: string) => (v ? new Date(v).toLocaleString() : '-'),
+      render: (v?: string) => formatDateTime(v),
     },
     {
       title: '操作',
@@ -275,7 +275,7 @@ export default function AuditPage() {
               {ev.byName ? ` · ${ev.byName}` : ''}
             </div>
             <div style={{ color: '#888', fontSize: 12 }}>
-              {ev.at ? new Date(ev.at).toLocaleString() : ''}
+              {ev.at ? formatDateTime(ev.at) : ''}
             </div>
             {ev.summary ? <div style={{ marginTop: 4 }}>{ev.summary}</div> : null}
             {ev.reason ? (
@@ -376,7 +376,7 @@ export default function AuditPage() {
             <div style={{ marginBottom: 12, color: '#666' }}>
               工程师：{detail.inspectorName || '-'}
               {detail.submittedAt
-                ? ` · 提交于 ${new Date(detail.submittedAt).toLocaleString()}`
+                ? ` · 提交于 ${formatDateTime(detail.submittedAt)}`
                 : ''}
             </div>
             <div style={{ fontWeight: 600, marginBottom: 12 }}>操作追溯</div>

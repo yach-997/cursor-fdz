@@ -26,6 +26,7 @@ import { fetchSites, fetchSiteMembers } from '../../api/site';
 import { fetchDevices } from '../../api/device';
 import type { SiteItem, DeviceItem, DeviceType } from '../../types';
 import { DEVICE_TYPE_LABEL } from '../../types';
+import { formatDateTime } from '../../utils/displayLabels';
 
 /** 对外展示的三种任务状态 */
 function displayStatus(t: TaskItem): { color: string; text: string } {
@@ -215,7 +216,7 @@ export default function TasksPage() {
       title: '创建时间',
       dataIndex: 'createdAt',
       width: 170,
-      render: (v) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-'),
+      render: (v) => formatDateTime(v),
     },
     {
       title: '状态',
