@@ -52,11 +52,14 @@ function inspectorOptionLabel(item: {
   phone?: string;
   activeCaseCount?: number;
 }) {
-  const name = item.realName || '-';
-  const user = item.username ? ` · ${item.username}` : '';
-  const phone = item.phone || '-';
+  const name = String(item.realName || '').trim() || String(item.username || '').trim() || '未命名';
+  const username = String(item.username || '').trim();
+  const user =
+    username && username !== name ? ` · ${username}` : '';
+  const phone = String(item.phone || '').trim();
+  const phonePart = phone && phone !== '-' ? `（${phone}）` : '';
   const busy = item.activeCaseCount ? ` · 在办 ${item.activeCaseCount} 单` : '';
-  return `${name}${user}（${phone}）${busy}`;
+  return `${name}${user}${phonePart}${busy}`;
 }
 
 const dispatchStatusLabel: Record<string, string> = {
@@ -187,6 +190,7 @@ export default function FinanceCasesPage() {
     Array<{ id: string; realName: string; completedUnits?: number }>
   >([]);
   const assignLoadSeq = useRef(0);
+  const assignModeTouched = useRef(false);
   const [siteModal, setSiteModal] = useState<{ mode: 'single' | 'batch'; case?: FinanceCase }>();
   const [siteId, setSiteId] = useState<string>();
   const [typeModal, setTypeModal] = useState<FinanceCase>();
@@ -657,6 +661,7 @@ export default function FinanceCasesPage() {
                     }
                     onClick={() => {
                       const seq = ++assignLoadSeq.current;
+                      assignModeTouched.current = false;
                       setAssigning(r);
                       setAssignMode(
                         r.status === 'pending_assign'
@@ -680,7 +685,7 @@ export default function FinanceCasesPage() {
                               {
                                 id: r.inspectorId,
                                 realName: r.inspectorName || '已派工程师',
-                                phone: '-',
+                                phone: '',
                                 region: '',
                                 available: true,
                               },
@@ -691,7 +696,7 @@ export default function FinanceCasesPage() {
                         fetchFinanceInspectors(r.id),
                         fetchFinanceCase(r.id).catch(() => null),
                       ]).then(([list, detail]) => {
-                        // 弹窗已换案/关闭，或用户已切换模式：勿用异步结果覆盖
+                        // 弹窗已换案/关闭：勿用异步结果覆盖
                         if (seq !== assignLoadSeq.current) return;
                         const assigns = (detail?.assignments || []).filter(
                           (a) => a.status !== 'withdrawn',
@@ -707,12 +712,12 @@ export default function FinanceCasesPage() {
                         if ((detail?.assignMode || r.assignMode) === 'single' && active[0]) {
                           setInspectorId(active[0].id);
                           setInspectorIds([active[0].id]);
-                        } else {
+                        } else if (!assignModeTouched.current) {
                           setInspectorId(undefined);
                           setInspectorIds([]);
                         }
-                        // pending_assign：模式/台数以弹窗初值 + 用户切换为准，异步勿强制改回单人
-                        if (r.status !== 'pending_assign') {
+                        // 用户已手动切换模式：勿用详情把多人打回单人
+                        if (!assignModeTouched.current && r.status !== 'pending_assign') {
                           if (detail?.assignMode === 'multi' || detail?.assignMode === 'single') {
                             setAssignMode(detail.assignMode);
                           }
@@ -726,7 +731,7 @@ export default function FinanceCasesPage() {
                           byId.set(a.id, {
                             id: a.id,
                             realName: a.realName,
-                            phone: '-',
+                            phone: '',
                             region: '',
                             available: true,
                           });
@@ -1209,6 +1214,7 @@ export default function FinanceCasesPage() {
               activeAssignees.length > 0
             }
             onChange={(v: 'single' | 'multi') => {
+              assignModeTouched.current = true;
               setAssignMode(v);
               if (v === 'single') {
                 setInspectorIds(inspectorId ? [inspectorId] : []);
