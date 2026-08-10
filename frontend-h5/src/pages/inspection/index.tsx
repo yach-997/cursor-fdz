@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Cell,
@@ -237,6 +237,8 @@ export default function InspectionPage() {
   const [locationError, setLocationError] = useState('正在获取现场定位…');
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
+  const stepStripRef = useRef<HTMLDivElement>(null);
+  const activeStepRef = useRef<HTMLButtonElement>(null);
   const pendingPreviewRef = useRef('');
   const lastFilesRef = useRef<File[]>([]);
   const locationProofRef = useRef<LiveLocationProof | null>(null);
@@ -379,6 +381,14 @@ export default function InspectionPage() {
       setWizardIndex(Math.max(0, wizardSteps.length - 1));
     }
   }, [wizardSteps.length, wizardIndex]);
+
+  useLayoutEffect(() => {
+    activeStepRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      inline: 'center',
+      block: 'nearest',
+    });
+  }, [wizardIndex, wizardSteps.length, showWorkSteps]);
 
   useEffect(() => {
     activeEntryRef.current = currentTpl?.id;
@@ -1414,6 +1424,11 @@ export default function InspectionPage() {
           >
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
               进度 {wizardSteps.length ? wizardIndex + 1 : 0} / {wizardSteps.length || 0}
+              {tripMode === 'need' ? (
+                <span style={{ marginLeft: 8, fontWeight: 500, color: '#087b59', fontSize: 12 }}>
+                  含第1步开始行程、最后一步结束与费用
+                </span>
+              ) : null}
             </div>
             <div
               style={{
@@ -1436,11 +1451,12 @@ export default function InspectionPage() {
                 }}
               />
             </div>
-            <div className="inspection-step-strip">
+            <div className="inspection-step-strip" ref={stepStripRef}>
               {wizardSteps.map((ws, idx) => {
                 let done = false;
                 let needRedo = false;
                 let pendingAi = false;
+                const isTrip = ws.kind === 'start' || ws.kind === 'end';
                 if (ws.kind === 'start') {
                   done = isStartTripReady(tripForm);
                 } else if (ws.kind === 'end') {
@@ -1456,11 +1472,13 @@ export default function InspectionPage() {
                 return (
                   <button
                     key={`${ws.kind}-${ws.kind === 'entry' ? ws.tplId : ws.kind}`}
+                    ref={idx === wizardIndex ? activeStepRef : undefined}
                     type="button"
+                    className={isTrip ? 'is-trip' : undefined}
                     onClick={() => setWizardIndex(idx)}
                     style={{
                       flexShrink: 0,
-                      border: needRedo ? '1px solid #ff4d4f' : 'none',
+                      border: needRedo ? '1px solid #ff4d4f' : isTrip ? undefined : 'none',
                       borderRadius: 12,
                       padding: '4px 10px',
                       fontSize: 12,
@@ -1474,7 +1492,9 @@ export default function InspectionPage() {
                             ? '#fff1f0'
                             : done
                               ? '#e8f8ef'
-                              : '#f0f2f1',
+                              : isTrip
+                                ? '#eef8f3'
+                                : '#f0f2f1',
                       color: idx === wizardIndex ? '#fff' : needRedo ? '#a8071a' : '#333',
                     }}
                   >

@@ -46,24 +46,21 @@
 
 .inspection-step-strip {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  overflow-x: auto;
   padding: 2px 1px 4px;
-  scroll-snap-type: x proximity;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-
-.inspection-step-strip::-webkit-scrollbar {
-  display: none;
 }
 
 .inspection-step-strip > button {
   min-height: 32px;
-  scroll-snap-align: start;
   white-space: nowrap;
   border-radius: 10px !important;
   transition: transform 0.16s var(--h5-ease), background 0.16s ease;
+}
+
+.inspection-step-strip > button.is-trip {
+  border: 1px solid #087b59 !important;
+  font-weight: 650;
 }
 
 .inspection-current-card.rv-cell-group--inset {
@@ -474,6 +471,22 @@
 .trip-wizard-choice button span {
   font-size: 12px;
   color: #61756b;
+}
+.trip-wizard-confirm {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  border: none;
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: #087b59;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 650;
+}
+.trip-wizard-confirm:disabled {
+  background: #b7cfc6;
+  color: #f5faf7;
 }
 .trip-wizard-block {
   margin-top: 14px;

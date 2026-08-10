@@ -118,22 +118,45 @@ export function TripChoiceCard({
   onNeed: () => void;
   onSkip: () => void;
 }) {
+  const [picked, setPicked] = useState<'need' | 'skip' | null>(null);
+
   return (
     <div className="trip-wizard-card">
       <h3>本台是否有行程报销？</h3>
       <p>
-        有行程：产品线前后各加「开始行程 / 结束行程与费用」。无行程：直接做产品线检查项（管理员可见无行程标记）。
+        先点选一项，再点下方「确认并继续」。有行程会在产品线前后加上开始/结束行程步骤。
       </p>
       <div className="trip-wizard-choice">
-        <button type="button" className="is-primary" disabled={busy} onClick={onNeed}>
+        <button
+          type="button"
+          className={picked === 'need' ? 'is-primary' : ''}
+          disabled={busy}
+          onClick={() => setPicked('need')}
+        >
           <strong>有行程</strong>
           <span>开始里程 → 产品线 → 结束里程与费用</span>
         </button>
-        <button type="button" disabled={busy} onClick={onSkip}>
+        <button
+          type="button"
+          className={picked === 'skip' ? 'is-primary' : ''}
+          disabled={busy}
+          onClick={() => setPicked('skip')}
+        >
           <strong>无行程</strong>
           <span>直接进入产品线流程</span>
         </button>
       </div>
+      <button
+        type="button"
+        className="trip-wizard-confirm"
+        disabled={busy || !picked}
+        onClick={() => {
+          if (picked === 'need') onNeed();
+          else if (picked === 'skip') onSkip();
+        }}
+      >
+        {busy ? '处理中…' : picked ? '确认并继续' : '请先选择有行程或无行程'}
+      </button>
     </div>
   );
 }
