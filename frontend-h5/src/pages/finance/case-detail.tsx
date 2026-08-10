@@ -41,7 +41,8 @@ const UNIT_STATUS_LABEL: Record<string, string> = {
 type UnitFilter = 'open' | 'mine' | 'all';
 type UnitItem = NonNullable<MobileFinanceCase['units']>[number];
 
-const GRID_PAGE = 40;
+/** 手机端一屏约 3 行 × 4 列，避免可认领列表过长 */
+const GRID_PAGE = 12;
 
 export default function FinanceCaseDetailPage() {
   const { id = '' } = useParams();
@@ -49,9 +50,12 @@ export default function FinanceCaseDetailPage() {
   const userId = useAuthStore((s) => s.user?.id);
   const [item, setItem] = useState<MobileFinanceCase>();
   const [busy, setBusy] = useState(false);
-  const [unitFilter, setUnitFilter] = useState<UnitFilter>('open');
+  const [unitFilter, setUnitFilter] = useState<UnitFilter>('mine');
   const [gridLimit, setGridLimit] = useState(GRID_PAGE);
   const [showCompletedAll, setShowCompletedAll] = useState(false);
+  /** 可认领：列表默认收起，优先「下一台 / 指定台号」 */
+  const [showOpenPicker, setShowOpenPicker] = useState(false);
+  const [pickSeq, setPickSeq] = useState('');
   /** 本地聚焦台：可在已认领多台之间切换，不必等当前台完成 */
   const [focusUnitId, setFocusUnitId] = useState<string | null>(null);
   /** 进入页时自动补完「已提交未完结」的台，避免误显示「完成本台」 */
@@ -61,12 +65,30 @@ export default function FinanceCaseDetailPage() {
     void fetchMyFinanceCase(id).then((data) => {
       setItem(data);
       setFocusUnitId(data.activeUnit?.id || null);
+      const planned = Math.max(1, Number(data.plannedUnits) || 1);
+      const unitFlow = data.assignMode === 'multi' || planned > 1;
+      if (!unitFlow) return;
+      if (!['assigned', 'working'].includes(data.status)) {
+        setUnitFilter('mine');
+        return;
+      }
+      const hasMine = (data.units || []).some(
+        (u) =>
+          !!userId &&
+          u.inspectorId === userId &&
+          u.status !== 'open' &&
+          u.status !== 'cancelled',
+      );
+      // 已有作业时默认「我的」；新人首次再看可认领
+      setUnitFilter(hasMine ? 'mine' : 'open');
     });
-  }, [id]);
+  }, [id, userId]);
 
   useEffect(() => {
     setGridLimit(GRID_PAGE);
     setShowCompletedAll(false);
+    setShowOpenPicker(false);
+    setPickSeq('');
   }, [unitFilter, id]);
 
   useEffect(() => {
@@ -322,6 +344,21 @@ export default function FinanceCaseDetailPage() {
     await claimUnit(next.id, myInProgress.length === 0);
   };
 
+  const claimBySeq = async () => {
+    const seq = Math.floor(Number(pickSeq));
+    if (!seq || seq < 1) {
+      Toast.fail(`请输入${unitLabel}号`);
+      return;
+    }
+    const target = openUnits.find((u) => u.seq === seq);
+    if (!target) {
+      Toast.fail(`${unitLabel} #${seq} 不可认领或不存在`);
+      return;
+    }
+    await claimUnit(target.id, myInProgress.length === 0);
+    setPickSeq('');
+  };
+
   const canInspect =
     ['assigned', 'working'].includes(item.status) &&
     (useUnitFlow
@@ -525,7 +562,7 @@ export default function FinanceCaseDetailPage() {
 
           {multiWorking && myActive && openUnits.length > 0 && (
             <p className="mobile-finance-muted unit-hint">
-              当前{unitLabel}可先放着，继续认领其他{unitLabel}；在「我的」里可切换进入任一台作业。
+              也可先认领下一{unitLabel}；切换作业请到「我的」。
             </p>
           )}
 
@@ -533,8 +570,8 @@ export default function FinanceCaseDetailPage() {
             {(
               (multiWorking
                 ? ([
-                    ['open', `可认领 ${openUnits.length}`],
                     ['mine', `我的 ${myUnitList.length}`],
+                    ['open', `可认领 ${openUnits.length}`],
                     ['all', `全部 ${units.length}`],
                   ] as const)
                 : ([
@@ -552,27 +589,6 @@ export default function FinanceCaseDetailPage() {
               </button>
             ))}
           </div>
-
-          {multiWorking && unitFilter === 'open' && (
-            <>
-              {openUnits.length === 0 ? (
-                <p className="mobile-finance-muted">没有可认领的{unitLabel}</p>
-              ) : (
-                <div className="unit-grid">
-                  {openUnits.slice(0, gridLimit).map((u) => renderUnitChip(u, true))}
-                </div>
-              )}
-              {openUnits.length > gridLimit && (
-                <button
-                  type="button"
-                  className="unit-more-btn"
-                  onClick={() => setGridLimit((n) => n + GRID_PAGE)}
-                >
-                  加载更多（还有 {openUnits.length - gridLimit}）
-                </button>
-              )}
-            </>
-          )}
 
           {unitFilter === 'mine' && (
             <ul className="unit-mine-list">
@@ -620,23 +636,79 @@ export default function FinanceCaseDetailPage() {
             </ul>
           )}
 
-          {unitFilter === 'all' && (
-            <div className="unit-all-groups">
-              {openUnits.length > 0 && (
-                <div className="unit-group">
-                  <div className="unit-group-title">可认领 · {openUnits.length}</div>
-                  <div className="unit-grid">
-                    {openUnits.slice(0, gridLimit).map((u) => renderUnitChip(u, true))}
-                  </div>
-                  {openUnits.length > gridLimit && (
+          {multiWorking && unitFilter === 'open' && (
+            <>
+              {openUnits.length === 0 ? (
+                <p className="mobile-finance-muted">没有可认领的{unitLabel}</p>
+              ) : (
+                <>
+                  <p className="mobile-finance-muted unit-hint" style={{ marginTop: 10 }}>
+                    推荐点上方「认领下一{unitLabel}」。要特定编号时再输入台号。
+                  </p>
+                  <div className="unit-pick-row">
+                    <input
+                      className="unit-pick-input"
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      placeholder={`台号，如 ${openUnits[0].seq}`}
+                      value={pickSeq}
+                      onChange={(e) => setPickSeq(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void claimBySeq();
+                        }
+                      }}
+                    />
                     <button
                       type="button"
-                      className="unit-more-btn"
-                      onClick={() => setGridLimit((n) => n + GRID_PAGE)}
+                      className="unit-pick-btn"
+                      disabled={busy}
+                      onClick={() => void claimBySeq()}
                     >
-                      加载更多
+                      认领
                     </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="unit-more-btn"
+                    onClick={() => setShowOpenPicker((v) => !v)}
+                  >
+                    {showOpenPicker
+                      ? '收起列表'
+                      : `从列表选（共 ${openUnits.length}，每次 ${GRID_PAGE} 台）`}
+                  </button>
+                  {showOpenPicker && (
+                    <>
+                      <div className="unit-grid">
+                        {openUnits.slice(0, gridLimit).map((u) => renderUnitChip(u, true))}
+                      </div>
+                      {openUnits.length > gridLimit && (
+                        <button
+                          type="button"
+                          className="unit-more-btn"
+                          onClick={() => setGridLimit((n) => n + GRID_PAGE)}
+                        >
+                          再显示 {Math.min(GRID_PAGE, openUnits.length - gridLimit)} 台（还剩{' '}
+                          {openUnits.length - gridLimit}）
+                        </button>
+                      )}
+                    </>
                   )}
+                </>
+              )}
+            </>
+          )}
+
+          {unitFilter === 'all' && (
+            <div className="unit-all-groups">
+              {openUnits.length > 0 && multiWorking && (
+                <div className="unit-group">
+                  <div className="unit-group-title">可认领 · {openUnits.length}</div>
+                  <p className="mobile-finance-muted unit-hint">
+                    请用上方「认领下一{unitLabel}」或到「可认领」里指定台号。
+                  </p>
                 </div>
               )}
               {claimedUnits.length > 0 && (
@@ -645,8 +717,11 @@ export default function FinanceCaseDetailPage() {
                   <ul className="unit-mine-list">
                     {claimedUnits.map((u) => {
                       const mine = !!userId && u.inspectorId === userId;
-                      const canEnter =
-                        mine && (u.status === 'claimed' || u.status === 'submitted');
+                      const canEnter = mine && u.status === 'claimed';
+                      const canViewReport =
+                        mine &&
+                        !!u.inspectionTaskId &&
+                        (u.status === 'submitted' || u.status === 'completed');
                       return (
                         <li key={u.id}>
                           <span>
@@ -663,6 +738,15 @@ export default function FinanceCaseDetailPage() {
                                 onClick={() => void goInspectUnit(u, false)}
                               >
                                 进入
+                              </button>
+                            )}
+                            {canViewReport && (
+                              <button
+                                type="button"
+                                className="unit-enter-btn"
+                                onClick={() => viewUnitReport(u)}
+                              >
+                                查看报告
                               </button>
                             )}
                           </span>
