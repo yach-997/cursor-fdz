@@ -31,6 +31,7 @@ import {
   batchCreateTasksFromCases,
   clearFinanceCases,
   downloadFinanceImportTemplate,
+  exportFinanceCases,
   fetchFinanceCase,
   fetchFinanceCases,
   fetchFinanceCaseLocationOptions,
@@ -173,6 +174,9 @@ export default function FinanceCasesPage() {
   const [siteBind, setSiteBind] = useState<'unassigned' | 'assigned_site'>();
   const [filterSiteId, setFilterSiteId] = useState<string>();
   const [filterTaskType, setFilterTaskType] = useState<string>();
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [exporting, setExporting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [open, setOpen] = useState(false);
@@ -247,13 +251,15 @@ export default function FinanceCasesPage() {
         siteBind,
         siteId: filterSiteId,
         taskType: filterTaskType,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
       });
       setData(r.list);
       setTotal(r.total);
     } finally {
       setLoading(false);
     }
-  }, [page, keyword, status, province, city, siteBind, filterSiteId, filterTaskType]);
+  }, [page, keyword, status, province, city, siteBind, filterSiteId, filterTaskType, dateFrom, dateTo]);
 
   useEffect(() => {
     void load();
@@ -424,6 +430,61 @@ export default function FinanceCasesPage() {
           }}
           options={taskTypes.map((t) => ({ value: t.id, label: t.name }))}
         />
+        <Input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => {
+            setPage(1);
+            setDateFrom(e.target.value);
+          }}
+          title="起始日期（完工/创建）"
+          style={{ width: 150 }}
+        />
+        <span style={{ color: '#888' }}>至</span>
+        <Input
+          type="date"
+          value={dateTo}
+          onChange={(e) => {
+            setPage(1);
+            setDateTo(e.target.value);
+          }}
+          title="结束日期（完工/创建）"
+          style={{ width: 150 }}
+        />
+        <Button
+          icon={<DownloadOutlined />}
+          loading={exporting}
+          onClick={() => {
+            void (async () => {
+              setExporting(true);
+              try {
+                const ids = selectedRowKeys.map(String);
+                await exportFinanceCases(
+                  ids.length
+                    ? { ids }
+                    : {
+                        keyword: keyword || undefined,
+                        status,
+                        province,
+                        city,
+                        siteBind,
+                        siteId: filterSiteId,
+                        taskType: filterTaskType,
+                        dateFrom: dateFrom || undefined,
+                        dateTo: dateTo || undefined,
+                      },
+                );
+                message.success(ids.length ? `已导出勾选 ${ids.length} 条` : '已按当前筛选导出');
+              } catch (error) {
+                message.error(error instanceof Error ? error.message : '导出失败');
+              } finally {
+                setExporting(false);
+              }
+            })();
+          }}
+        >
+          {selectedRowKeys.length ? `导出勾选 (${selectedRowKeys.length})` : '导出 Excel'}
+        </Button>
         {admin && (
           <>
             <Button

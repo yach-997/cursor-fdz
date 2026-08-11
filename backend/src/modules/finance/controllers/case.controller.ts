@@ -8,9 +8,11 @@ import {
   Post,
   Put,
   Query,
+  Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -22,6 +24,7 @@ import {
   BatchAssignCasesToSitesDto,
   BatchCreateTasksFromCasesDto,
   ClearConfirmQueryDto,
+  ExportCasesDto,
   FinanceCaseQueryDto,
   OcrMileageDto,
   OcrDeviceSerialDto,
@@ -60,6 +63,21 @@ export class FinanceCaseController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
   locationOptions(@CurrentUser() user: CurrentUserContext) {
     return this.service.caseLocationOptions(user);
+  }
+  @Post('export')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
+  async exportCases(
+    @Body() dto: ExportCasesDto,
+    @CurrentUser() user: CurrentUserContext,
+    @Res() response: Response,
+  ) {
+    const buffer = await this.service.exportCases(dto, user);
+    response.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    response.setHeader('Content-Disposition', 'attachment; filename="cases-export.xlsx"');
+    response.send(buffer);
   }
   @Delete('clear') @Roles(UserRole.SUPER_ADMIN) clear(
     @Query() query: ClearConfirmQueryDto,

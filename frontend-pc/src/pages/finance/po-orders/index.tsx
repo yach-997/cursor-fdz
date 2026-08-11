@@ -29,6 +29,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   clearPoOrders,
   downloadFinanceImportTemplate,
+  exportPoOrders,
   fetchPoOrders,
   generateCasesFromPo,
   matchPoOrder,
@@ -87,19 +88,24 @@ export default function PoOrdersPage() {
   const user = useAuthStore((s) => s.user);
   const admin = user?.role === 'super_admin';
   const canClear = admin && canUseDangerousClear();
-  const [status, setStatus] = useState<'matched' | 'pending'>('matched'),
-    [data, setData] = useState<PoOrder[]>([]),
-    [total, setTotal] = useState(0),
-    [page, setPage] = useState(1),
-    [loading, setLoading] = useState(false),
-    [clearing, setClearing] = useState(false),
-    [importOpen, setImportOpen] = useState(false),
-    [generating, setGenerating] = useState(false),
-    [match, setMatch] = useState<PoOrder>(),
-    [edit, setEdit] = useState<PoOrder>(),
-    [editSaving, setEditSaving] = useState(false),
-    [form] = Form.useForm(),
-    [editForm] = Form.useForm();
+  const [status, setStatus] = useState<'matched' | 'pending'>('matched');
+  const [data, setData] = useState<PoOrder[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [keyword, setKeyword] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [match, setMatch] = useState<PoOrder>();
+  const [edit, setEdit] = useState<PoOrder>();
+  const [editSaving, setEditSaving] = useState(false);
+  const [form] = Form.useForm();
+  const [editForm] = Form.useForm();
 
   useEffect(() => {
     if (!admin && status === 'pending') setStatus('matched');
@@ -107,16 +113,26 @@ export default function PoOrdersPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetchPoOrders({ page, limit: 10, matchStatus: status });
+      const r = await fetchPoOrders({
+        page,
+        limit: 10,
+        matchStatus: status,
+        keyword: keyword || undefined,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+      });
       setData(r.list);
       setTotal(r.total);
     } finally {
       setLoading(false);
     }
-  }, [page, status]);
+  }, [page, status, keyword, dateFrom, dateTo]);
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    setSelectedRowKeys([]);
+  }, [status, keyword, dateFrom, dateTo, page]);
   const openEdit = (order: PoOrder) => {
     setEdit(order);
     editForm.setFieldsValue({
@@ -283,6 +299,65 @@ export default function PoOrdersPage() {
       />
       {admin && (
         <div className="finance-toolbar">
+          <Input.Search
+            allowClear
+            placeholder="PO单号/案例号/项目名"
+            style={{ width: 220 }}
+            onSearch={(v) => {
+              setPage(1);
+              setKeyword(v);
+            }}
+          />
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => {
+              setPage(1);
+              setDateFrom(e.target.value);
+            }}
+            title="起始日期（需求日/创建）"
+            style={{ width: 150 }}
+          />
+          <span style={{ color: '#888' }}>至</span>
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => {
+              setPage(1);
+              setDateTo(e.target.value);
+            }}
+            title="结束日期（需求日/创建）"
+            style={{ width: 150 }}
+          />
+          <Button
+            icon={<DownloadOutlined />}
+            loading={exporting}
+            onClick={() => {
+              void (async () => {
+                setExporting(true);
+                try {
+                  const ids = selectedRowKeys.map(String);
+                  await exportPoOrders(
+                    ids.length
+                      ? { ids }
+                      : {
+                          matchStatus: status,
+                          keyword: keyword || undefined,
+                          dateFrom: dateFrom || undefined,
+                          dateTo: dateTo || undefined,
+                        },
+                  );
+                  message.success(ids.length ? `已导出勾选 ${ids.length} 条` : '已按当前筛选导出');
+                } catch (error) {
+                  message.error(error instanceof Error ? error.message : '导出失败');
+                } finally {
+                  setExporting(false);
+                }
+              })();
+            }}
+          >
+            {selectedRowKeys.length ? `导出勾选 (${selectedRowKeys.length})` : '导出 Excel'}
+          </Button>
           <Button
             icon={<DownloadOutlined />}
             onClick={() => {
@@ -323,6 +398,14 @@ export default function PoOrdersPage() {
         rowKey="id"
         loading={loading}
         dataSource={data}
+        rowSelection={
+          admin
+            ? {
+                selectedRowKeys,
+                onChange: setSelectedRowKeys,
+              }
+            : undefined
+        }
         pagination={{ current: page, total, pageSize: 10, onChange: setPage }}
         scroll={{ x: 1600 }}
         expandable={{

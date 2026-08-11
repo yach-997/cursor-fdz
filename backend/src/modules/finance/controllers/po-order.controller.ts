@@ -1,9 +1,16 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { UserRole } from '../../../common/enums';
 import { CurrentUserContext } from '../../../common/interfaces';
-import { ClearConfirmQueryDto, MatchPoDto, PoOrderQueryDto, UpdatePoOrderDto } from '../dto/finance.dto';
+import {
+  ClearConfirmQueryDto,
+  ExportPoOrdersDto,
+  MatchPoDto,
+  PoOrderQueryDto,
+  UpdatePoOrderDto,
+} from '../dto/finance.dto';
 import { FinanceQueryService } from '../services/finance-query.service';
 
 @Controller('po-orders')
@@ -14,6 +21,21 @@ export class FinancePoController {
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.service.listPo(query, user);
+  }
+  @Post('export')
+  @Roles(UserRole.SUPER_ADMIN)
+  async export(
+    @Body() dto: ExportPoOrdersDto,
+    @CurrentUser() user: CurrentUserContext,
+    @Res() response: Response,
+  ) {
+    const buffer = await this.service.exportPoOrders(dto, user);
+    response.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    response.setHeader('Content-Disposition', 'attachment; filename="po-orders-export.xlsx"');
+    response.send(buffer);
   }
   @Delete('clear') @Roles(UserRole.SUPER_ADMIN) clear(
     @Query() query: ClearConfirmQueryDto,

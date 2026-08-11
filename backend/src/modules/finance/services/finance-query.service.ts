@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import ExcelJS from 'exceljs';
 import { CasePerformance, InspectionTemplate, PoItem, PoOrder, ServiceCase } from '../../../entities';
 import { CurrentUserContext } from '../../../common/interfaces';
 import { ChangeLogService } from './change-log.service';
@@ -8,6 +9,8 @@ import { FinanceScopeService } from './finance-scope.service';
 import { PriceMappingService } from './price-mapping.service';
 import {
   DashboardQueryDto,
+  ExportCasesDto,
+  ExportPoOrdersDto,
   FinanceCaseQueryDto,
   PoOrderQueryDto,
   UpdateCaseProfileDto,
@@ -18,6 +21,17 @@ import { assertFinanceClearAllowed } from '../../../common/utils/finance-clear-g
 import { applyDemandTypeForCases } from './demand-type-match';
 
 const money = (value: number) => (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2);
+const EXPORT_MAX_ROWS = 5000;
+
+const CASE_STATUS_LABEL: Record<string, string> = {
+  pending_assign: '待派单',
+  assigned: '已派单',
+  working: '作业中',
+  finished: '已完工',
+  settle_review: '待结算审核',
+  settled: '已结算',
+  month_locked: '已月结',
+};
 
 @Injectable()
 export class FinanceQueryService {
@@ -245,6 +259,7 @@ export class FinanceQueryService {
       qb.andWhere('(c.gsp_case_no ILIKE :kw OR c.project_name ILIKE :kw)', {
         kw: `%${query.keyword}%`,
       });
+    this.applyCaseDateRange(qb, query.dateFrom, query.dateTo);
     const total = await qb.clone().getCount();
     const list = await qb
       .orderBy('c.updated_at', 'DESC')
@@ -400,6 +415,7 @@ export class FinanceQueryService {
       qb.andWhere('(po.po_no ILIKE :kw OR po.gsp_case_no ILIKE :kw OR po.project_name ILIKE :kw)', {
         kw: `%${query.keyword}%`,
       });
+    this.applyPoDateRange(qb, query.dateFrom, query.dateTo);
     const total = await qb.clone().getCount();
     const raw = await qb
       .orderBy('po.updated_at', 'DESC')
@@ -454,6 +470,299 @@ export class FinanceQueryService {
       page,
       limit,
     };
+  }
+
+  async exportCases(dto: ExportCasesDto, user: CurrentUserContext) {
+    const ids = (dto.ids || []).map(String).filter(Boolean);
+    const qb = this.cases
+      .createQueryBuilder('c')
+      .leftJoin(CasePerformance, 'p', 'p.service_case_id = c.id')
+      .leftJoin('sites', 's', 's.id = c.site_id')
+      .leftJoin('users', 'ins', 'ins.id = c.inspector_id')
+      .leftJoin('inspection_templates', 'tpl', 'tpl.id = c.task_template_id')
+      .select([
+        'c.gsp_case_no AS "gspCaseNo"',
+        'c.project_name AS "projectName"',
+        'c.status AS status',
+        'c.province AS province',
+        'c.city AS city',
+        's.name AS "siteName"',
+        'c.service_type AS "serviceType"',
+        'c.product_line AS "productLine"',
+        'tpl.name AS "taskTypeName"',
+        `COALESCE(
+          (
+            SELECT string_agg(u.real_name, '、' ORDER BY ca.assign_time NULLS LAST, ca.id)
+            FROM case_assignment ca
+            INNER JOIN users u ON u.id = ca.inspector_id
+            WHERE ca.service_case_id = c.id AND ca.status <> 'withdrawn'
+          ),
+          ins.real_name
+        ) AS "inspectorName"`,
+        'c.finish_time AS "finishTime"',
+        'c.created_at AS "createdAt"',
+        'c.region AS region',
+        'COALESCE(p.case_revenue,0) AS "caseRevenue"',
+      ]);
+
+    if (ids.length) {
+      if (user.role === UserRole.SITE_MANAGER) {
+        if (!user.managedSiteIds?.length) throw new ForbiddenException('无权导出案例');
+        qb.andWhere('c.id IN (:...ids)', { ids }).andWhere('c.site_id IN (:...siteIds)', {
+          siteIds: user.managedSiteIds,
+        });
+      } else {
+        qb.andWhere('c.id IN (:...ids)', { ids });
+      }
+    } else {
+      if (user.role === UserRole.SITE_MANAGER) {
+        if (!user.managedSiteIds?.length) throw new BadRequestException('没有可导出的案例');
+        if (dto.siteBind === 'unassigned') throw new BadRequestException('没有可导出的案例');
+        if (dto.siteId) {
+          if (!user.managedSiteIds.includes(dto.siteId)) {
+            throw new ForbiddenException('无权导出该网格案例');
+          }
+          qb.andWhere('c.site_id = :siteId', { siteId: dto.siteId });
+        } else {
+          qb.andWhere('c.site_id IN (:...siteIds)', { siteIds: user.managedSiteIds });
+        }
+      } else {
+        if (dto.siteId) qb.andWhere('c.site_id = :siteId', { siteId: dto.siteId });
+        if (dto.siteBind === 'unassigned') qb.andWhere('c.site_id IS NULL');
+        if (dto.siteBind === 'assigned_site') qb.andWhere('c.site_id IS NOT NULL');
+      }
+      if (dto.region) qb.andWhere('c.region = :filterRegion', { filterRegion: dto.region });
+      if (dto.province?.trim()) qb.andWhere('c.province = :province', { province: dto.province.trim() });
+      if (dto.city?.trim()) qb.andWhere('c.city = :city', { city: dto.city.trim() });
+      if (dto.status) qb.andWhere('c.status = :status', { status: dto.status });
+      if (dto.taskType) {
+        const uuidLike =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+            dto.taskType,
+          );
+        if (uuidLike) {
+          qb.andWhere('c.task_template_id = :taskTemplateId', { taskTemplateId: dto.taskType });
+        } else {
+          qb.andWhere('(c.task_type = :taskType OR tpl.name = :taskType)', { taskType: dto.taskType });
+        }
+      }
+      if (dto.month)
+        qb.andWhere("to_char(COALESCE(c.finish_time,c.created_at),'YYYY-MM') = :month", {
+          month: dto.month,
+        });
+      if (dto.keyword)
+        qb.andWhere('(c.gsp_case_no ILIKE :kw OR c.project_name ILIKE :kw)', {
+          kw: `%${dto.keyword}%`,
+        });
+      this.applyCaseDateRange(qb, dto.dateFrom, dto.dateTo);
+    }
+
+    const total = await qb.clone().getCount();
+    if (!total) throw new BadRequestException('没有可导出的案例，请调整筛选或勾选');
+    if (total > EXPORT_MAX_ROWS) {
+      throw new BadRequestException(`匹配 ${total} 条，超过单次上限 ${EXPORT_MAX_ROWS}，请缩小筛选或勾选导出`);
+    }
+    const rows = await qb.orderBy('c.updated_at', 'DESC').limit(EXPORT_MAX_ROWS).getRawMany();
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('案例列表');
+    sheet.columns = [
+      { header: 'GSP案例号', key: 'gspCaseNo', width: 18 },
+      { header: '项目名称', key: 'projectName', width: 36 },
+      { header: '状态', key: 'status', width: 14 },
+      { header: '省份', key: 'province', width: 10 },
+      { header: '城市', key: 'city', width: 12 },
+      { header: '归属网格', key: 'siteName', width: 16 },
+      { header: '服务类型', key: 'serviceType', width: 14 },
+      { header: '产品线', key: 'productLine', width: 16 },
+      { header: '任务类型', key: 'taskTypeName', width: 14 },
+      { header: '工程师', key: 'inspectorName', width: 20 },
+      { header: '区域', key: 'region', width: 10 },
+      { header: '案例收入', key: 'caseRevenue', width: 12 },
+      { header: '完工时间', key: 'finishTime', width: 20 },
+      { header: '创建时间', key: 'createdAt', width: 20 },
+    ];
+    for (const row of rows) {
+      sheet.addRow({
+        gspCaseNo: row.gspCaseNo || '',
+        projectName: row.projectName || '',
+        status: CASE_STATUS_LABEL[String(row.status || '')] || row.status || '',
+        province: row.province || '',
+        city: row.city || '',
+        siteName: row.siteName || '',
+        serviceType: row.serviceType || '',
+        productLine: row.productLine || '',
+        taskTypeName: row.taskTypeName || '',
+        inspectorName: row.inspectorName || '',
+        region: row.region === 'yunnan' ? '云南' : row.region === 'south_china' ? '华南' : row.region || '',
+        caseRevenue: Number(row.caseRevenue || 0),
+        finishTime: row.finishTime ? new Date(row.finishTime).toISOString().slice(0, 19).replace('T', ' ') : '',
+        createdAt: row.createdAt ? new Date(row.createdAt).toISOString().slice(0, 19).replace('T', ' ') : '',
+      });
+    }
+    sheet.getRow(1).font = { bold: true };
+    sheet.autoFilter = { from: 'A1', to: 'N1' };
+    return Buffer.from(await workbook.xlsx.writeBuffer());
+  }
+
+  async exportPoOrders(dto: ExportPoOrdersDto, user: CurrentUserContext) {
+    if (user.role !== UserRole.SUPER_ADMIN) {
+      throw new ForbiddenException('仅管理员可导出 PO');
+    }
+    const ids = (dto.ids || []).map(String).filter(Boolean);
+    const qb = this.orders
+      .createQueryBuilder('po')
+      .leftJoin(ServiceCase, 'c', 'c.id = po.service_case_id')
+      .select('po');
+    if (ids.length) {
+      qb.andWhere('po.id IN (:...ids)', { ids });
+    } else {
+      if (dto.matchStatus) qb.andWhere('po.match_status = :matchStatus', { matchStatus: dto.matchStatus });
+      if (dto.keyword)
+        qb.andWhere('(po.po_no ILIKE :kw OR po.gsp_case_no ILIKE :kw OR po.project_name ILIKE :kw)', {
+          kw: `%${dto.keyword}%`,
+        });
+      this.applyPoDateRange(qb, dto.dateFrom, dto.dateTo);
+    }
+    const total = await qb.clone().getCount();
+    if (!total) throw new BadRequestException('没有可导出的 PO，请调整筛选或勾选');
+    if (total > EXPORT_MAX_ROWS) {
+      throw new BadRequestException(`匹配 ${total} 条，超过单次上限 ${EXPORT_MAX_ROWS}，请缩小筛选或勾选导出`);
+    }
+    const orders = await qb.orderBy('po.updated_at', 'DESC').limit(EXPORT_MAX_ROWS).getMany();
+    const orderIds = orders.map((o) => o.id);
+    const caseIds = [...new Set(orders.map((o) => o.serviceCaseId).filter(Boolean) as string[])];
+    const [items, linkedCases] = await Promise.all([
+      orderIds.length
+        ? this.items.find({
+            where: { poId: In(orderIds) },
+            order: { sourceRow: 'ASC', id: 'ASC' },
+          })
+        : Promise.resolve([] as PoItem[]),
+      caseIds.length ? this.cases.find({ where: { id: In(caseIds) } }) : Promise.resolve([] as ServiceCase[]),
+    ]);
+    const linkedMap = new Map(linkedCases.map((c) => [c.id, c]));
+    const workbook = new ExcelJS.Workbook();
+    const listSheet = workbook.addWorksheet('PO列表');
+    listSheet.columns = [
+      { header: 'PO单号', key: 'poNo', width: 18 },
+      { header: 'GSP案例号', key: 'gspCaseNo', width: 18 },
+      { header: '匹配状态', key: 'matchStatus', width: 10 },
+      { header: 'PO总金额', key: 'poTotalAmount', width: 12 },
+      { header: '产品型号', key: 'productModel', width: 20 },
+      { header: '产品台数', key: 'productQty', width: 10 },
+      { header: '项目场景', key: 'projectScene', width: 12 },
+      { header: '项目名称', key: 'projectName', width: 36 },
+      { header: '需求日期', key: 'demandDate', width: 12 },
+      { header: '故障等级', key: 'faultLevel', width: 12 },
+      { header: '工期要求', key: 'durationReq', width: 12 },
+      { header: '需求类型', key: 'demandType', width: 12 },
+      { header: '产品线', key: 'productLine', width: 16 },
+    ];
+    for (const order of orders) {
+      const linked = order.serviceCaseId ? linkedMap.get(order.serviceCaseId) : null;
+      listSheet.addRow({
+        poNo: order.poNo,
+        gspCaseNo: order.gspCaseNo,
+        matchStatus: order.matchStatus === 'matched' ? '已匹配' : '待匹配',
+        poTotalAmount: Number(order.poTotalAmount || 0),
+        productModel: order.productModel || '',
+        productQty: order.productQty == null ? '' : Number(order.productQty),
+        projectScene: order.projectScene || '',
+        projectName: linked?.projectName || order.projectName || '',
+        demandDate: order.demandDate || '',
+        faultLevel: order.faultLevel || '',
+        durationReq: order.durationReq || '',
+        demandType: order.demandType || '',
+        productLine: order.productLine || '',
+      });
+    }
+    listSheet.getRow(1).font = { bold: true };
+    listSheet.autoFilter = { from: 'A1', to: 'M1' };
+
+    const itemSheet = workbook.addWorksheet('服务条目');
+    itemSheet.columns = [
+      { header: 'PO单号', key: 'poNo', width: 18 },
+      { header: '分类', key: 'itemCategory', width: 10 },
+      { header: '服务条目', key: 'itemName', width: 28 },
+      { header: '条目说明', key: 'itemDesc', width: 24 },
+      { header: '单位', key: 'unit', width: 8 },
+      { header: '数量', key: 'qty', width: 10 },
+      { header: '计价状态', key: 'priceStatus', width: 12 },
+      { header: '甲方单价', key: 'settlePrice', width: 12 },
+      { header: '绩效单价', key: 'perfPrice', width: 12 },
+    ];
+    const poNoById = new Map(orders.map((o) => [o.id, o.poNo]));
+    const priceStatusLabel: Record<string, string> = {
+      ok: '已匹配',
+      pending_price: '待配价',
+      ignored: '忽略',
+    };
+    for (const item of items) {
+      itemSheet.addRow({
+        poNo: poNoById.get(item.poId) || '',
+        itemCategory: item.itemCategory === 'special' ? '专用' : '通用',
+        itemName: item.itemName,
+        itemDesc: item.itemDesc || '',
+        unit: item.unit || '',
+        qty: Number(item.qty || 0),
+        priceStatus: priceStatusLabel[item.priceStatus] || item.priceStatus,
+        settlePrice: item.settlePrice == null ? '' : Number(item.settlePrice),
+        perfPrice: item.perfPrice == null ? '' : Number(item.perfPrice),
+      });
+    }
+    itemSheet.getRow(1).font = { bold: true };
+    itemSheet.autoFilter = { from: 'A1', to: 'I1' };
+    return Buffer.from(await workbook.xlsx.writeBuffer());
+  }
+
+  private applyCaseDateRange(
+    qb: ReturnType<Repository<ServiceCase>['createQueryBuilder']>,
+    dateFrom?: string,
+    dateTo?: string,
+  ) {
+    const from = this.parseDateOnly(dateFrom);
+    const to = this.parseDateOnly(dateTo);
+    if (from) {
+      qb.andWhere('COALESCE(c.finish_time, c.created_at) >= :caseDateFrom', {
+        caseDateFrom: `${from}T00:00:00+08:00`,
+      });
+    }
+    if (to) {
+      qb.andWhere('COALESCE(c.finish_time, c.created_at) < :caseDateTo', {
+        caseDateTo: `${this.nextDay(to)}T00:00:00+08:00`,
+      });
+    }
+  }
+
+  private applyPoDateRange(
+    qb: ReturnType<Repository<PoOrder>['createQueryBuilder']>,
+    dateFrom?: string,
+    dateTo?: string,
+  ) {
+    const from = this.parseDateOnly(dateFrom);
+    const to = this.parseDateOnly(dateTo);
+    if (from) {
+      qb.andWhere('COALESCE(po.demand_date::timestamptz, po.created_at) >= :poDateFrom', {
+        poDateFrom: `${from}T00:00:00+08:00`,
+      });
+    }
+    if (to) {
+      qb.andWhere('COALESCE(po.demand_date::timestamptz, po.created_at) < :poDateTo', {
+        poDateTo: `${this.nextDay(to)}T00:00:00+08:00`,
+      });
+    }
+  }
+
+  private parseDateOnly(value?: string) {
+    const text = String(value || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+    return text;
+  }
+
+  private nextDay(yyyyMmDd: string) {
+    const date = new Date(`${yyyyMmDd}T12:00:00+08:00`);
+    date.setDate(date.getDate() + 1);
+    return date.toISOString().slice(0, 10);
   }
 
   async updateCaseProfile(id: string, dto: UpdateCaseProfileDto, user: CurrentUserContext) {

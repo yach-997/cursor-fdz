@@ -1,4 +1,4 @@
-import request from '../utils/request';
+import request, { type AppAxiosRequestConfig } from '../utils/request';
 import type { ApiResponse } from '../types';
 import type {
   FinanceCase,
@@ -140,6 +140,72 @@ export async function downloadFinanceImportTemplate(
   anchor.download = TEMPLATE_FILENAMES[kind];
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+async function downloadBlob(path: string, body: Record<string, unknown>, filename: string) {
+  try {
+    const response = await request.post(path, body, {
+      responseType: 'blob',
+      skipErrorToast: true,
+    } as AppAxiosRequestConfig);
+    const blob = response.data as Blob;
+    if (blob.type && blob.type.includes('application/json')) {
+      const text = await blob.text();
+      let msg = '导出失败';
+      try {
+        msg = JSON.parse(text)?.message || msg;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
+    }
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    const ax = error as { response?: { data?: Blob }; message?: string };
+    if (ax.response?.data instanceof Blob) {
+      const text = await ax.response.data.text();
+      let msg = '导出失败';
+      try {
+        msg = JSON.parse(text)?.message || msg;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
+    }
+    throw error instanceof Error ? error : new Error('导出失败');
+  }
+}
+
+export async function exportFinanceCases(payload: {
+  ids?: string[];
+  status?: string;
+  region?: string;
+  province?: string;
+  city?: string;
+  month?: string;
+  keyword?: string;
+  siteId?: string;
+  siteBind?: 'unassigned' | 'assigned_site';
+  taskType?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}) {
+  await downloadBlob('/cases/export', payload, `案例导出-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+export async function exportPoOrders(payload: {
+  ids?: string[];
+  matchStatus?: 'matched' | 'pending';
+  keyword?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}) {
+  await downloadBlob('/po-orders/export', payload, `PO导出-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 export async function fetchFinanceInspectors(caseId: string) {
   return unwrap(

@@ -41,6 +41,25 @@ export class FinanceCaseQueryDto extends PaginationDto {
   @IsOptional() @IsIn(['unassigned', 'assigned_site']) siteBind?: 'unassigned' | 'assigned_site';
   /** 按服务类型模板 id 筛选；兼容旧值 inspection/service */
   @IsOptional() @IsString() @MaxLength(64) taskType?: string;
+  /** 时间段起（YYYY-MM-DD），按完工时间，无则创建时间 */
+  @IsOptional() @IsString() @MaxLength(10) dateFrom?: string;
+  /** 时间段止（YYYY-MM-DD） */
+  @IsOptional() @IsString() @MaxLength(10) dateTo?: string;
+}
+
+export class ExportCasesDto {
+  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() region?: string;
+  @IsOptional() @IsString() @MaxLength(32) province?: string;
+  @IsOptional() @IsString() @MaxLength(32) city?: string;
+  @IsOptional() @IsString() month?: string;
+  @IsOptional() @IsString() keyword?: string;
+  @IsOptional() @IsPostgresUuid() siteId?: string;
+  @IsOptional() @IsIn(['unassigned', 'assigned_site']) siteBind?: 'unassigned' | 'assigned_site';
+  @IsOptional() @IsString() @MaxLength(64) taskType?: string;
+  @IsOptional() @IsString() @MaxLength(10) dateFrom?: string;
+  @IsOptional() @IsString() @MaxLength(10) dateTo?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) ids?: string[];
 }
 
 export class SetCaseSiteDto {
@@ -77,6 +96,18 @@ export class BatchCreateTasksFromCasesDto {
 export class PoOrderQueryDto extends PaginationDto {
   @IsOptional() @IsIn(['matched', 'pending']) matchStatus?: 'matched' | 'pending';
   @IsOptional() @IsString() keyword?: string;
+  /** 时间段起（YYYY-MM-DD），按需求日期，无则创建时间 */
+  @IsOptional() @IsString() @MaxLength(10) dateFrom?: string;
+  /** 时间段止（YYYY-MM-DD） */
+  @IsOptional() @IsString() @MaxLength(10) dateTo?: string;
+}
+
+export class ExportPoOrdersDto {
+  @IsOptional() @IsIn(['matched', 'pending']) matchStatus?: 'matched' | 'pending';
+  @IsOptional() @IsString() keyword?: string;
+  @IsOptional() @IsString() @MaxLength(10) dateFrom?: string;
+  @IsOptional() @IsString() @MaxLength(10) dateTo?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) ids?: string[];
 }
 
 export class PriceQueryDto extends PaginationDto {
