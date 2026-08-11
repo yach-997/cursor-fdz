@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, NotFoundException, OnModuleInit, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PriceLibrary } from '../../../entities';
@@ -8,6 +8,7 @@ import { CreatePriceDto, PriceQueryDto, UpdatePriceDto } from '../dto/finance.dt
 import { UserRole } from '../../../common/enums';
 import { assertFinanceClearAllowed } from '../../../common/utils/finance-clear-guard';
 import { repairImportChangeRemark } from '../../../common/utils/upload-filename';
+import { PriceMappingService } from './price-mapping.service';
 
 @Injectable()
 export class PriceService implements OnModuleInit {
@@ -16,6 +17,8 @@ export class PriceService implements OnModuleInit {
   constructor(
     @InjectRepository(PriceLibrary) private readonly repo: Repository<PriceLibrary>,
     private readonly logs: ChangeLogService,
+    @Inject(forwardRef(() => PriceMappingService))
+    private readonly mappings: PriceMappingService,
   ) {}
 
   async onModuleInit() {
@@ -69,17 +72,19 @@ export class PriceService implements OnModuleInit {
     };
   }
   async create(dto: CreatePriceDto, user: CurrentUserContext) {
-    return this.repo.save(
+    const saved = await this.repo.save(
       this.repo.create({
         ...dto,
         unitPrice: Number(dto.unitPrice).toFixed(2),
         workHours: dto.workHours == null ? null : Number(dto.workHours).toFixed(2),
         effectiveDate: dto.effectiveDate || new Date().toISOString().slice(0, 10),
-        status: 'active',
+        status: dto.status || 'active',
         createdBy: user.id,
         changeRemark: dto.changeRemark || null,
       }),
     );
+    const applied = await this.applyToCases(saved.itemCode);
+    return { ...saved, applied };
   }
   async update(id: string, dto: UpdatePriceDto, user: CurrentUserContext) {
     const item = await this.repo.findOne({ where: { id } });
@@ -108,7 +113,17 @@ export class PriceService implements OnModuleInit {
       user.id,
       dto.changeRemark || '价格调整',
     );
-    return saved;
+    const applied = await this.applyToCases(saved.itemCode);
+    return { ...saved, applied };
+  }
+
+  /** 价格库变更后回写同编码 PO 条目的结算价/绩效价 */
+  private async applyToCases(itemCode: string) {
+    try {
+      return await this.mappings.recalculate(itemCode);
+    } catch {
+      return null;
+    }
   }
   history(id: string) {
     return this.logs.list('price_library', id);

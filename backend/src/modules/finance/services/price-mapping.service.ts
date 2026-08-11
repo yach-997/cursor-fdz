@@ -14,6 +14,7 @@ import { ChangeLogService } from './change-log.service';
 import {
   builtinTargetCode,
   isIgnoredItem,
+  modelMatches,
   normalizeItemName,
   pickMappedPrice,
 } from './item-matcher';
@@ -143,10 +144,13 @@ export class PriceMappingService {
       if (isIgnoredItem(entry.itemCode)) {
         entry.settlePrice = null;
         entry.itemRevenue = '0.00';
+        entry.perfPrice = null;
+        entry.itemPerf = '0.00';
         entry.priceStatus = 'ignored';
         if (order.serviceCaseId) affectedCases.add(order.serviceCaseId);
         continue;
       }
+      const serviceCase = order.serviceCaseId ? caseMap.get(order.serviceCaseId) : null;
       const contextItemNames = (entriesByPo.get(entry.poId) || [])
         .filter((item) => item.itemCategory === 'special' && !isIgnoredItem(item.itemCode))
         .map((item) => item.itemCode);
@@ -162,6 +166,25 @@ export class PriceMappingService {
       entry.settlePrice = matched?.price.unitPrice || null;
       entry.itemRevenue = money(Number(entry.qty) * Number(matched?.price.unitPrice || 0));
       entry.priceStatus = matched ? 'ok' : 'pending_price';
+
+      const perfCodes = [
+        ...new Set([matched?.price.itemCode, matched?.targetItemCode, entry.itemCode].filter(Boolean)),
+      ] as string[];
+      const perf =
+        perfCodes
+          .map((code) =>
+            this.pickPerfPrice(
+              prices,
+              code,
+              order.projectScene,
+              order.productModel,
+              serviceCase?.region || null,
+            ),
+          )
+          .find(Boolean) || null;
+      entry.perfPrice = perf?.unitPrice || null;
+      entry.itemPerf = money(Number(entry.qty) * Number(perf?.unitPrice || 0));
+
       if (matched) priced += 1;
       if (order.serviceCaseId) affectedCases.add(order.serviceCaseId);
     }
@@ -178,6 +201,33 @@ export class PriceMappingService {
       pendingPrice: Number(totals.pendingPrice || 0),
       income: money(Number(totals.income || 0)),
     };
+  }
+
+  private pickPerfPrice(
+    prices: PriceLibrary[],
+    code: string,
+    scene: string | null,
+    model: string | null,
+    region: string | null,
+  ) {
+    return prices
+      .filter(
+        (p) =>
+          p.priceType === 'perf' &&
+          p.status === 'active' &&
+          p.itemCode === code &&
+          (!p.productModel || modelMatches(p.productModel, model)) &&
+          (!p.scene || p.scene === scene) &&
+          (!p.region || p.region === region) &&
+          (!p.coopType || p.coopType === 'self'),
+      )
+      .sort(
+        (a, b) =>
+          Number(Boolean(b.scene)) - Number(Boolean(a.scene)) ||
+          Number(Boolean(b.productModel)) - Number(Boolean(a.productModel)) ||
+          Number(Boolean(b.region)) - Number(Boolean(a.region)) ||
+          b.effectiveDate.localeCompare(a.effectiveDate),
+      )[0];
   }
 
   private async recalculateLedgers(caseIds: string[], caseMap: Map<string, ServiceCase>) {

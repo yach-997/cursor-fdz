@@ -122,7 +122,7 @@ export default function PricesPage() {
     const values = await form.validateFields();
     if (editing) await updatePrice(editing.id, values);
     else await createPrice(values);
-    message.success('价格已保存');
+    message.success('价格已保存，并已回写到相关案例条目；请返回结算审核刷新明细');
     setModalOpen(false);
     void load();
   };
