@@ -147,7 +147,7 @@ export default function SettlementAmountDrawer({ open, caseId, caseLabel, onClos
                         className="finance-missing-price-link"
                         onClick={onClose}
                       >
-                        <span style={{ color: '#b54708' }}>—</span>
+                        <span style={{ color: '#b54708' }}>未配</span>
                       </Link>
                     </Tooltip>
                   ) : (
