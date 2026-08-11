@@ -127,15 +127,19 @@ export default function AssessmentEventDrawer({
 
   const title = serviceCaseId
     ? `事件扣罚 · ${caseLabel || ''}`
-    : `专业指标事件考核 · ${userName || people[0]?.realName || ''}`;
+    : `事件明细 · ${userName || people[0]?.realName || ''}`;
 
   return (
     <Drawer width={drawerWidth} open={open} onClose={onClose} title={title}>
-      {serviceCaseId && (
+      {serviceCaseId ? (
         <div style={{ marginBottom: 12, color: '#666' }}>
           {multiPerson
-            ? `多人案例请先选择扣罚对象；扣罚只计入该工程师 ${month} 月汇总，并关联本案例追溯。`
-            : `本条扣罚计入工程师 ${month} 月事件扣罚汇总，并关联当前案例便于一单一算追溯。`}
+            ? `多人案例请先选择扣罚对象；扣罚只计入该工程师 ${month} 月汇总，并关联本案例追溯（与考核管理同一数据）。`
+            : `审单时登记最顺手。本条计入工程师 ${month} 月事件扣罚汇总，并关联当前案例（与考核管理同一数据）。`}
+        </div>
+      ) : (
+        <div style={{ marginBottom: 12, color: '#666' }}>
+          与「结算审核」共用同一套事件扣罚。有案例时建议优先在结算审核登记；本页用于补录或查看，最终都进月度结算。
         </div>
       )}
       <Form form={form} layout="vertical" initialValues={{ qty: 1 }}>

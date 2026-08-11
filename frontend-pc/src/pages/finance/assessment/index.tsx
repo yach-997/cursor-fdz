@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Card, Input, InputNumber, Select, Space, Table, Tag, message } from 'antd';
-import { DeleteOutlined } from '@ant-design/icons';
+import { Button, Card, Input, InputNumber, Select, Space, Table, Tag, Tooltip, message } from 'antd';
+import { DeleteOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
   clearFinanceAssessments,
@@ -14,6 +14,15 @@ import type { SiteItem } from '../../../types';
 import { useAuthStore } from '../../../stores/auth';
 import { canUseDangerousClear, confirmDangerousClear } from '../../../utils/finance-clear';
 import AssessmentEventDrawer from '../components/AssessmentEventDrawer';
+
+const colTip = (title: string, tip: string) => (
+  <span>
+    {title}{' '}
+    <Tooltip title={tip}>
+      <QuestionCircleOutlined style={{ color: '#8c8c8c' }} />
+    </Tooltip>
+  </span>
+);
 
 export default function FinanceAssessmentPage() {
   const user = useAuthStore((state) => state.user);
@@ -165,8 +174,8 @@ export default function FinanceAssessmentPage() {
     <Card className="finance-card" title="月度考核与补助">
       <div className="finance-review-tip">
         {isManager
-          ? '本页给本网格已聘工程师打分（含自己兼工程师且已聘网格）。不能改自己的分数，本人考核由管理员录入。网格内名次仅参考；全司奖罚：兼岗只进网格长池。事件扣罚可在本页「事件」或结算审核里登记，会进入月度结算。列表为空请先「聘用到网格」。'
-          : '网格内名次按各网格；全司工程师优/劣各3±300，网格长优/劣各1±500。网格长兼工程师只参加网格长全司排名。事件扣罚计入月度结算（与计件绩效、行程报销一并汇总）。'}
+          ? '本页给本网格已聘工程师打分（含自己兼工程师且已聘网格）。不能改自己的分数，本人考核由管理员录入。网格内名次仅参考；全司奖罚：兼岗只进网格长池。有案例的事件扣罚优先在「结算审核」登记；本页「事件」用于补录/查看（与审核同一套数据，计入月结）。列表为空请先「聘用到网格」。'
+          : '网格内名次按各网格；全司工程师优/劣各3±300，网格长优/劣各1±500。网格长兼工程师只参加网格长全司排名。事件扣罚与结算审核共用同一数据：审单时登记最顺手，本页可补录或查看，最终都进月度结算。'}
       </div>
       <Space className="finance-toolbar" wrap>
         <Input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
@@ -279,7 +288,10 @@ export default function FinanceAssessmentPage() {
               isAdmin ? input(row, 'rewardAmount') : `¥${Number(row.rewardAmount || 0).toFixed(2)}`,
           },
           {
-            title: '事件扣罚',
+            title: colTip(
+              '事件扣罚',
+              '本月已登记合计（与结算审核同一数据）。点「事件」可补录或查看明细；有案例时建议优先在结算审核登记。',
+            ),
             dataIndex: 'eventPenalty',
             width: 110,
             render: (v) => `¥${Number(v || 0).toFixed(2)}`,
@@ -318,7 +330,7 @@ export default function FinanceAssessmentPage() {
                     保存
                   </Button>
                   <Button type="link" onClick={() => setEventTarget(row)}>
-                    事件
+                    事件明细
                   </Button>
                 </Space>
               ),

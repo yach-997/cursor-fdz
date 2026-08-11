@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import {
@@ -20,6 +20,7 @@ import {
   repairImportChangeRemark,
   resolveUploadFilename,
 } from '../../../common/utils/upload-filename';
+import { PriceMappingService } from './price-mapping.service';
 
 const money = (value: number) => (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2);
 const PO_CHUNK = 40;
@@ -47,6 +48,8 @@ export class FinanceImportService {
     @InjectRepository(ItemPriceMapping) private readonly mappings: Repository<ItemPriceMapping>,
     @InjectRepository(InspectionTemplate)
     private readonly templates: Repository<InspectionTemplate>,
+    @Inject(forwardRef(() => PriceMappingService))
+    private readonly priceMappings: PriceMappingService,
   ) {}
 
   private fileName(file: Express.Multer.File, opts?: UploadNameOpts) {
@@ -355,7 +358,6 @@ export class FinanceImportService {
         });
       }
     }
-    // 批量写入；冲突时再回退逐条，避免整批失败
     const saved = await this.savePriceEntities(toSave);
     success += saved.success;
     failures.push(...saved.failures);
@@ -363,6 +365,13 @@ export class FinanceImportService {
     const mergedFailures = [...(offset === 0 ? [] : prevFailures), ...failures].slice(-500);
     const totalSuccess = Number(batch.successRows || 0) + success;
     await this.finishBatch(batch, totalSuccess, mergedFailures);
+
+    // 附件1/清单导入只写价格库；完成后回写已有 PO 条目，否则结算审核明细仍显示「未配」
+    let applied: Awaited<ReturnType<PriceMappingService['recalculate']>> | null = null;
+    if (done && totalSuccess > 0) {
+      applied = await this.priceMappings.recalculate().catch(() => null);
+    }
+
     return {
       batchId: batch.id,
       totalRows,
@@ -372,6 +381,7 @@ export class FinanceImportService {
       nextOffset,
       done,
       chunkSuccess: success,
+      applied,
     };
   }
 
@@ -493,7 +503,10 @@ export class FinanceImportService {
     await this.finishBatch(batch, totalSuccess, mergedFailures);
 
     let refreshedItems = 0;
-    if (done) refreshedItems = await this.refreshPerfOnItems();
+    if (done && totalSuccess > 0) {
+      const applied = await this.priceMappings.recalculate().catch(() => null);
+      refreshedItems = applied?.affectedItems || 0;
+    }
 
     return {
       batchId: batch.id,
@@ -506,60 +519,6 @@ export class FinanceImportService {
       chunkSuccess: success,
       refreshedItems,
     };
-  }
-
-  /** 导入绩效价后，按最新库刷新 PO 明细上的绩效单价 */
-  private async refreshPerfOnItems() {
-    const [prices, orders, cases, items] = await Promise.all([
-      this.prices.find({ where: { priceType: 'perf', status: 'active' } }),
-      this.orders.find(),
-      this.cases.find(),
-      this.items.find(),
-    ]);
-    if (!prices.length || !items.length) return 0;
-    const orderMap = new Map(orders.map((order) => [order.id, order]));
-    const caseMap = new Map(cases.map((item) => [item.id, item]));
-    let updated = 0;
-    const toSave: PoItem[] = [];
-    for (const item of items) {
-      if (isIgnoredItem(item.itemCode)) {
-        if (item.perfPrice != null || Number(item.itemPerf || 0) !== 0) {
-          item.perfPrice = null;
-          item.itemPerf = '0.00';
-          toSave.push(item);
-          updated += 1;
-        }
-        continue;
-      }
-      const order = orderMap.get(item.poId);
-      if (!order) continue;
-      const serviceCase = order.serviceCaseId ? caseMap.get(order.serviceCaseId) : null;
-      const codes = [...new Set([item.itemCode].filter(Boolean))];
-      const perf =
-        codes
-          .map((code) =>
-            this.pickPrice(
-              prices,
-              'perf',
-              code,
-              order.projectScene,
-              order.productModel,
-              serviceCase?.region || null,
-              'self',
-            ),
-          )
-          .find(Boolean) || null;
-      const nextPrice = perf?.unitPrice || null;
-      const nextPerf = money(Number(item.qty) * Number(nextPrice || 0));
-      if (item.perfPrice !== nextPrice || item.itemPerf !== nextPerf) {
-        item.perfPrice = nextPrice;
-        item.itemPerf = nextPerf;
-        toSave.push(item);
-        updated += 1;
-      }
-    }
-    if (toSave.length) await this.items.save(toSave, { chunk: 100 });
-    return updated;
   }
 
   async listBatches(type?: string) {

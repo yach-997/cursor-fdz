@@ -123,16 +123,36 @@ export class PriceMappingService {
     return this.repriceItems({ sourceItemName });
   }
 
-  /** 仅重算指定 PO 下条目（手工编辑 PO / 案例区域变更后） */
+  /** 仅重算指定 PO 下条目（手工编辑 PO / 案例区域变更后；管理员显式操作，不冻结） */
   async repriceByPoIds(poIds: string[]) {
     const ids = [...new Set(poIds.filter(Boolean))];
     if (!ids.length) {
-      return { affectedItems: 0, pricedItems: 0, pendingPrice: 0, income: '0.00' };
+      return { affectedItems: 0, pricedItems: 0, skippedFrozen: 0, pendingPrice: 0, income: '0.00' };
     }
-    return this.repriceItems({ poIds: ids });
+    return this.repriceItems({ poIds: ids, ignoreFreeze: true });
   }
 
-  private async repriceItems(filter: { sourceItemName?: string; poIds?: string[] }) {
+  /**
+   * 已通过结算审核 / 已月结：价格库变更不再回写单价与台账（审过即冻结）。
+   * 待审核、已驳回、尚未进审的案例仍可重算。
+   * 手工「保存并重计价」可绕过「已通过」冻结以便纠偏；已月结始终冻结。
+   */
+  private isPriceFrozen(
+    serviceCase: ServiceCase | null | undefined,
+    reviewStatus: string | null | undefined,
+    ignoreApprovedFreeze?: boolean,
+  ) {
+    if (!serviceCase) return false;
+    if (serviceCase.status === 'month_locked') return true;
+    if (ignoreApprovedFreeze) return false;
+    return reviewStatus === 'approved';
+  }
+
+  private async repriceItems(filter: {
+    sourceItemName?: string;
+    poIds?: string[];
+    ignoreFreeze?: boolean;
+  }) {
     const [prices, mappings, orders, cases] = await Promise.all([
       this.prices.find({ where: { status: 'active' }, order: { effectiveDate: 'DESC' } }),
       this.mappings.find({ where: { status: 'active' } }),
@@ -143,6 +163,13 @@ export class PriceMappingService {
     ]);
     const orderMap = new Map(orders.map((order) => [order.id, order]));
     const caseMap = new Map(cases.map((item) => [item.id, item]));
+    const caseIds = [
+      ...new Set(orders.map((order) => order.serviceCaseId).filter((id): id is string => !!id)),
+    ];
+    const ledgers = caseIds.length
+      ? await this.performance.find({ where: { serviceCaseId: In(caseIds) } })
+      : [];
+    const reviewByCase = new Map(ledgers.map((row) => [row.serviceCaseId, row.reviewStatus]));
     const entries = await this.items.find({
       where: filter.poIds?.length
         ? { poId: In(filter.poIds) }
@@ -158,20 +185,28 @@ export class PriceMappingService {
       entriesByPo.get(entry.poId)!.push(entry);
     }
     const affectedCases = new Set<string>();
+    const mutableEntries: PoItem[] = [];
     let priced = 0;
+    let skippedFrozen = 0;
     for (const entry of entries) {
       const order = orderMap.get(entry.poId);
       if (!order) continue;
+      const serviceCase = order.serviceCaseId ? caseMap.get(order.serviceCaseId) : null;
+      const reviewStatus = order.serviceCaseId ? reviewByCase.get(order.serviceCaseId) : null;
+      if (this.isPriceFrozen(serviceCase, reviewStatus, filter.ignoreFreeze)) {
+        skippedFrozen += 1;
+        continue;
+      }
       if (isIgnoredItem(entry.itemCode)) {
         entry.settlePrice = null;
         entry.itemRevenue = '0.00';
         entry.perfPrice = null;
         entry.itemPerf = '0.00';
         entry.priceStatus = 'ignored';
+        mutableEntries.push(entry);
         if (order.serviceCaseId) affectedCases.add(order.serviceCaseId);
         continue;
       }
-      const serviceCase = order.serviceCaseId ? caseMap.get(order.serviceCaseId) : null;
       const contextItemNames = (entriesByPo.get(entry.poId) || [])
         .filter((item) => item.itemCategory === 'special' && !isIgnoredItem(item.itemCode))
         .map((item) => item.itemCode);
@@ -207,9 +242,12 @@ export class PriceMappingService {
       entry.itemPerf = money(Number(entry.qty) * Number(perf?.unitPrice || 0));
 
       if (matched) priced += 1;
+      mutableEntries.push(entry);
       if (order.serviceCaseId) affectedCases.add(order.serviceCaseId);
     }
-    await this.items.save(entries, { chunk: 100 });
+    if (mutableEntries.length) {
+      await this.items.save(mutableEntries, { chunk: 100 });
+    }
     await this.recalculateLedgers([...affectedCases], caseMap);
     const totals = filter.poIds?.length
       ? await this.items
@@ -224,8 +262,9 @@ export class PriceMappingService {
           .addSelect('COALESCE(SUM(item.item_revenue),0)', 'income')
           .getRawOne();
     return {
-      affectedItems: entries.length,
+      affectedItems: mutableEntries.length,
       pricedItems: priced,
+      skippedFrozen,
       pendingPrice: Number(totals.pendingPrice || 0),
       income: money(Number(totals.income || 0)),
     };

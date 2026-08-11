@@ -438,6 +438,7 @@ export async function recalculateItemPrices() {
       ApiResponse<{
         affectedItems: number;
         pricedItems: number;
+        skippedFrozen?: number;
         pendingPrice: number;
         income: string;
       }>

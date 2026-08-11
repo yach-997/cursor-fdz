@@ -419,7 +419,7 @@ export default function FinanceReviewPage() {
               {
                 title: colTip(
                   '事件扣罚',
-                  '本案例已登记的事件扣罚合计。点「明细」可看原因与对象。',
+                  '本案例已登记的事件扣罚合计（与考核管理同一数据）。点「事件」可登记；点「明细」可看原因与对象。',
                 ),
                 dataIndex: 'eventPenalty',
                 width: 100,

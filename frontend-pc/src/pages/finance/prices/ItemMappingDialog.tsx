@@ -67,7 +67,12 @@ export default function ItemMappingDialog({ open, onClose, onChanged }: Props) {
     setLoading(true);
     try {
       const result = await recalculateItemPrices();
-      message.success(`已重算 ${result.affectedItems} 条，剩余待定价 ${result.pendingPrice} 条`);
+      const skipped = Number(result.skippedFrozen || 0);
+      message.success(
+        skipped > 0
+          ? `已重算 ${result.affectedItems} 条（跳过已通过/已月结 ${skipped} 条），剩余待定价 ${result.pendingPrice} 条`
+          : `已重算 ${result.affectedItems} 条，剩余待定价 ${result.pendingPrice} 条`,
+      );
       await load();
       onChanged();
     } finally {

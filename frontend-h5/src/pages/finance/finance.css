@@ -773,6 +773,23 @@
   color: #9aa8a2;
   font-weight: 500;
 }
+.single-unit-serial-card {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f4faf7;
+  border: 1px solid #d7ebe3;
+}
+.single-unit-serial-card .unit-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.single-unit-serial-card .unit-row-main > strong {
+  color: #14362c;
+  font-size: 15px;
+}
 .unit-mine-list em { font-style: normal; color: #5f746d; font-size: 12px; }
 .unit-mine-actions {
   display: inline-flex;

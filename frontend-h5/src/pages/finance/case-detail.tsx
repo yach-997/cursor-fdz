@@ -155,6 +155,28 @@ export default function FinanceCaseDetailPage() {
     // 计划缩减后，超出计划且仍 open 的不展示；有进展的历史行仍可见
     return raw.filter((u) => u.seq <= plannedCap || u.status !== 'open');
   }, [item?.units, plannedCap]);
+  /** 单人一台：详情页展示已识别序列号（半途退出后仍可见） */
+  const singleUnitSerial = useMemo(() => {
+    if (useUnitFlow || !item) return null;
+    const mine =
+      (userId &&
+        units.find(
+          (u) =>
+            u.inspectorId === userId &&
+            u.status !== 'open' &&
+            u.status !== 'cancelled',
+        )) ||
+      null;
+    const preferred =
+      mine ||
+      units.find((u) => !!u.deviceSerial?.trim()) ||
+      units.find((u) => u.seq === 1) ||
+      units[0] ||
+      null;
+    if (!preferred) return null;
+    const serial = preferred.deviceSerial?.trim() || '';
+    return { seq: preferred.seq, serial, status: preferred.status };
+  }, [useUnitFlow, item, units, userId]);
   const openUnits = useMemo(
     () =>
       units
@@ -473,7 +495,28 @@ export default function FinanceCaseDetailPage() {
               </dd>
             </div>
           )}
+          {!useUnitFlow && singleUnitSerial && (
+            <div>
+              <dt>序列号</dt>
+              <dd className={singleUnitSerial.serial ? '' : 'mobile-finance-muted'}>
+                {singleUnitSerial.serial || '未识别'}
+              </dd>
+            </div>
+          )}
         </dl>
+
+        {!useUnitFlow && singleUnitSerial?.serial ? (
+          <div className="single-unit-serial-card">
+            <div className="unit-row-main">
+              <strong>
+                {unitLabel} #{singleUnitSerial.seq}
+              </strong>
+              <span className={`unit-serial ${singleUnitSerial.serial ? '' : 'is-empty'}`}>
+                序列号：{singleUnitSerial.serial || '未识别'}
+              </span>
+            </div>
+          </div>
+        ) : null}
 
         {!useUnitFlow && canInspect && (
           <>
