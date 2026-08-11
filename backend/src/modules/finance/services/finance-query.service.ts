@@ -18,6 +18,7 @@ import {
 } from '../dto/finance.dto';
 import { UserRole } from '../../../common/enums';
 import { assertFinanceClearAllowed } from '../../../common/utils/finance-clear-guard';
+import { monthKeyShanghai } from '../../../common/utils/month-key';
 import { applyDemandTypeForCases } from './demand-type-match';
 
 const money = (value: number) => (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2);
@@ -1139,6 +1140,10 @@ export class FinanceQueryService {
     ledger.caseRevenue = Number(totals.revenue || 0).toFixed(2);
     ledger.perfBase = Number(totals.perf || 0).toFixed(2);
     ledger.perfFinal = (Number(totals.perf || 0) - Number(ledger.deduction || 0)).toFixed(2);
+    // PO 后挂/重算时补写月份，避免审核前 H5 收入/月结按 month 过滤不到
+    if (serviceCase.finishTime || !ledger.month) {
+      ledger.month = monthKeyShanghai(serviceCase.finishTime || new Date());
+    }
     const saved = await this.performance.save(ledger);
     if (serviceCase.status === 'finished') {
       serviceCase.status = 'settle_review';

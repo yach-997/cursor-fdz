@@ -105,6 +105,11 @@
   opacity: .82;
   letter-spacing: .04em;
 }
+.inc-bill-month-status {
+  margin: 4px 0 0;
+  font-size: 12px;
+  opacity: 0.85;
+}
 .inc-bill-sum > strong {
   display: block;
   margin-top: 4px;

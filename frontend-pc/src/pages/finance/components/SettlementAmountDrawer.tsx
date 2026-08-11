@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Drawer, Empty, Spin, Table, Tooltip, Typography } from 'antd';
+import { Drawer, Empty, Spin, Table, Tag, Tooltip, Typography } from 'antd';
 import { Link } from 'react-router-dom';
 import { fetchReviewAmountBreakdown } from '../../../api/finance';
 import type { ReviewAmountBreakdown } from '../../../types/finance';
 
 const money = (v: string | number | null | undefined) => `¥${Number(v || 0).toFixed(2)}`;
+
+const expenseStatusTag = (status?: string) => {
+  if (status === 'approved') return <Tag color="green">已通过</Tag>;
+  if (status === 'rejected') return <Tag color="red">已驳回</Tag>;
+  if (status === 'submitted') return <Tag color="gold">待审核</Tag>;
+  if (status === 'draft') return <Tag>草稿/无行程</Tag>;
+  return <Tag>{status || '-'}</Tag>;
+};
 
 type BreakdownItem = ReviewAmountBreakdown['items'][number];
 
@@ -263,6 +271,60 @@ export default function SettlementAmountDrawer({ open, caseId, caseLabel, onClos
                 width: 100,
                 align: 'right' as const,
                 render: (v) => <span className="is-neg">{money(v)}</span>,
+              },
+            ]}
+          />
+
+          <Typography.Title level={5} style={{ marginTop: 24 }}>
+            行程报销
+            {Number(data.pendingExpenseCount || 0) > 0 ? (
+              <Typography.Text type="warning" style={{ marginLeft: 8, fontSize: 13, fontWeight: 400 }}>
+                待审 {data.pendingExpenseCount} 条
+              </Typography.Text>
+            ) : null}
+          </Typography.Title>
+          <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+            报销在「结算审核 → 行程报销」页签单独核定，与案例结算通过互不影响。
+            {Number(data.pendingExpenseCount || 0) > 0 ? (
+              <>
+                {' '}
+                <Link to="/finance/review?scope=expense" onClick={onClose}>
+                  去核定报销
+                </Link>
+              </>
+            ) : null}
+          </Typography.Paragraph>
+          <Table
+            size="small"
+            rowKey="id"
+            pagination={false}
+            dataSource={data.expenses || []}
+            locale={{ emptyText: '本案例暂无行程报销' }}
+            columns={[
+              {
+                title: '工程师',
+                dataIndex: 'inspectorName',
+                width: 100,
+                ellipsis: true,
+                render: (v) => v || '—',
+              },
+              {
+                title: '申报/核定',
+                width: 130,
+                render: (_, row) => {
+                  const claim = row.claimAmount ?? row.amount;
+                  const approved =
+                    row.status === 'approved' ? row.amount : null;
+                  return approved != null
+                    ? `${money(claim)} → ${money(approved)}`
+                    : money(claim);
+                },
+              },
+              {
+                title: '状态',
+                dataIndex: 'status',
+                width: 100,
+                render: (v) => expenseStatusTag(v),
               },
             ]}
           />

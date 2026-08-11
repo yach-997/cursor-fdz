@@ -97,6 +97,22 @@ function PenaltyList({ items }: { items: IncomeEventPenalty[] }) {
   );
 }
 
+/** 单案到手：绩效 + 已核报销 − 事件扣罚（与明细卡片一致） */
+function caseTakeHome(item: IncomeLedger) {
+  const earned = Number(item.perfFinal || 0);
+  const penaltyTotal = Number(item.eventPenaltyTotal || 0);
+  const approvedExpense = (item.expenses || [])
+    .filter((e) => e.status === 'approved')
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  return earned + approvedExpense - penaltyTotal;
+}
+
+const monthStatusLabel: Record<string, string> = {
+  draft: '未锁定',
+  corrected: '已校正',
+  locked: '已锁定',
+};
+
 function CaseSheet({
   item,
   onClose,
@@ -114,7 +130,7 @@ function CaseSheet({
   const approvedExpense = myExpenses
     .filter((e) => e.status === 'approved')
     .reduce((sum, e) => sum + Number(e.amount || 0), 0);
-  const net = earned + approvedExpense - penaltyTotal;
+  const net = caseTakeHome(item);
   const expenseStatusLabel: Record<string, string> = {
     submitted: '待审',
     approved: '已通过',
@@ -273,7 +289,7 @@ export default function MyIncomePage() {
             ? ''
             : weekdayShort[new Date(`${key}T12:00:00`).getDay()],
         items,
-        sum: items.reduce((n, it) => n + Number(it.perfFinal || 0), 0),
+        sum: items.reduce((n, it) => n + caseTakeHome(it), 0),
       }));
   }, [data?.list]);
 
@@ -355,6 +371,11 @@ export default function MyIncomePage() {
             <strong className={breakdown.final < 0 ? 'is-neg' : ''}>
               {money(breakdown.final)}
             </strong>
+            {settlement?.status ? (
+              <p className="inc-bill-month-status">
+                月结状态 · {monthStatusLabel[settlement.status] || settlement.status}
+              </p>
+            ) : null}
             <div className="inc-bill-stats">
               <div>
                 <span>计件</span>

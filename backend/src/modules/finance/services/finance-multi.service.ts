@@ -22,6 +22,7 @@ import {
 } from '../../../entities';
 import { CommonStatus, TaskStatus, UserRole } from '../../../common/enums';
 import { CurrentUserContext } from '../../../common/interfaces';
+import { monthKeyShanghai } from '../../../common/utils/month-key';
 import { userHasRole } from '../../../common/utils/user-roles';
 import { VisionService } from '../../ai/vision.service';
 import { ChangeLogService } from './change-log.service';
@@ -1067,7 +1068,7 @@ export class FinanceMultiService implements OnModuleInit {
       } else {
         claim.amount = Number(claim.claimAmount || claim.amount || 0).toFixed(2);
       }
-      claim.month = (serviceCase.finishTime || new Date()).toISOString().slice(0, 7);
+      claim.month = monthKeyShanghai(serviceCase.finishTime || new Date());
     } else {
       claim.month = null;
     }
@@ -1249,6 +1250,8 @@ export class FinanceMultiService implements OnModuleInit {
   ) {
     if (urls !== undefined) {
       const list = [...new Set((urls || []).filter(Boolean))].slice(0, 12);
+      // 空数组不覆盖已有图：结束保存常带 startNavUrls:[]，会误清空开工已传导航
+      if (!list.length && this.navUrlList(claim, kind).length) return;
       if (kind === 'start') {
         claim.startNavUrls = list;
         claim.startNavUrl = list[0] || null;

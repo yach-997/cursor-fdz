@@ -38,6 +38,7 @@ import {
   WorkTaskType,
 } from '../../../common/enums';
 import { CurrentUserContext } from '../../../common/interfaces';
+import { monthKeyShanghai } from '../../../common/utils/month-key';
 import { userHasRole } from '../../../common/utils/user-roles';
 import {
   DeductionDto,
@@ -1163,7 +1164,7 @@ export class FinanceWorkflowService {
 
   async myIncome(month: string | undefined, user: CurrentUserContext) {
     this.assertInspector(user);
-    const selectedMonth = month || new Date().toISOString().slice(0, 7);
+    const selectedMonth = month || monthKeyShanghai();
 
     // 1) 优先按分账取本人绩效（多人案例）
     const shareRows = await this.shares
@@ -1498,7 +1499,7 @@ export class FinanceWorkflowService {
     ledger.caseRevenue = caseRevenue.toFixed(2);
     ledger.perfBase = perfBase.toFixed(2);
     ledger.perfFinal = Math.max(0, perfBase - Number(ledger.deduction || 0)).toFixed(2);
-    ledger.month = (serviceCase.finishTime || new Date()).toISOString().slice(0, 7);
+    ledger.month = monthKeyShanghai(serviceCase.finishTime || new Date());
     if (resetReview) {
       ledger.reviewStatus = 'pending';
       ledger.reviewerId = null;

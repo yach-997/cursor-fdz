@@ -331,8 +331,21 @@ export default function FinanceExpensePage() {
     const autoFinish = search.get('autoFinish') === '1';
     setBusy(true);
     try {
+      // 与 trip-steps.persistTripEnd 一致：结束保存只带非空开始字段，避免空数组冲掉开工导航图
       const saved = await saveUnitTripExpense(id, unitId, {
-        ...payload({ tripSkipped: false }),
+        tripSkipped: false,
+        ...(startOdometerUrl ? { startOdometerUrl } : {}),
+        ...(startNavUrls.length
+          ? { startNavUrls, startNavUrl: startNavUrls[0] }
+          : {}),
+        ...(startMileage !== '' ? { startMileage: Number(startMileage) } : {}),
+        endOdometerUrl: endOdometerUrl || null,
+        endNavUrls,
+        endNavUrl: endNavUrls[0] || null,
+        endMileage: endMileage === '' ? null : Number(endMileage),
+        amount: Number(amount) || 0,
+        voucherUrls,
+        note,
         submit: submitFee && Number(amount) > 0,
       });
       setStatus(saved.status);

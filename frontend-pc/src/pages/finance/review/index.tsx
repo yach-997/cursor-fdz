@@ -418,6 +418,19 @@ export default function FinanceReviewPage() {
                 render: (v) => moneyText(v),
               },
               {
+                title: colTip(
+                  '待审报销',
+                  '本案例仍有待核定的行程报销。案例结算通过不代替报销审核，请切换到「行程报销」页签处理。',
+                ),
+                dataIndex: 'pendingExpenseCount',
+                width: 100,
+                render: (v) => {
+                  const n = Number(v || 0);
+                  if (n <= 0) return <Tag>无</Tag>;
+                  return <Tag color="orange">{n} 条</Tag>;
+                },
+              },
+              {
                 title: '操作',
                 fixed: 'right' as const,
                 width: tab === 'approved' ? 140 : 220,
@@ -509,9 +522,17 @@ export default function FinanceReviewPage() {
                 </Form.Item>
               )}
               {action === 'approve' && (
-                <Form.Item name="comment" label="审核意见（可选）">
-                  <Input.TextArea rows={3} />
-                </Form.Item>
+                <>
+                  {Number(current?.pendingExpenseCount || 0) > 0 ? (
+                    <p style={{ marginTop: 0, color: '#b54708' }}>
+                      本案例仍有 {current?.pendingExpenseCount}{' '}
+                      条待审行程报销。通过案例结算不会自动核定报销，请稍后到「行程报销」页签处理。
+                    </p>
+                  ) : null}
+                  <Form.Item name="comment" label="审核意见（可选）">
+                    <Input.TextArea rows={3} />
+                  </Form.Item>
+                </>
               )}
             </Form>
           </Modal>

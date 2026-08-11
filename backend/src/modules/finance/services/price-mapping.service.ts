@@ -10,6 +10,7 @@ import {
   ServiceCase,
 } from '../../../entities';
 import { CurrentUserContext } from '../../../common/interfaces';
+import { monthKeyShanghai } from '../../../common/utils/month-key';
 import { ChangeLogService } from './change-log.service';
 import {
   builtinTargetCode,
@@ -287,6 +288,9 @@ export class PriceMappingService {
       ledger.caseRevenue = money(Number(total.revenue || 0));
       ledger.perfBase = money(Number(total.perf || 0));
       ledger.perfFinal = money(Number(total.perf || 0) - Number(ledger.deduction || 0));
+      if (serviceCase.finishTime || !ledger.month) {
+        ledger.month = monthKeyShanghai(serviceCase.finishTime || new Date());
+      }
       ledgers.push(ledger);
     }
     await this.performance.save(ledgers, { chunk: 100 });
