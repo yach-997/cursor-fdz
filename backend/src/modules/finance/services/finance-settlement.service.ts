@@ -146,6 +146,7 @@ export class FinanceSettlementService implements OnModuleInit {
       ),
     ];
     const siteNames = await this.scope.siteNameMap(siteIds);
+    const managedSiteNames = await this.scope.managedSiteNamesByUsers(personIds);
 
     return people.map((person) => {
       const saved = rowMap.get(person.id);
@@ -159,6 +160,8 @@ export class FinanceSettlementService implements OnModuleInit {
         (saved?.siteRankResult && /^\d+$/.test(saved.siteRankResult) ? saved.siteRankResult : null);
       const userRole =
         isManager && isInspector ? 'dual' : isManager ? UserRole.SITE_MANAGER : UserRole.INSPECTOR;
+      const inspectorSiteName = isInspector && siteId ? siteNames.get(siteId) || null : null;
+      const managerSiteName = isManager ? managedSiteNames.get(person.id) || null : null;
       return {
         ...saved,
         userId: person.id,
@@ -168,7 +171,8 @@ export class FinanceSettlementService implements OnModuleInit {
         userRole,
         month,
         siteId: isInspector ? siteId : null,
-        siteName: isInspector && siteId ? siteNames.get(siteId) || null : null,
+        // 工程师显示聘站；纯网格长显示其管理的网格（正/副）
+        siteName: inspectorSiteName || managerSiteName,
         eventPenalty: saved?.eventPenalty || '0.00',
         siteRankResult: isInspector ? siteRank : null,
         rankResult: saved?.rankResult || null,

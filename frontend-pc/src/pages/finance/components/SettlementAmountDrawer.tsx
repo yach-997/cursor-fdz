@@ -3,6 +3,7 @@ import { Drawer, Empty, Spin, Table, Tag, Tooltip, Typography } from 'antd';
 import { Link } from 'react-router-dom';
 import { fetchReviewAmountBreakdown } from '../../../api/finance';
 import type { ReviewAmountBreakdown } from '../../../types/finance';
+import { useDrawerWidth } from '../../../hooks/useDrawerWidth';
 
 const money = (v: string | number | null | undefined) => `¥${Number(v || 0).toFixed(2)}`;
 
@@ -41,6 +42,7 @@ type Props = {
 export default function SettlementAmountDrawer({ open, caseId, caseLabel, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ReviewAmountBreakdown>();
+  const drawerWidth = useDrawerWidth(720);
 
   useEffect(() => {
     if (!open || !caseId) return;
@@ -65,7 +67,7 @@ export default function SettlementAmountDrawer({ open, caseId, caseLabel, onClos
     <Drawer
       open={open}
       onClose={onClose}
-      width={720}
+      width={drawerWidth}
       title={caseLabel ? `金额明细 · ${caseLabel}` : '金额明细'}
       destroyOnClose
     >

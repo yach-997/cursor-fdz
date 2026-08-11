@@ -16,6 +16,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { fetchPendingExpenses, reviewExpense } from '../../../api/finance';
 import { displayPhotoUrl } from '../../../utils/photo-url';
+import { useDrawerWidth } from '../../../hooks/useDrawerWidth';
 
 export type ExpenseReviewItem = {
   id: string;
@@ -157,6 +158,7 @@ export default function ExpenseReviewPanel({ onChanged }: Props) {
   const [current, setCurrent] = useState<ExpenseReviewItem>();
   const [action, setAction] = useState<'approve' | 'reject' | 'view'>();
   const [form] = Form.useForm();
+  const modalWidth = useDrawerWidth(720);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -408,7 +410,7 @@ export default function ExpenseReviewPanel({ onChanged }: Props) {
         }
         okText={action === 'approve' ? '确认核定通过' : '确认驳回'}
         okButtonProps={{ danger: action === 'reject' }}
-        width={720}
+        width={modalWidth}
         destroyOnClose
       >
         {current && (

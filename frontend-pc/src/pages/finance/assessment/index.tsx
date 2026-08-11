@@ -251,8 +251,9 @@ export default function FinanceAssessmentPage() {
           {
             title: '所属网格',
             dataIndex: 'siteName',
-            width: 140,
-            render: (v, row) => (row.userRole === 'site_manager' ? '-' : v || '未挂网格'),
+            width: 160,
+            ellipsis: true,
+            render: (v) => v || '未挂网格',
           },
           {
             title: '内部考核总分',

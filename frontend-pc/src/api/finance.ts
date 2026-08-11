@@ -402,11 +402,21 @@ export async function updatePrice(id: string, payload: Record<string, unknown>) 
   return unwrap(await request.put<ApiResponse<PriceItem>>(`/prices/${id}`, payload));
 }
 export async function deletePrice(id: string) {
-  return unwrap(await request.delete<ApiResponse<{ id: string; deleted: boolean }>>(`/prices/${id}`));
+  return unwrap(
+    await request.delete<
+      ApiResponse<{ id: string; deleted: boolean; applied?: { affectedItems?: number } | null }>
+    >(`/prices/${id}`),
+  );
 }
 export async function clearPrices(type: 'settle' | 'perf') {
   return unwrap(
-    await request.delete<ApiResponse<{ priceType: string; deleted: number }>>('/prices/clear', {
+    await request.delete<
+      ApiResponse<{
+        priceType: string;
+        deleted: number;
+        applied?: { affectedItems?: number } | null;
+      }>
+    >('/prices/clear', {
       params: { type, confirm: '清空' },
     }),
   );

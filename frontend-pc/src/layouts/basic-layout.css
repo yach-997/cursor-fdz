@@ -208,7 +208,13 @@
     padding: 10px !important;
   }
   .app-header__left { min-width: 0; gap: 6px; }
-  .app-menu-toggle { flex: 0 0 40px; }
+  .app-menu-toggle {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    padding: 0;
+  }
   .app-header__left > div:last-child { min-width: 0; }
   .app-page-title {
     max-width: calc(100vw - 116px);

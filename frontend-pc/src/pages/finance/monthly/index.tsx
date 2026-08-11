@@ -5,7 +5,6 @@ import {
   correctMonthlySettlement,
   exportMonthlySettlements,
   fetchMonthlySettlements,
-  lockMonthlySettlements,
 } from '../../../api/finance';
 import { fetchSites } from '../../../api/site';
 import type { FinanceMonthlySettlement } from '../../../types/finance';
@@ -58,7 +57,7 @@ export default function FinanceMonthlyPage() {
   return (
     <Card className="finance-card" title="月度结算">
       <div className="finance-review-tip">
-        最终金额 = 已审核计件绩效 + 已通过行程报销 + 排名奖罚 − 事件扣罚 + 补助 + 校正增补。打开本页或结算/报销审核通过时会自动重算。网格长只读本网格；校正/锁定/导出仅管理员。
+        最终金额 = 已审核计件绩效 + 已通过行程报销 + 排名奖罚 − 事件扣罚 + 补助 + 校正增补。打开本页或结算/报销审核通过时会自动重算。网格长只读本网格；校正/导出仅管理员。
       </div>
       <Space className="finance-toolbar" wrap>
         <Input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
@@ -102,23 +101,6 @@ export default function FinanceMonthlyPage() {
             </Button>
             <Button disabled={!rows.length} onClick={() => exportMonthlySettlements(month, 'payroll')}>
               导出发薪表
-            </Button>
-            <Button
-              danger
-              disabled={!rows.length || rows.every((row) => row.status === 'locked')}
-              onClick={() =>
-                Modal.confirm({
-                  title: `确认锁定 ${month}？`,
-                  content: '锁定后不能再修改，关联已结算案例将变为「已月结」。请先完成核对。',
-                  onOk: async () => {
-                    await lockMonthlySettlements(month);
-                    message.success('月度结算已锁定');
-                    await load();
-                  },
-                })
-              }
-            >
-              锁定本月
             </Button>
           </>
         )}

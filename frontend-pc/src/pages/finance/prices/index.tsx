@@ -129,13 +129,18 @@ export default function PricesPage() {
   const onClear = async () => {
     const ok = await confirmDangerousClear({
       title: `清空全部${typeLabel}？`,
-      description: `将删除当前「${typeLabel}」库中的全部记录。已核算到案例里的历史单价不会自动回滚，需重新导入后再做条目映射重算。`,
+      description: `将删除当前「${typeLabel}」库中的全部记录，并自动重算相关案例条目的结算价/绩效价（缺价会回落为待定价）。`,
     });
     if (!ok) return;
     setClearing(true);
     try {
       const result = await clearPrices(type);
-      message.success(`已清空 ${result.deleted} 条${typeLabel}`);
+      const appliedItems = Number(result.applied?.affectedItems || 0);
+      message.success(
+        appliedItems > 0
+          ? `已清空 ${result.deleted} 条${typeLabel}，并重算 ${appliedItems} 条案例条目`
+          : `已清空 ${result.deleted} 条${typeLabel}`,
+      );
       setPage(1);
       await load();
     } finally {
@@ -144,7 +149,7 @@ export default function PricesPage() {
   };
   const onDelete = async (row: PriceItem) => {
     await deletePrice(row.id);
-    message.success('已删除');
+    message.success('已删除，并已回写相关案例条目');
     void load();
   };
   return (

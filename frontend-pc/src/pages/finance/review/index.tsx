@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Badge,
   Button,
@@ -15,7 +15,6 @@ import {
   message,
 } from 'antd';
 import { QuestionCircleOutlined } from '@ant-design/icons';
-import dayjs from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import {
   approveFinanceReview,
@@ -79,7 +78,6 @@ export default function FinanceReviewPage() {
   const [keyword, setKeyword] = useState('');
   const [month, setMonth] = useState<string>();
   const [siteId, setSiteId] = useState<string>();
-  const [overdue, setOverdue] = useState<string>();
   const [sites, setSites] = useState<SiteItem[]>([]);
   const [rows, setRows] = useState<FinanceReviewItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -91,6 +89,20 @@ export default function FinanceReviewPage() {
   const [casePending, setCasePending] = useState(0);
   const [expensePending, setExpensePending] = useState(0);
   const [form] = Form.useForm();
+  const loadSeq = useRef(0);
+
+  const showReviewComment = (comment: string) => {
+    Modal.info({
+      title: '审核意见',
+      width: Math.min(480, typeof window !== 'undefined' ? window.innerWidth - 32 : 480),
+      content: (
+        <div className="finance-review-comment-body" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          {comment}
+        </div>
+      ),
+      okText: '知道了',
+    });
+  };
 
   useEffect(() => {
     const next = scopeFromSearch(searchParams.get('scope'));
@@ -130,26 +142,26 @@ export default function FinanceReviewPage() {
   }, [isAdmin]);
 
   const load = useCallback(async () => {
+    if (scope !== 'case') return;
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
-      setRows(
-        await fetchPendingFinanceReviews({
-          keyword: keyword || undefined,
-          month: month || undefined,
-          siteId: isAdmin ? siteId : undefined,
-          overdue: overdue || undefined,
-          reviewStatus: tab,
-        }),
-      );
+      const next = await fetchPendingFinanceReviews({
+        keyword: keyword || undefined,
+        month: month || undefined,
+        siteId: isAdmin ? siteId : undefined,
+        reviewStatus: tab,
+      });
+      if (seq !== loadSeq.current) return;
+      setRows(next);
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
-  }, [keyword, month, siteId, overdue, isAdmin, tab]);
+  }, [keyword, month, siteId, isAdmin, tab, scope]);
 
   useEffect(() => {
-    if (scope !== 'case') return;
     void load();
-  }, [load, scope]);
+  }, [load]);
 
   const submit = async () => {
     if (!current || !action) return;
@@ -254,7 +266,7 @@ export default function FinanceReviewPage() {
           />
           <div className="finance-review-tip">
             {tab === 'pending'
-              ? '默认看待审核队列：案例完工后 7 天内完成审核。通过后可到「已通过」页签查看。'
+              ? '默认看待审核队列。通过后可到「已通过」页签查看。'
               : tab === 'approved'
                 ? '已通过的结算记录不会从系统消失，可按月份/网格继续查询。'
                 : tab === 'rejected'
@@ -287,17 +299,7 @@ export default function FinanceReviewPage() {
                 options={sites.map((site) => ({ value: site.id, label: site.name }))}
               />
             )}
-            {(tab === 'pending' || tab === 'all' || tab === 'rejected') && (
-              <Select
-                allowClear
-                placeholder="超期"
-                value={overdue}
-                onChange={setOverdue}
-                style={{ width: 120 }}
-                options={[{ value: 'true', label: '仅超期' }]}
-              />
-            )}
-            <Button type="primary" onClick={load}>
+            <Button type="primary" onClick={() => void load()}>
               查询
             </Button>
           </Space>
@@ -365,7 +367,7 @@ export default function FinanceReviewPage() {
                 width: 160,
                 render: (v) => formatDateTime(v),
               },
-              ...(tab === 'approved'
+              ...(tab === 'approved' || tab === 'all'
                 ? [
                     {
                       title: '审核时间',
@@ -373,23 +375,28 @@ export default function FinanceReviewPage() {
                       width: 160,
                       render: (v: string | null | undefined) => formatDateTime(v),
                     },
-                  ]
-                : [
                     {
-                      title: '审核时限',
-                      width: 130,
-                      render: (_: unknown, row: FinanceReviewItem) =>
-                        row.reviewStatus === 'approved' ? (
-                          <Tag color="green">已完成</Tag>
-                        ) : row.overdue ? (
-                          <Tag color="red">已超期</Tag>
-                        ) : (
-                          <Tag color="gold">
-                            剩余 {Math.max(0, row.remainingHours || 0)} 小时
-                          </Tag>
-                        ),
+                      title: '审核意见',
+                      dataIndex: 'reviewComment',
+                      width: 160,
+                      ellipsis: true,
+                      render: (v: string | null | undefined, row: FinanceReviewItem) => {
+                        if (row.reviewStatus !== 'approved') return '-';
+                        if (!v?.trim()) return <span style={{ color: '#8c8c8c' }}>无</span>;
+                        return (
+                          <Button
+                            type="link"
+                            className="finance-review-comment-link"
+                            onClick={() => showReviewComment(v)}
+                            style={{ paddingInline: 0, height: 'auto', maxWidth: '100%' }}
+                          >
+                            <span className="finance-review-comment-preview">{v}</span>
+                          </Button>
+                        );
+                      },
                     },
-                  ]),
+                  ]
+                : []),
               {
                 title: colTip(
                   '案例收入',
@@ -482,15 +489,7 @@ export default function FinanceReviewPage() {
                       </>
                     )}
                     {row.reviewStatus === 'approved' && row.reviewComment && (
-                      <Button
-                        type="link"
-                        onClick={() =>
-                          Modal.info({
-                            title: '审核意见',
-                            content: row.reviewComment,
-                          })
-                        }
-                      >
+                      <Button type="link" onClick={() => showReviewComment(row.reviewComment!)}>
                         意见
                       </Button>
                     )}

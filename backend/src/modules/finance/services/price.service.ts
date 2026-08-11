@@ -135,6 +135,7 @@ export class PriceService implements OnModuleInit {
     if (user.role !== UserRole.SUPER_ADMIN) throw new ForbiddenException('仅管理员可删除价格');
     const item = await this.repo.findOne({ where: { id } });
     if (!item) throw new NotFoundException('价格记录不存在');
+    const itemCode = item.itemCode;
     await this.repo.remove(item);
     await this.logs.write(
       'price_library',
@@ -143,9 +144,10 @@ export class PriceService implements OnModuleInit {
       item,
       null,
       user.id,
-      `删除${item.priceType === 'perf' ? '内部绩效价' : '甲方结算价'}：${item.itemCode}`,
+      `删除${item.priceType === 'perf' ? '内部绩效价' : '甲方结算价'}：${itemCode}`,
     );
-    return { id, deleted: true };
+    const applied = await this.applyToCases(itemCode);
+    return { id, deleted: true, applied };
   }
 
   async clear(type: 'settle' | 'perf', confirm: string | undefined, user: CurrentUserContext) {
@@ -165,6 +167,8 @@ export class PriceService implements OnModuleInit {
       user.id,
       `清空全部${type === 'perf' ? '内部绩效价' : '甲方结算价'}，共 ${deleted} 条`,
     );
-    return { priceType: type, deleted };
+    // 价格库清空后必须回写 PO 条目与台账，否则结算审核明细仍显示旧价
+    const applied = await this.mappings.recalculate().catch(() => null);
+    return { priceType: type, deleted, applied };
   }
 }

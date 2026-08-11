@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { Site, SiteMember, User } from '../../../entities';
 import { CommonStatus, SiteMemberRole, UserRole } from '../../../common/enums';
 import { CurrentUserContext } from '../../../common/interfaces';
@@ -95,6 +95,46 @@ export class FinanceScopeService {
       select: { id: true, name: true },
     });
     rows.forEach((row) => map.set(row.id, row.name));
+    return map;
+  }
+
+  /** 网格长（正/副）管理的网格名称，多人多站时用顿号拼接 */
+  async managedSiteNamesByUsers(userIds: string[]): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    if (!userIds.length) return map;
+    const byUser = new Map<string, string[]>();
+    const push = (userId: string, name: string) => {
+      const list = byUser.get(userId) || [];
+      if (!list.includes(name)) list.push(name);
+      byUser.set(userId, list);
+    };
+
+    const primarySites = await this.sites.find({
+      where: { managerId: In(userIds), status: CommonStatus.ACTIVE, deletedAt: IsNull() },
+      select: { id: true, name: true, managerId: true },
+    });
+    for (const site of primarySites) {
+      if (site.managerId && site.name) push(site.managerId, site.name);
+    }
+
+    const deputies = await this.members.find({
+      where: {
+        userId: In(userIds),
+        status: CommonStatus.ACTIVE,
+        memberRole: SiteMemberRole.DEPUTY_MANAGER,
+      },
+      select: ['userId', 'siteId'],
+    });
+    const deputySiteIds = [...new Set(deputies.map((d) => d.siteId))];
+    const deputyNames = await this.siteNameMap(deputySiteIds);
+    for (const row of deputies) {
+      const name = deputyNames.get(row.siteId);
+      if (name) push(row.userId, name);
+    }
+
+    for (const [userId, names] of byUser) {
+      map.set(userId, names.join('、'));
+    }
     return map;
   }
 

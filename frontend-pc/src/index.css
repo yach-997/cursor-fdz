@@ -66,6 +66,12 @@ select {
     overflow-x: hidden;
   }
 
+  /* 手机打开 PC：抽屉尽量全宽，内容可看全 */
+  .ant-drawer .ant-drawer-content-wrapper {
+    width: 100vw !important;
+    max-width: 100vw;
+  }
+
   .ant-modal {
     top: 8px;
     width: calc(100vw - 16px) !important;
@@ -103,18 +109,14 @@ select {
     border-top: 1px solid rgba(23, 72, 54, 0.08);
   }
 
-  .ant-drawer .ant-drawer-content-wrapper {
-    width: min(100vw, 420px) !important;
-    max-width: 100vw;
-  }
-
   .ant-drawer .ant-drawer-header {
     padding: 14px 16px;
   }
 
   .ant-drawer .ant-drawer-body {
     padding: 16px;
-    overflow-x: hidden;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .ant-drawer .ant-drawer-extra .ant-space {
@@ -149,7 +151,8 @@ select {
   }
 
   .ant-table-wrapper .ant-table-cell .ant-space {
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+    row-gap: 4px;
   }
 
   .ant-pagination {
@@ -165,7 +168,9 @@ select {
   .ant-form-item .ant-input,
   .ant-form-item .ant-input-number,
   .ant-form-item .ant-picker,
-  .ant-form-item .ant-select {
+  .ant-form-item .ant-select,
+  .ant-form-item .ant-input-affix-wrapper,
+  .ant-form-item .ant-input-number-affix-wrapper {
     width: 100% !important;
     max-width: 100%;
   }
@@ -183,7 +188,36 @@ select {
     padding: 16px;
   }
 
+  .ant-card .ant-card-extra {
+    margin-inline-start: 0;
+    margin-top: 8px;
+  }
+
+  .ant-card .ant-card-head {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .ant-space {
+    max-width: 100%;
+  }
+
+  .ant-btn {
+    min-height: 40px;
+  }
+
+  .ant-btn-link {
+    min-height: 36px;
+    padding-block: 6px;
+  }
+
   .ant-image-preview-operations {
     padding-inline: 8px;
+  }
+
+  /* 筛选条：控件尽量铺满，避免挤在一行 */
+  .ant-space-compact,
+  .ant-space-horizontal {
+    flex-wrap: wrap;
   }
 }
