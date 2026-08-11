@@ -1,9 +1,27 @@
 import { useEffect, useState } from 'react';
 import { Drawer, Empty, Spin, Table, Tooltip, Typography } from 'antd';
+import { Link } from 'react-router-dom';
 import { fetchReviewAmountBreakdown } from '../../../api/finance';
 import type { ReviewAmountBreakdown } from '../../../types/finance';
 
 const money = (v: string | number | null | undefined) => `¥${Number(v || 0).toFixed(2)}`;
+
+type BreakdownItem = ReviewAmountBreakdown['items'][number];
+
+function priceCreatePath(
+  type: 'settle' | 'perf',
+  row: BreakdownItem,
+) {
+  const params = new URLSearchParams({
+    type,
+    add: '1',
+    itemCode: row.itemCode || '',
+    itemName: row.itemName || row.itemCode || '',
+  });
+  if (row.unit) params.set('unit', row.unit);
+  if (row.itemDesc) params.set('itemDesc', row.itemDesc);
+  return `/finance/prices?${params.toString()}`;
+}
 
 type Props = {
   open: boolean;
@@ -53,6 +71,7 @@ export default function SettlementAmountDrawer({ open, caseId, caseLabel, onClos
         <>
           <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
             案例收入按结算单价汇总；计件绩效按内部绩效单价汇总；事件扣罚单独登记，三者不是同一套价格。
+            缺价处可点击前往价格库补录（会预填条目信息）。
           </Typography.Paragraph>
 
           <div className="settle-amount-summary">
@@ -118,9 +137,22 @@ export default function SettlementAmountDrawer({ open, caseId, caseLabel, onClos
               {
                 title: '结算单价',
                 dataIndex: 'settlePrice',
-                width: 100,
+                width: 110,
                 align: 'right' as const,
-                render: (v) => (v == null ? '—' : money(v)),
+                render: (v, row) =>
+                  v == null ? (
+                    <Tooltip title="点击前往价格库补甲方结算价">
+                      <Link
+                        to={priceCreatePath('settle', row)}
+                        className="finance-missing-price-link"
+                        onClick={onClose}
+                      >
+                        <span style={{ color: '#b54708' }}>—</span>
+                      </Link>
+                    </Tooltip>
+                  ) : (
+                    money(v)
+                  ),
               },
               {
                 title: '小计',
@@ -171,9 +203,22 @@ export default function SettlementAmountDrawer({ open, caseId, caseLabel, onClos
               {
                 title: '绩效单价',
                 dataIndex: 'perfPrice',
-                width: 100,
+                width: 110,
                 align: 'right' as const,
-                render: (v) => (v == null ? <span style={{ color: '#b54708' }}>未配</span> : money(v)),
+                render: (v, row) =>
+                  v == null ? (
+                    <Tooltip title="点击前往价格库补内部绩效价">
+                      <Link
+                        to={priceCreatePath('perf', row)}
+                        className="finance-missing-price-link"
+                        onClick={onClose}
+                      >
+                        <span style={{ color: '#b54708' }}>未配</span>
+                      </Link>
+                    </Tooltip>
+                  ) : (
+                    money(v)
+                  ),
               },
               {
                 title: '小计',

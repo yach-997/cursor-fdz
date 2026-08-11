@@ -838,6 +838,7 @@ export class FinanceWorkflowService {
         poId: item.poId,
         itemCode: item.itemCode,
         itemName: item.itemName,
+        itemDesc: item.itemDesc,
         unit: item.unit,
         qty: item.qty,
         settlePrice: item.settlePrice,
@@ -1003,6 +1004,11 @@ export class FinanceWorkflowService {
           WHERE po.service_case_id=c.id
             AND pi.price_status <> 'ignored'
             AND pi.perf_price IS NULL) AS "missingPerf"`,
+        `(SELECT COUNT(*) FROM po_item pi
+          INNER JOIN po_order po ON po.id=pi.po_id
+          WHERE po.service_case_id=c.id
+            AND pi.price_status <> 'ignored'
+            AND pi.settle_price IS NULL) AS "missingSettle"`,
         `(SELECT COUNT(*) FROM case_expense_claim cec
           WHERE cec.service_case_id = c.id
             AND cec.status = 'submitted') AS "pendingExpenseCount"`,
@@ -1058,6 +1064,7 @@ export class FinanceWorkflowService {
         return {
           ...row,
           missingPerf: Number(row.missingPerf || 0),
+          missingSettle: Number(row.missingSettle || 0),
           pendingExpenseCount: Number(row.pendingExpenseCount || 0),
           eventPenalty: Number(row.eventPenalty || 0),
           approvalReady: !!row.inspectorName && Number(row.missingPerf || 0) === 0,

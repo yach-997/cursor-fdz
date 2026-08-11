@@ -254,6 +254,8 @@ export interface FinanceReviewItem {
   reviewStatus: string;
   deductionStatus: string;
   missingPerf: number;
+  /** 未配置甲方结算单价的 PO 条目数 */
+  missingSettle?: number;
   /** 本案例待核定行程报销条数 */
   pendingExpenseCount?: number;
   approvalReady: boolean;
@@ -303,6 +305,7 @@ export interface ReviewAmountBreakdown {
     poId: string;
     itemCode: string;
     itemName: string;
+    itemDesc?: string | null;
     unit?: string | null;
     qty: string;
     settlePrice?: string | null;

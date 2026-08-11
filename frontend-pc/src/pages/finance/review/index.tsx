@@ -16,7 +16,7 @@ import {
 } from 'antd';
 import { QuestionCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   approveFinanceReview,
   fetchFinanceCase,
@@ -335,21 +335,29 @@ export default function FinanceReviewPage() {
               {
                 title: colTip(
                   '审核条件',
-                  '可结算 = 已派工程师，且全部未忽略 PO 条目已配置内部绩效价。与现场照片是否齐全无关。',
+                  '可结算 = 已派工程师，且全部未忽略 PO 条目已配置内部绩效价。缺甲方结算价不影响通过，但明细中收入可能为 0；点「明细」内缺价链接可去价格库补录。',
                 ),
-                width: 135,
-                render: (_, row) =>
-                  row.approvalReady ? (
-                    <Tag color="green">可结算</Tag>
-                  ) : !row.inspectorName ? (
-                    <Tag color="orange">未派工程师</Tag>
-                  ) : (
-                    <Tooltip title="点击前往价格库补内部绩效价；补齐后刷新本页即可通过结算">
-                      <Link to="/finance/prices?type=perf" className="finance-missing-price-link">
-                        <Tag color="orange">缺绩效价 {row.missingPerf} 项</Tag>
-                      </Link>
-                    </Tooltip>
-                  ),
+                width: 168,
+                render: (_, row) => {
+                  if (!row.inspectorName) {
+                    return <Tag color="orange">未派工程师</Tag>;
+                  }
+                  const missingSettle = Number(row.missingSettle || 0);
+                  const missingPerf = Number(row.missingPerf || 0);
+                  if (missingSettle === 0 && missingPerf === 0) {
+                    return <Tag color="green">可结算</Tag>;
+                  }
+                  return (
+                    <Space size={4} wrap>
+                      {missingSettle > 0 ? (
+                        <Tag color="orange">缺甲方价 {missingSettle} 条</Tag>
+                      ) : null}
+                      {missingPerf > 0 ? (
+                        <Tag color="orange">缺绩效价 {missingPerf} 条</Tag>
+                      ) : null}
+                    </Space>
+                  );
+                },
               },
               {
                 title: '完工时间',

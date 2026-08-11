@@ -39,7 +39,7 @@ import { useSearchParams } from 'react-router-dom';
 const scenes = ['平地', '水上', '山地', '高原', '屋顶'];
 export default function PricesPage() {
   const user = useAuthStore((s) => s.user);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const initialType = searchParams.get('type') === 'perf' ? 'perf' : 'settle';
   const [type, setType] = useState<'settle' | 'perf'>(initialType),
     [data, setData] = useState<PriceItem[]>([]),
@@ -60,6 +60,37 @@ export default function PricesPage() {
     setType(next);
     setPage(1);
   }, [searchParams]);
+
+  useEffect(() => {
+    if (searchParams.get('add') !== '1') return;
+    const priceType = searchParams.get('type') === 'perf' ? 'perf' : 'settle';
+    setEditing(null);
+    form.setFieldsValue({
+      priceType,
+      itemCode: searchParams.get('itemCode') || '',
+      itemName: searchParams.get('itemName') || '',
+      unit: searchParams.get('unit') || undefined,
+      itemDesc: searchParams.get('itemDesc') || undefined,
+      productModel: undefined,
+      scene: undefined,
+      region: undefined,
+      coopType: undefined,
+      workHours: undefined,
+      unitPrice: undefined,
+      effectiveDate: new Date().toISOString().slice(0, 10),
+      status: 'active',
+      changeRemark: '结算审核明细跳转补价',
+    });
+    setModalOpen(true);
+    // 清掉 add 参数，避免返回/刷新反复弹窗
+    const next = new URLSearchParams(searchParams);
+    next.delete('add');
+    next.delete('itemCode');
+    next.delete('itemName');
+    next.delete('unit');
+    next.delete('itemDesc');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, form, setSearchParams]);
   const admin = user?.role === 'super_admin';
   const canClear = admin && canUseDangerousClear();
   const typeLabel = type === 'perf' ? '内部绩效价' : '甲方结算价';
