@@ -7,11 +7,13 @@ import {
   Post,
   Put,
   Query,
+  Req,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import type { Request } from 'express';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { UserRole } from '../../../common/enums';
@@ -86,12 +88,14 @@ export class FinancePriceController {
   import(
     @UploadedFile() file: Express.Multer.File,
     @Query() query: ImportPreviewQueryDto,
+    @Req() req: Request,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.importer.importSettlePrices(file, user, query.preview === 'true', {
       offset: query.offset,
       limit: query.limit,
       batchId: query.batchId,
+      clientFilename: String((req.body as { originalFilename?: string })?.originalFilename || ''),
     });
   }
   @Post('import-perf')
@@ -102,12 +106,14 @@ export class FinancePriceController {
   importPerf(
     @UploadedFile() file: Express.Multer.File,
     @Query() query: ImportPreviewQueryDto,
+    @Req() req: Request,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.importer.importPerfPrices(file, user, query.preview === 'true', {
       offset: query.offset,
       limit: query.limit,
       batchId: query.batchId,
+      clientFilename: String((req.body as { originalFilename?: string })?.originalFilename || ''),
     });
   }
   @Get(':id/history') @Roles(UserRole.SUPER_ADMIN) history(@Param('id') id: string) {

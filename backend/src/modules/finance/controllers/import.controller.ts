@@ -4,13 +4,14 @@ import {
   Param,
   Post,
   Query,
+  Req,
   Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { UserRole } from '../../../common/enums';
@@ -45,9 +46,12 @@ export class FinanceImportController {
   gsp(
     @UploadedFile() file: Express.Multer.File,
     @Query() query: ImportPreviewQueryDto,
+    @Req() req: Request,
     @CurrentUser() user: CurrentUserContext,
   ) {
-    return this.service.importGsp(file, user, query.preview === 'true');
+    return this.service.importGsp(file, user, query.preview === 'true', {
+      clientFilename: String((req.body as { originalFilename?: string })?.originalFilename || ''),
+    });
   }
   @Post('po-orders')
   @Roles(UserRole.SUPER_ADMIN)
@@ -55,12 +59,14 @@ export class FinanceImportController {
   po(
     @UploadedFile() file: Express.Multer.File,
     @Query() query: ImportPreviewQueryDto,
+    @Req() req: Request,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.service.importPo(file, user, query.preview === 'true', {
       offset: query.offset,
       limit: query.limit,
       batchId: query.batchId,
+      clientFilename: String((req.body as { originalFilename?: string })?.originalFilename || ''),
     });
   }
   @Get('batches') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) batches(

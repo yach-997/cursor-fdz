@@ -15,6 +15,11 @@ import { CurrentUserContext } from '../../../common/interfaces';
 import { ExcelParserService, ParsedPoOrder } from './excel-parser.service';
 import { isIgnoredItem, modelMatches, pickMappedPrice } from './item-matcher';
 import { applyDemandTypeForCases } from './demand-type-match';
+import {
+  decodeUploadFilename,
+  repairImportChangeRemark,
+  resolveUploadFilename,
+} from '../../../common/utils/upload-filename';
 
 const money = (value: number) => (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2);
 const PO_CHUNK = 40;
@@ -22,6 +27,8 @@ const PRICE_CHUNK = 200;
 const PARSE_CACHE_TTL_MS = 15 * 60 * 1000;
 
 type ParseCacheEntry = { expires: number; data: unknown };
+
+type UploadNameOpts = { clientFilename?: string | null };
 
 @Injectable()
 export class FinanceImportService {
@@ -42,7 +49,19 @@ export class FinanceImportService {
     private readonly templates: Repository<InspectionTemplate>,
   ) {}
 
-  async importGsp(file: Express.Multer.File, user: CurrentUserContext, preview = false) {
+  private fileName(file: Express.Multer.File, opts?: UploadNameOpts) {
+    const name = resolveUploadFilename(file, opts?.clientFilename);
+    file.originalname = name || file.originalname;
+    return file.originalname;
+  }
+
+  async importGsp(
+    file: Express.Multer.File,
+    user: CurrentUserContext,
+    preview = false,
+    opts?: UploadNameOpts,
+  ) {
+    this.fileName(file, opts);
     this.assertExcel(file);
     const parsed = await this.parser.parseGspCases(file.buffer);
     if (preview)
@@ -118,8 +137,9 @@ export class FinanceImportService {
     file: Express.Multer.File,
     user: CurrentUserContext,
     preview = false,
-    options: { offset?: number; limit?: number; batchId?: string } = {},
+    options: { offset?: number; limit?: number; batchId?: string; clientFilename?: string | null } = {},
   ) {
+    this.fileName(file, options);
     this.assertExcel(file);
     const cacheKey = this.fileCacheKey('po', file);
     let parsed = preview ? null : this.getCached<{
@@ -217,8 +237,9 @@ export class FinanceImportService {
     file: Express.Multer.File,
     user: CurrentUserContext,
     preview = false,
-    options: { offset?: number; limit?: number; batchId?: string } = {},
+    options: { offset?: number; limit?: number; batchId?: string; clientFilename?: string | null } = {},
   ) {
+    this.fileName(file, options);
     this.assertExcel(file);
     const cacheKey = this.fileCacheKey('settle', file);
     type SettleParsed = {
@@ -358,8 +379,9 @@ export class FinanceImportService {
     file: Express.Multer.File,
     user: CurrentUserContext,
     preview = false,
-    options: { offset?: number; limit?: number; batchId?: string } = {},
+    options: { offset?: number; limit?: number; batchId?: string; clientFilename?: string | null } = {},
   ) {
+    this.fileName(file, options);
     this.assertExcel(file);
     const cacheKey = this.fileCacheKey('perf', file);
     let parsed = preview
@@ -826,8 +848,28 @@ export class FinanceImportService {
 
   private assertExcel(file?: Express.Multer.File) {
     if (!file?.buffer) throw new BadRequestException('请选择Excel文件');
-    if (!file.originalname.toLowerCase().endsWith('.xlsx'))
+    const name = decodeUploadFilename(file.originalname);
+    if (!name.toLowerCase().endsWith('.xlsx'))
       throw new BadRequestException('仅支持.xlsx文件');
+  }
+
+  /** 一次性修复历史调价备注中的文件名乱码 */
+  async repairPriceChangeRemarkMojibake() {
+    const rows = await this.prices
+      .createQueryBuilder('p')
+      .select(['p.id', 'p.changeRemark'])
+      .where('p.change_remark IS NOT NULL')
+      .andWhere(`p.change_remark LIKE '由%'`)
+      .getMany();
+    let fixed = 0;
+    for (const row of rows) {
+      const next = repairImportChangeRemark(row.changeRemark);
+      if (!next || next === row.changeRemark) continue;
+      row.changeRemark = next;
+      await this.prices.save(row);
+      fixed += 1;
+    }
+    return { scanned: rows.length, fixed };
   }
   private async resolveBatch(
     batchId: string | undefined,

@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PriceLibrary } from '../../../entities';
@@ -7,13 +7,40 @@ import { ChangeLogService } from './change-log.service';
 import { CreatePriceDto, PriceQueryDto, UpdatePriceDto } from '../dto/finance.dto';
 import { UserRole } from '../../../common/enums';
 import { assertFinanceClearAllowed } from '../../../common/utils/finance-clear-guard';
+import { repairImportChangeRemark } from '../../../common/utils/upload-filename';
 
 @Injectable()
-export class PriceService {
+export class PriceService implements OnModuleInit {
+  private remarkRepairDone = false;
+
   constructor(
     @InjectRepository(PriceLibrary) private readonly repo: Repository<PriceLibrary>,
     private readonly logs: ChangeLogService,
   ) {}
+
+  async onModuleInit() {
+    void this.repairMojibakeRemarksOnce();
+  }
+
+  private async repairMojibakeRemarksOnce() {
+    if (this.remarkRepairDone) return;
+    this.remarkRepairDone = true;
+    try {
+      const rows = await this.repo
+        .createQueryBuilder('p')
+        .select(['p.id', 'p.changeRemark'])
+        .where('p.change_remark IS NOT NULL')
+        .andWhere(`p.change_remark LIKE '由%'`)
+        .getMany();
+      for (const row of rows) {
+        const next = repairImportChangeRemark(row.changeRemark);
+        if (!next || next === row.changeRemark) continue;
+        await this.repo.update(row.id, { changeRemark: next });
+      }
+    } catch {
+      /* ignore boot repair errors */
+    }
+  }
   async list(query: PriceQueryDto, user: CurrentUserContext) {
     if (user.role !== UserRole.SUPER_ADMIN) {
       throw new ForbiddenException('仅管理员可查看价格库');
@@ -31,7 +58,15 @@ export class PriceService {
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();
-    return { list, total, page, limit };
+    return {
+      list: list.map((row) => ({
+        ...row,
+        changeRemark: repairImportChangeRemark(row.changeRemark) ?? row.changeRemark,
+      })),
+      total,
+      page,
+      limit,
+    };
   }
   async create(dto: CreatePriceDto, user: CurrentUserContext) {
     return this.repo.save(

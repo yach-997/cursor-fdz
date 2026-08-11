@@ -383,6 +383,7 @@ export async function uploadFinanceExcel(
 ) {
   const form = new FormData();
   form.append('file', file);
+  form.append('originalFilename', file.name);
   const url =
     kind === 'gsp'
       ? '/import/gsp-cases'
