@@ -52,10 +52,13 @@ export default function FinanceMonthlyPage() {
   }, [load]);
 
   const money = (value: unknown) => `¥${Number(value || 0).toFixed(2)}`;
+  const sum = (data: readonly FinanceMonthlySettlement[], key: keyof FinanceMonthlySettlement) =>
+    data.reduce((s, r) => s + Number(r[key] || 0), 0);
+
   return (
     <Card className="finance-card" title="月度结算">
       <div className="finance-review-tip">
-        最终金额 = 已审核计件绩效 + 排名奖罚 − 事件扣罚 + 补助 + 校正增补。网格长仅可只读查看本网格结算；校正/锁定/导出仅管理员。
+        最终金额 = 已审核计件绩效 + 已通过行程报销 + 排名奖罚 − 事件扣罚 + 补助 + 校正增补。打开本页或结算/报销审核通过时会自动重算。网格长只读本网格；校正/锁定/导出仅管理员。
       </div>
       <Space className="finance-toolbar" wrap>
         <Input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
@@ -106,7 +109,7 @@ export default function FinanceMonthlyPage() {
               onClick={() =>
                 Modal.confirm({
                   title: `确认锁定 ${month}？`,
-                  content: '锁定后不能再修改，请先完成核对。',
+                  content: '锁定后不能再修改，关联已结算案例将变为「已月结」。请先完成核对。',
                   onOk: async () => {
                     await lockMonthlySettlements(month);
                     message.success('月度结算已锁定');
@@ -124,37 +127,34 @@ export default function FinanceMonthlyPage() {
         rowKey="id"
         loading={loading}
         dataSource={rows}
-        scroll={{ x: 1100 }}
+        scroll={{ x: 1280 }}
         summary={(data) => (
           <Table.Summary.Row>
             <Table.Summary.Cell index={0}>合计</Table.Summary.Cell>
             <Table.Summary.Cell index={1} />
-            <Table.Summary.Cell index={2}>
-              {money(data.reduce((s, r) => s + Number(r.perfTotal), 0))}
+            <Table.Summary.Cell index={2}>{money(sum(data, 'perfTotal'))}</Table.Summary.Cell>
+            <Table.Summary.Cell index={3}>{money(sum(data, 'expenseTotal'))}</Table.Summary.Cell>
+            <Table.Summary.Cell index={4}>{money(sum(data, 'rewardTotal'))}</Table.Summary.Cell>
+            <Table.Summary.Cell index={5}>{money(sum(data, 'eventPenalty'))}</Table.Summary.Cell>
+            <Table.Summary.Cell index={6}>{money(sum(data, 'subsidyTotal'))}</Table.Summary.Cell>
+            <Table.Summary.Cell index={7}>{money(sum(data, 'correctionTotal'))}</Table.Summary.Cell>
+            <Table.Summary.Cell index={8}>
+              <b>{money(sum(data, 'finalAmount'))}</b>
             </Table.Summary.Cell>
-            <Table.Summary.Cell index={3}>
-              {money(data.reduce((s, r) => s + Number(r.rewardTotal), 0))}
-            </Table.Summary.Cell>
-            <Table.Summary.Cell index={4}>
-              {money(data.reduce((s, r) => s + Number(r.eventPenalty || 0), 0))}
-            </Table.Summary.Cell>
-            <Table.Summary.Cell index={5}>
-              {money(data.reduce((s, r) => s + Number(r.subsidyTotal), 0))}
-            </Table.Summary.Cell>
-            <Table.Summary.Cell index={6}>
-              {money(data.reduce((s, r) => s + Number(r.correctionTotal), 0))}
-            </Table.Summary.Cell>
-            <Table.Summary.Cell index={7}>
-              <b>{money(data.reduce((s, r) => s + Number(r.finalAmount), 0))}</b>
-            </Table.Summary.Cell>
-            <Table.Summary.Cell index={8} />
             <Table.Summary.Cell index={9} />
+            <Table.Summary.Cell index={10} />
           </Table.Summary.Row>
         )}
         columns={[
           { title: '姓名', dataIndex: ['user', 'realName'], fixed: 'left', width: 120 },
           { title: '账号', dataIndex: ['user', 'username'], width: 120 },
           { title: '计件绩效', dataIndex: 'perfTotal', width: 120, render: money },
+          {
+            title: '行程报销',
+            dataIndex: 'expenseTotal',
+            width: 120,
+            render: (v) => money(v || 0),
+          },
           { title: '排名奖罚', dataIndex: 'rewardTotal', width: 110, render: money },
           {
             title: '事件扣罚',

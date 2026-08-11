@@ -477,6 +477,7 @@ export class FinanceSettlementService implements OnModuleInit {
     row.correctionTotal = dto.amount.toFixed(2);
     row.finalAmount = (
       Number(row.perfTotal) +
+      Number(row.expenseTotal || 0) +
       Number(row.rewardTotal) +
       Number(row.subsidyTotal) +
       dto.amount -
@@ -542,6 +543,7 @@ export class FinanceSettlementService implements OnModuleInit {
       { header: '姓名', key: 'name', width: 16 },
       { header: '账号', key: 'username', width: 16 },
       { header: '计件绩效', key: 'perf', width: 15 },
+      { header: '行程报销', key: 'expense', width: 15 },
       { header: '排名奖罚', key: 'reward', width: 15 },
       { header: '事件扣罚', key: 'eventPenalty', width: 15 },
       { header: '补助', key: 'subsidy', width: 15 },
@@ -555,6 +557,7 @@ export class FinanceSettlementService implements OnModuleInit {
         name: row.user?.realName || '-',
         username: row.user?.username || '-',
         perf: Number(row.perfTotal),
+        expense: Number(row.expenseTotal || 0),
         reward: Number(row.rewardTotal),
         eventPenalty: Number(row.eventPenalty || 0),
         subsidy: Number(row.subsidyTotal),
@@ -564,7 +567,7 @@ export class FinanceSettlementService implements OnModuleInit {
       }),
     );
     sheet.getRow(1).font = { bold: true };
-    sheet.autoFilter = { from: 'A1', to: 'J1' };
+    sheet.autoFilter = { from: 'A1', to: 'K1' };
     return Buffer.from(await workbook.xlsx.writeBuffer());
   }
 

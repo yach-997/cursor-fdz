@@ -48,6 +48,7 @@ import { resolveTemplateEntries } from './demand-type-match';
 import { FinanceScopeService } from './finance-scope.service';
 import { TaskService } from '../../task/task.service';
 import { FinanceMultiService } from './finance-multi.service';
+import { FinanceSettlementService } from './finance-settlement.service';
 
 const ACTIVE_CASE_STATUSES = ['assigned', 'working'] as const;
 
@@ -92,6 +93,8 @@ export class FinanceWorkflowService {
     private readonly logs: ChangeLogService,
     @Inject(forwardRef(() => FinanceMultiService))
     private readonly multi: FinanceMultiService,
+    @Inject(forwardRef(() => FinanceSettlementService))
+    private readonly settlement: FinanceSettlementService,
   ) {}
 
   async availableInspectors(caseId: string, user: CurrentUserContext) {
@@ -1106,6 +1109,9 @@ export class FinanceWorkflowService {
     await this.ledgers.save(ledger);
     serviceCase.status = 'settled';
     await this.cases.save(serviceCase);
+    if (ledger.month) {
+      await this.settlement.refreshMonthPublic(ledger.month);
+    }
     await this.logs.write('case_performance', ledger.id, 'review_status', 'pending', 'approved', user.id, comment || '结算审核通过');
     return ledger;
   }

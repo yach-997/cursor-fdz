@@ -266,6 +266,8 @@ export interface FinanceMonthlySettlement {
   month: string;
   userId: string;
   perfTotal: string;
+  /** 已审核通过的行程报销合计 */
+  expenseTotal?: string;
   rewardTotal: string;
   eventPenalty?: string;
   subsidyTotal: string;

@@ -13,6 +13,7 @@ import type { FinanceAssessment } from '../../../types/finance';
 import type { SiteItem } from '../../../types';
 import { useAuthStore } from '../../../stores/auth';
 import { canUseDangerousClear, confirmDangerousClear } from '../../../utils/finance-clear';
+import AssessmentEventDrawer from '../components/AssessmentEventDrawer';
 
 export default function FinanceAssessmentPage() {
   const user = useAuthStore((state) => state.user);
@@ -26,6 +27,7 @@ export default function FinanceAssessmentPage() {
   const [rows, setRows] = useState<FinanceAssessment[]>([]);
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [eventTarget, setEventTarget] = useState<FinanceAssessment>();
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -163,8 +165,8 @@ export default function FinanceAssessmentPage() {
     <Card className="finance-card" title="月度考核与补助">
       <div className="finance-review-tip">
         {isManager
-          ? '本页给本网格已聘工程师打分（含自己兼工程师且已聘网格）。不能改自己的分数，本人考核由管理员录入。网格内名次仅参考；全司奖罚：兼岗只进网格长池。列表为空请先「聘用到网格」。'
-          : '说明：网格内名次按各网格；全司工程师优/劣各3±300，网格长优/劣各1±500。网格长兼工程师只参加网格长全司排名，不重复进工程师池。'}
+          ? '本页给本网格已聘工程师打分（含自己兼工程师且已聘网格）。不能改自己的分数，本人考核由管理员录入。网格内名次仅参考；全司奖罚：兼岗只进网格长池。事件扣罚可在本页「事件」或结算审核里登记，会进入月度结算。列表为空请先「聘用到网格」。'
+          : '网格内名次按各网格；全司工程师优/劣各3±300，网格长优/劣各1±500。网格长兼工程师只参加网格长全司排名。事件扣罚计入月度结算（与计件绩效、行程报销一并汇总）。'}
       </div>
       <Space className="finance-toolbar" wrap>
         <Input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
@@ -232,7 +234,7 @@ export default function FinanceAssessmentPage() {
         rowKey="userId"
         loading={loading}
         dataSource={rows}
-        scroll={{ x: 1500 }}
+        scroll={{ x: 1680 }}
         locale={{
           emptyText: isManager
             ? '本网格暂无已聘工程师。请到用户管理「聘用到网格」，兼工程师的网格长也需聘到本网格后才会出现。'
@@ -276,6 +278,12 @@ export default function FinanceAssessmentPage() {
               isAdmin ? input(row, 'rewardAmount') : `¥${Number(row.rewardAmount || 0).toFixed(2)}`,
           },
           {
+            title: '事件扣罚',
+            dataIndex: 'eventPenalty',
+            width: 110,
+            render: (v) => `¥${Number(v || 0).toFixed(2)}`,
+          },
+          {
             title: '工具补助',
             width: 120,
             render: (_, row) => input(row, 'toolSubsidy', undefined, isSelfRow(row)),
@@ -299,17 +307,30 @@ export default function FinanceAssessmentPage() {
           {
             title: '操作',
             fixed: 'right',
-            width: 100,
+            width: 150,
             render: (_, row) =>
               isSelfRow(row) ? (
                 <Tag>管理员录入</Tag>
               ) : (
-                <Button type="link" onClick={() => void save(row)}>
-                  保存
-                </Button>
+                <Space size={0}>
+                  <Button type="link" onClick={() => void save(row)}>
+                    保存
+                  </Button>
+                  <Button type="link" onClick={() => setEventTarget(row)}>
+                    事件
+                  </Button>
+                </Space>
               ),
           },
         ]}
+      />
+      <AssessmentEventDrawer
+        open={!!eventTarget}
+        onClose={() => setEventTarget(undefined)}
+        month={month}
+        userId={eventTarget?.userId}
+        userName={eventTarget?.realName}
+        onChanged={() => void load()}
       />
     </Card>
   );

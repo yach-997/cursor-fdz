@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  Alert,
   Button,
   Checkbox,
   Drawer,
@@ -13,6 +14,7 @@ import {
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { useNavigate } from 'react-router-dom';
 import {
   fetchRecordCaseGroups,
   fetchRecordsByCase,
@@ -30,6 +32,16 @@ const STATUS_MAP: Record<string, { color: string; text: string }> = {
   submitted: { color: 'processing', text: '待审核' },
   approved: { color: 'success', text: '已通过' },
   rejected: { color: 'error', text: '已驳回' },
+};
+
+const CASE_STATUS_LABEL: Record<string, string> = {
+  pending_assign: '待派单',
+  assigned: '已派单',
+  working: '作业中',
+  finished: '已完工',
+  settle_review: '待结算审核',
+  settled: '已结算',
+  month_locked: '已月结',
 };
 
 const TRAIL_LABEL: Record<string, string> = {
@@ -51,6 +63,7 @@ function unitTitle(row: RecordItem) {
 
 /** 报告审核：按案例聚合 → 待审单元 → 单条通过/驳回 */
 export default function AuditPage() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [groups, setGroups] = useState<RecordCaseGroup[]>([]);
   const [total, setTotal] = useState(0);
@@ -170,7 +183,17 @@ export default function AuditPage() {
     },
     {
       title: '项目',
+      ellipsis: true,
       render: (_, row) => row.projectName || '-',
+    },
+    {
+      title: '案例状态',
+      width: 120,
+      render: (_, row) => {
+        if (!row.serviceCaseId) return <Tag>任务</Tag>;
+        const text = CASE_STATUS_LABEL[String(row.caseStatus || '')] || row.caseStatus || '-';
+        return <Tag>{text}</Tag>;
+      },
     },
     {
       title: tab === 'pending' ? '待审报告' : '驳回报告',
@@ -183,6 +206,14 @@ export default function AuditPage() {
         ),
     },
     {
+      title: '进度',
+      width: 110,
+      render: (_, row) =>
+        row.plannedUnits != null
+          ? `${row.completedUnits ?? 0}/${row.plannedUnits}`
+          : '-',
+    },
+    {
       title: '最近提交',
       width: 180,
       render: (_, row) =>
@@ -190,11 +221,23 @@ export default function AuditPage() {
     },
     {
       title: '操作',
-      width: 120,
+      width: 180,
       render: (_, row) => (
-        <Button type="link" onClick={() => void openGroup(row)}>
-          查看单元
-        </Button>
+        <Space size={0}>
+          <Button type="link" onClick={() => void openGroup(row)}>
+            查看单元
+          </Button>
+          {row.gspCaseNo ? (
+            <Button
+              type="link"
+              onClick={() =>
+                navigate(`/finance/cases?keyword=${encodeURIComponent(row.gspCaseNo!)}`)
+              }
+            >
+              案例
+            </Button>
+          ) : null}
+        </Space>
       ),
     },
   ];
@@ -287,9 +330,13 @@ export default function AuditPage() {
 
   return (
     <div>
-      <p style={{ color: '#666', marginBottom: 12 }}>
-        按案例汇总待审报告。点进案例后按单元逐条通过/驳回；AI 全部合格的已自动通过，不会出现在此列表。
-      </p>
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 12 }}
+        message="报告审核与费用结算相互独立"
+        description="本页只审巡检报告照片/AI 结果，不改 PO 金额。案例号与项目名来自案例主数据；可点「案例」跳转案例管理。AI 全部合格的报告已自动通过，不会出现在待审列表。"
+      />
       <Space style={{ marginBottom: 16 }}>
         <Button
           type={tab === 'pending' ? 'primary' : 'default'}
