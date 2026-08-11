@@ -1350,6 +1350,7 @@ export class FinanceWorkflowService {
         claimAmount: e.claimAmount,
         note: e.note,
         status: e.status,
+        reviewNote: e.reviewNote,
         mileageKm: e.mileageKm,
         tripSkipped: !!e.tripSkipped,
       };

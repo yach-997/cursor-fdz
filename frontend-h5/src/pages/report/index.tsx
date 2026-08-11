@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { NavBar, Cell, Empty, Tag, Image, PullRefresh, Button } from 'react-vant';
-import { fetchRecord, type RecordItem } from '../../api/record';
+import { NavBar, Cell, Empty, Tag, Image, PullRefresh, Button, Toast, Dialog } from 'react-vant';
+import {
+  fetchRecord,
+  setRecordManualResult,
+  analyzeAi,
+  type RecordItem,
+  type RecordEntry,
+} from '../../api/record';
+import { useAuthStore } from '../../stores/auth';
 import { displayPhotoUrl } from '../../utils/photo-url';
 import { RECORD_STATUS_LABEL, formatDateTime } from '../../utils/displayLabels';
-import { resolveWorkTypeLabel, workActionLabel } from '../../utils/workTypeLabels';
+import { resolveWorkTypeLabel } from '../../utils/workTypeLabels';
 import PhotoViewerOverlay from '../../components/PhotoViewerOverlay';
 import './report.css';
 
@@ -22,12 +29,36 @@ const AI_TAG: Record<string, 'success' | 'danger' | 'primary' | 'warning'> = {
   error: 'warning',
 };
 
-/** 巡检报告：查看各条目 AI 分析结果（可稍后回来刷新） */
+function finalLabel(entry: RecordEntry) {
+  const manual =
+    entry.manualResult === 'pass' || entry.manualResult === 'fail' ? entry.manualResult : null;
+  if (entry.finalResult === 'pass') {
+    return {
+      text: manual === 'pass' ? '合格（人工确认）' : '合格',
+      type: 'success' as const,
+    };
+  }
+  if (entry.finalResult === 'fail') {
+    return {
+      text: manual === 'fail' ? '不合格（人工确认）' : '不合格',
+      type: 'danger' as const,
+    };
+  }
+  if (entry.aiResult?.status === 'error') {
+    return { text: '待人工判断', type: 'warning' as const };
+  }
+  return { text: '分析中', type: 'primary' as const };
+}
+
+/** 巡检报告：查看各条目 AI 分析结果；网格长/管理员可人工确认 */
 export default function ReportPage() {
   const { recordId } = useParams();
   const navigate = useNavigate();
+  const role = useAuthStore((s) => s.user?.role);
+  const canManualConfirm = role === 'super_admin' || role === 'site_manager';
   const [record, setRecord] = useState<RecordItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [photoPreview, setPhotoPreview] = useState<{
     urls: string[];
     index: number;
@@ -74,7 +105,10 @@ export default function ReportPage() {
     let pending = 0;
     let error = 0;
     for (const e of record.entries) {
-      const st = e.aiResult?.status || 'pending';
+      const st =
+        e.finalResult === 'pass' || e.finalResult === 'fail'
+          ? e.finalResult
+          : e.aiResult?.status || 'pending';
       if (st === 'pass') pass += 1;
       else if (st === 'fail') fail += 1;
       else if (st === 'error') error += 1;
@@ -82,6 +116,65 @@ export default function ReportPage() {
     }
     return { pass, fail, pending, error };
   }, [record]);
+
+  const statusAllowsConfirm =
+    !!record && ['submitted', 'approved', 'rejected'].includes(record.status);
+
+  const confirmManual = async (entry: RecordEntry, result: 'pass' | 'fail') => {
+    if (!record || !canManualConfirm) return;
+    const label = result === 'pass' ? '合格' : '不合格';
+    try {
+      await Dialog.confirm({
+        title: `人工确认${label}`,
+        message: `将该检查项最终结论设为「${label}」？`,
+      });
+    } catch {
+      return;
+    }
+    const key = `${entry.templateEntryId}:${result}`;
+    setBusyKey(key);
+    try {
+      const fresh = await setRecordManualResult(record.id, entry.templateEntryId, result);
+      setRecord(fresh);
+      Toast.success(`已人工确认${label}`);
+    } catch (error: any) {
+      Toast.fail(error?.message || '确认失败');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const retryAnalysis = async (entry: RecordEntry) => {
+    if (!record || !(entry.photos || []).length) {
+      Toast.info('该检查项没有现场照片，无法重新分析');
+      return;
+    }
+    const key = `${entry.templateEntryId}:retry`;
+    setBusyKey(key);
+    Toast.info('已开始重新分析');
+    try {
+      const tpl = snapshot.get(entry.templateEntryId);
+      await analyzeAi({
+        recordId: record.id,
+        templateEntryId: entry.templateEntryId,
+        photoUrls: entry.photos,
+        samplePhotoUrls: tpl?.samplePhotos || [],
+      });
+      const fresh = await fetchRecord(record.id);
+      setRecord(fresh);
+      Toast.success('重新分析已完成');
+    } catch (error: any) {
+      Toast.fail(error?.message || '重新分析失败');
+      try {
+        const fresh = await fetchRecord(record.id);
+        setRecord(fresh);
+      } catch {
+        // ignore
+      }
+    } finally {
+      setBusyKey(null);
+    }
+  };
 
   return (
     <div className="report-page">
@@ -209,6 +302,7 @@ export default function ReportPage() {
             {record.entries.map((entry, idx) => {
               const tpl = snapshot.get(entry.templateEntryId);
               const st = entry.aiResult?.status || 'pending';
+              const final = finalLabel(entry);
               const needRedo = record.rejectReason?.entryIds?.includes(entry.templateEntryId);
               return (
                 <div
@@ -231,6 +325,10 @@ export default function ReportPage() {
                             }`
                           : '等待分析'
                       }
+                    />
+                    <Cell
+                      title="最终结论"
+                      value={<Tag type={final.type}>{final.text}</Tag>}
                     />
                     {(entry.photos || []).length > 0 && (
                       <Cell title="现场照片">
@@ -257,6 +355,41 @@ export default function ReportPage() {
                       </Cell>
                     )}
                     {entry.remark ? <Cell title="备注" label={entry.remark} /> : null}
+                    {canManualConfirm && statusAllowsConfirm ? (
+                      <Cell>
+                        <div className="report-entry-actions">
+                          <Button
+                            size="small"
+                            round
+                            type={entry.manualResult === 'pass' ? 'primary' : 'default'}
+                            loading={busyKey === `${entry.templateEntryId}:pass`}
+                            onClick={() => void confirmManual(entry, 'pass')}
+                          >
+                            人工确认合格
+                          </Button>
+                          <Button
+                            size="small"
+                            round
+                            type={entry.manualResult === 'fail' ? 'danger' : 'default'}
+                            loading={busyKey === `${entry.templateEntryId}:fail`}
+                            onClick={() => void confirmManual(entry, 'fail')}
+                          >
+                            人工确认不合格
+                          </Button>
+                          {(entry.photos || []).length > 0 ? (
+                            <Button
+                              size="small"
+                              round
+                              plain
+                              loading={busyKey === `${entry.templateEntryId}:retry`}
+                              onClick={() => void retryAnalysis(entry)}
+                            >
+                              重新分析
+                            </Button>
+                          ) : null}
+                        </div>
+                      </Cell>
+                    ) : null}
                   </Cell.Group>
                 </div>
               );

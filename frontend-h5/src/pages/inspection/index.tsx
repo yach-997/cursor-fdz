@@ -1921,40 +1921,6 @@ export default function InspectionPage() {
                     : '上传照片后 AI 将后台对比样本；全部拍完再提交，做完其他任务可回来看报告。'}
               </div>
 
-              {(currentEntry?.photos || []).length > 0 && (
-                <div className="inspection-manual-check">
-                  <div className="inspection-manual-check__heading">
-                    <div>
-                      <strong>现场检查结论（选填）</strong>
-                      <span>AI 仅供参考；如现场判断明确可选择，未选择不影响提交</span>
-                    </div>
-                    {currentEntry?.manualResult && currentEntry.manualResult !== 'pending' ? (
-                      <Tag type={currentEntry.manualResult === 'fail' ? 'danger' : 'success'}>
-                        已确认{RESULT_LABEL[currentEntry.manualResult]}
-                      </Tag>
-                    ) : (
-                      <Tag>待确认</Tag>
-                    )}
-                  </div>
-                  <div className="inspection-manual-check__actions">
-                    <Button
-                      round
-                      className={currentEntry?.manualResult === 'pass' ? 'is-pass' : ''}
-                      onClick={() => patchEntry({ manualResult: 'pass', finalResult: 'pass' })}
-                    >
-                      现场合格
-                    </Button>
-                    <Button
-                      round
-                      className={currentEntry?.manualResult === 'fail' ? 'is-fail' : ''}
-                      onClick={() => patchEntry({ manualResult: 'fail', finalResult: 'fail' })}
-                    >
-                      现场不合格
-                    </Button>
-                  </div>
-                </div>
-              )}
-
               <Cell title="备注（可选）">
                 <Input.TextArea
                   rows={2}

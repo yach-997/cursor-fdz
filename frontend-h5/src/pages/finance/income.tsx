@@ -182,6 +182,13 @@ function CaseSheet({
         </p>
       )}
 
+      {item.reviewComment?.trim() ? (
+        <div className="inc-bill-sheet-block">
+          <h4>审核意见</h4>
+          <p className="inc-bill-sheet-comment">{item.reviewComment.trim()}</p>
+        </div>
+      ) : null}
+
       {myExpenses.length > 0 && (
         <div className="inc-bill-sheet-block">
           <h4>本单报销</h4>
@@ -192,6 +199,9 @@ function CaseSheet({
                   {e.unitSeq != null ? `台 #${e.unitSeq}` : '报销'}
                   {e.note ? ` · ${e.note}` : ''}
                   {` · ${expenseStatusLabel[e.status] || e.status}`}
+                  {e.status === 'rejected' && e.reviewNote?.trim()
+                    ? ` · ${e.reviewNote.trim()}`
+                    : ''}
                 </span>
                 <b className={e.status === 'approved' ? 'is-pos' : undefined}>
                   ¥{Number(e.status === 'approved' ? e.amount : e.claimAmount ?? e.amount).toFixed(2)}

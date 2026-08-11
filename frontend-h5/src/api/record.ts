@@ -163,6 +163,18 @@ export async function analyzeAi(payload: {
   return data.data;
 }
 
+export async function setRecordManualResult(
+  recordId: string,
+  templateEntryId: string,
+  manualResult: 'pass' | 'fail',
+) {
+  const { data } = await request.put<ApiResponse<RecordItem>>(
+    `/records/${recordId}/entries/${encodeURIComponent(templateEntryId)}/manual-result`,
+    { manualResult },
+  );
+  return data.data;
+}
+
 export async function fetchAiResult(templateEntryId: string, recordId: string) {
   const { data } = await request.get<
     ApiResponse<{

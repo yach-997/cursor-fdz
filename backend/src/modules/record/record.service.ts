@@ -565,17 +565,22 @@ export class RecordService {
     }
 
     const map = new Map(dto.entries.map((e) => [e.templateEntryId, e]));
+    // 工程师不可通过草稿写入人工结论；仅网格长/管理员用专用接口确认
+    const allowManual = currentUser.role !== UserRole.INSPECTOR;
     record.entries = record.entries.map((entry) => {
       const patch = map.get(entry.templateEntryId);
       if (!patch) return entry;
       return {
         ...entry,
         photos: patch.photos ?? entry.photos,
-        manualResult: (patch.manualResult as RecordEntry['manualResult']) || entry.manualResult,
-        finalResult:
-          patch.finalResult !== undefined
+        manualResult: allowManual
+          ? (patch.manualResult as RecordEntry['manualResult']) || entry.manualResult
+          : entry.manualResult,
+        finalResult: allowManual
+          ? patch.finalResult !== undefined
             ? (patch.finalResult as RecordEntry['finalResult'])
-            : entry.finalResult,
+            : entry.finalResult
+          : entry.finalResult,
         remark: patch.remark !== undefined ? patch.remark : entry.remark,
       };
     });
@@ -893,6 +898,62 @@ export class RecordService {
     return this.toDetail(record, task);
   }
 
+  /**
+   * 网格长/管理员对已提交报告的检查项做人工确认。
+   * 写入 manualResult + finalResult，最终结论以人工为准；工程师无权调用。
+   */
+  async setManualEntryResult(
+    id: string,
+    templateEntryId: string,
+    manualResult: CheckResult.PASS | CheckResult.FAIL,
+    currentUser: CurrentUserContext,
+  ) {
+    const record = await this.getRecordOrThrow(id);
+    const task = await this.getTaskOrThrow(record.taskId);
+    this.assertAuditAccess(task, currentUser);
+
+    if (
+      ![RecordStatus.SUBMITTED, RecordStatus.APPROVED, RecordStatus.REJECTED].includes(
+        record.status,
+      )
+    ) {
+      throw new BadRequestException('报告提交后才可人工确认检查项');
+    }
+
+    const idx = record.entries.findIndex((e) => e.templateEntryId === templateEntryId);
+    if (idx < 0) throw new NotFoundException('检查项不存在');
+
+    const entry = record.entries[idx];
+    const before = entry.manualResult;
+    const label = manualResult === CheckResult.PASS ? '合格' : '不合格';
+    const tplName =
+      (task.templateSnapshot || []).find((t) => t.id === templateEntryId)?.name || '检查项';
+
+    record.entries = record.entries.map((e, i) =>
+      i === idx
+        ? {
+            ...e,
+            manualResult,
+            finalResult: manualResult,
+          }
+        : e,
+    );
+    this.pushTrail(record, {
+      action: 'manual_result',
+      at: new Date().toISOString(),
+      by: currentUser.id,
+      byName: currentUser.realName,
+      entryIds: [templateEntryId],
+      summary: `人工确认「${tplName}」为${label}${
+        before && before !== CheckResult.PENDING && before !== manualResult
+          ? `（原：${before === CheckResult.PASS ? '合格' : '不合格'}）`
+          : ''
+      }`,
+    });
+    await this.recordRepo.save(record);
+    return this.toDetail(record, task);
+  }
+
   /** 按设备横向对比多条记录 */
   async compare(
     deviceId: string,
@@ -1159,8 +1220,8 @@ export class RecordService {
     let pending = 0;
     let error = 0;
     for (const e of entries) {
-      // 此处只统计 AI 原始判断。工程师现场确认保存在 manualResult/finalResult，
-      // 不能覆盖 AI 统计，否则后台会出现“详情 5 项 AI 不合格、列表只显示 1 项”的口径冲突。
+      // 此处只统计 AI 原始判断。网格长/管理员人工确认保存在 manualResult/finalResult，
+      // 不能覆盖 AI 统计，否则后台会出现“详情多项 AI 不合格、列表只显示 1 项”的口径冲突。
       const st = e.aiResult?.status;
       if (st === CheckResult.FAIL) fail += 1;
       else if (st === CheckResult.PASS) pass += 1;

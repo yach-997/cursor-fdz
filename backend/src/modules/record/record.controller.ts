@@ -16,6 +16,7 @@ import {
   SaveDraftDto,
   RejectRecordDto,
   SubmitRecordDto,
+  ManualEntryResultDto,
 } from './dto/record.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -126,5 +127,18 @@ export class RecordController {
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.recordService.reject(id, dto, user);
+  }
+
+  /** 网格长/管理员：按检查项人工确认合格或不合格 */
+  @Put(':id/entries/:templateEntryId/manual-result')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
+  @HttpCode(HttpStatus.OK)
+  async setManualResult(
+    @Param('id', ParsePostgresUuidPipe) id: string,
+    @Param('templateEntryId') templateEntryId: string,
+    @Body() dto: ManualEntryResultDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.recordService.setManualEntryResult(id, templateEntryId, dto.manualResult, user);
   }
 }

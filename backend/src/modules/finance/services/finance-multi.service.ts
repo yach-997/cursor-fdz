@@ -1053,6 +1053,11 @@ export class FinanceMultiService implements OnModuleInit {
     if (!claim) throw new NotFoundException('报销单不存在');
     const serviceCase = await this.caseForManager(claim.serviceCaseId, user);
     if (claim.status !== 'submitted') throw new BadRequestException('仅待审报销可审核');
+    if (
+      !['finished', 'settle_review', 'settled', 'month_locked'].includes(serviceCase.status)
+    ) {
+      throw new BadRequestException('案例完工后才可审核行程报销');
+    }
     claim.status = pass ? 'approved' : 'rejected';
     claim.reviewBy = user.id;
     claim.reviewAt = new Date();
@@ -1099,6 +1104,8 @@ export class FinanceMultiService implements OnModuleInit {
       );
     } else {
       qb.andWhere("e.status = 'submitted'");
+      // 案例完工后才进入管理员待审，与案例结算节奏对齐；作业中已提交的先排队
+      qb.andWhere("c.status IN ('finished','settle_review','settled','month_locked')");
     }
     if (query.month?.trim()) {
       qb.andWhere(

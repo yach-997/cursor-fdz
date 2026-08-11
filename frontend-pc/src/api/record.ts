@@ -166,6 +166,18 @@ export async function rejectRecord(
   return data.data;
 }
 
+export async function setRecordManualResult(
+  id: string,
+  templateEntryId: string,
+  manualResult: 'pass' | 'fail',
+) {
+  const { data } = await request.put<ApiResponse<RecordItem>>(
+    `/records/${id}/entries/${encodeURIComponent(templateEntryId)}/manual-result`,
+    { manualResult },
+  );
+  return data.data;
+}
+
 export async function compareRecords(deviceId: string, recordIds: string[]) {
   const { data } = await request.get<
     ApiResponse<{ deviceId: string; list: RecordItem[] }>

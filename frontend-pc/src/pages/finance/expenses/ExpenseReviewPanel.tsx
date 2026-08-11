@@ -335,7 +335,7 @@ export default function ExpenseReviewPanel({ onChanged }: Props) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
         <p style={{ color: '#61756b', margin: 0 }}>
-          按台审核。工程师申报金额可改核定（如报100核定80）；通过后以核定金额计入月结。里程差仅参考。
+          按台审核。工程师可在作业中先填报；案例完工后，已提交的行程报销才会进入待审。申报金额可改核定（如报100核定80）；通过后以核定金额计入月结。里程差仅参考。
         </p>
         <Button onClick={() => void load()} loading={loading}>
           刷新

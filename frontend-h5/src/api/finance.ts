@@ -161,6 +161,7 @@ export interface IncomeLedger {
   assignMode?: 'single' | 'multi';
   isShared?: boolean;
   reviewStatus: 'pending' | 'approved' | 'rejected';
+  reviewComment?: string | null;
   serviceCase?: MobileFinanceCase;
   items: Array<{
     itemName: string;
@@ -180,6 +181,7 @@ export interface IncomeLedger {
     claimAmount?: string | null;
     note?: string | null;
     status: string;
+    reviewNote?: string | null;
     mileageKm?: string | null;
     tripSkipped?: boolean;
   }>;

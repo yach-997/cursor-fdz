@@ -142,3 +142,9 @@ export class RejectRecordDto {
   @IsString({ each: true })
   entryIds?: string[];
 }
+
+/** 网格长/管理员：按检查项人工确认合格/不合格 */
+export class ManualEntryResultDto {
+  @IsIn([CheckResult.PASS, CheckResult.FAIL])
+  manualResult: CheckResult.PASS | CheckResult.FAIL;
+}

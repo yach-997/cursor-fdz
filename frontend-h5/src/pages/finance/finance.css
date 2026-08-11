@@ -561,6 +561,17 @@
   font-size: 13px;
   color: #31584d;
 }
+.inc-bill-sheet-comment {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f3f7f5;
+  color: #31584d;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .inc-bill-sheet-warn {
   margin: 10px 0 0;
   padding: 10px 12px;

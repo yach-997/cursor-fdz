@@ -98,6 +98,18 @@
   border-color: rgba(181, 74, 63, 0.28);
 }
 
+.report-entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0 2px;
+}
+
+.report-entry-actions .rv-button {
+  flex: 1 1 auto;
+  min-width: 108px;
+}
+
 .report-photos {
   display: flex;
   gap: 8px;
