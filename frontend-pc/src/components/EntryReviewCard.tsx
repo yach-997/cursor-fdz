@@ -1,28 +1,28 @@
 import { Button, Image, Space, Tag } from 'antd';
 import type { RecordEntry } from '../api/record';
 import { displayPhotoUrl } from '../utils/photo-url';
-import { CHECK_RESULT_LABEL } from '../utils/displayLabels';
 import './EntryReviewCard.css';
 
-function finalView(entry: RecordEntry) {
-  const manual =
-    entry.manualResult === 'pass' || entry.manualResult === 'fail' ? entry.manualResult : null;
-  if (entry.finalResult === 'pass') {
-    return {
-      label: manual === 'pass' ? '合格 · 人工' : '合格',
-      color: 'success' as const,
-    };
+function aiTagView(entry: RecordEntry) {
+  const status = entry.aiResult?.status || 'pending';
+  const confidence = Math.round((entry.aiResult?.confidence || 0) * 100);
+  if (status === 'pass') {
+    return { label: `AI分析：合格 ${confidence}%`, color: 'success' as const };
   }
-  if (entry.finalResult === 'fail') {
-    return {
-      label: manual === 'fail' ? '不合格 · 人工' : '不合格',
-      color: 'error' as const,
-    };
+  if (status === 'fail') {
+    return { label: `AI分析：不合格 ${confidence}%`, color: 'error' as const };
   }
-  if (entry.aiResult?.status === 'error') {
-    return { label: '待判断', color: 'warning' as const };
+  if (status === 'error') {
+    return { label: 'AI分析：异常', color: 'warning' as const };
   }
-  return { label: '分析中', color: 'processing' as const };
+  return { label: 'AI分析：进行中', color: 'processing' as const };
+}
+
+function manualSelected(entry: RecordEntry): 'pass' | 'fail' | null {
+  if (entry.manualResult === 'pass' || entry.manualResult === 'fail') {
+    return entry.manualResult;
+  }
+  return null;
 }
 
 export type EntryReviewCardProps = {
@@ -37,7 +37,7 @@ export type EntryReviewCardProps = {
   onRetry?: () => void;
 };
 
-/** 检查项：结论一眼可见，操作收成短按钮 */
+/** 检查项：右上 AI 结论；左下人工确认（绿/红描边统一） */
 export default function EntryReviewCard({
   title,
   entry,
@@ -49,18 +49,15 @@ export default function EntryReviewCard({
   onConfirm,
   onRetry,
 }: EntryReviewCardProps) {
-  const final = finalView(entry);
-  const aiStatus = entry.aiResult?.status || 'pending';
-  const aiLabel = CHECK_RESULT_LABEL[aiStatus] || '待人工判断';
-  const confidence = Math.round((entry.aiResult?.confidence || 0) * 100);
+  const ai = aiTagView(entry);
+  const selected = manualSelected(entry);
   const reason = entry.aiResult?.reason?.trim();
   const photos = entry.photos || [];
-  const selected =
-    entry.manualResult === 'pass' || entry.manualResult === 'fail'
-      ? entry.manualResult
-      : entry.finalResult === 'pass' || entry.finalResult === 'fail'
-        ? entry.finalResult
-        : null;
+  const aiStatus = entry.aiResult?.status;
+  const manualOverridesAi =
+    selected &&
+    (aiStatus === 'pass' || aiStatus === 'fail') &&
+    selected !== aiStatus;
 
   return (
     <div className="entry-review-card">
@@ -69,18 +66,23 @@ export default function EntryReviewCard({
           <span>{title}</span>
           {needRedo ? <Tag color="error">需返工</Tag> : null}
         </div>
-        <Tag color={final.color} className="entry-review-card__final">
-          {final.label}
+        <Tag color={ai.color} className="entry-review-card__ai-tag">
+          {ai.label}
         </Tag>
       </div>
 
-      <div className="entry-review-card__ai">
-        <span>
-          AI {aiLabel}
-          {['pass', 'fail'].includes(aiStatus) ? ` ${confidence}%` : ''}
-        </span>
-        {reason ? <span className="entry-review-card__reason">{reason}</span> : null}
-      </div>
+      {reason ? <div className="entry-review-card__reason">{reason}</div> : null}
+
+      {selected ? (
+        <div
+          className={`entry-review-card__manual-tip ${
+            selected === 'fail' ? 'is-fail' : 'is-pass'
+          }`}
+        >
+          人工已确认：{selected === 'pass' ? '合格' : '不合格'}
+          {manualOverridesAi ? '（最终以人工为准）' : ''}
+        </div>
+      ) : null}
 
       {photos.length > 0 ? (
         <Image.PreviewGroup>
@@ -102,24 +104,26 @@ export default function EntryReviewCard({
 
       {canConfirm ? (
         <div className="entry-review-card__actions">
-          <div className="entry-review-card__toggle">
-            <Button
-              size="small"
-              type={selected === 'pass' ? 'primary' : 'default'}
-              loading={manualBusy === 'pass'}
-              onClick={() => onConfirm?.('pass')}
-            >
-              合格
-            </Button>
-            <Button
-              size="small"
-              danger={selected !== 'fail'}
-              type={selected === 'fail' ? 'primary' : 'default'}
-              loading={manualBusy === 'fail'}
-              onClick={() => onConfirm?.('fail')}
-            >
-              不合格
-            </Button>
+          <div className="entry-review-card__confirm">
+            <span className="entry-review-card__confirm-label">点击可人工确认</span>
+            <div className="entry-review-card__toggle">
+              <Button
+                size="small"
+                className={`entry-btn-pass${selected === 'pass' ? ' is-active' : ''}`}
+                loading={manualBusy === 'pass'}
+                onClick={() => onConfirm?.('pass')}
+              >
+                合格
+              </Button>
+              <Button
+                size="small"
+                className={`entry-btn-fail${selected === 'fail' ? ' is-active' : ''}`}
+                loading={manualBusy === 'fail'}
+                onClick={() => onConfirm?.('fail')}
+              >
+                不合格
+              </Button>
+            </div>
           </div>
           {photos.length > 0 ? (
             <Button type="link" size="small" loading={retrying} onClick={onRetry}>

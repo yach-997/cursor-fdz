@@ -107,6 +107,18 @@
   padding: 4px 0 2px;
 }
 
+.report-entry-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-entry-confirm-label {
+  color: #6a7d76;
+  font-size: 12px;
+}
+
 .report-entry-toggle {
   display: inline-flex;
   gap: 8px;
@@ -114,6 +126,30 @@
 
 .report-entry-toggle .rv-button {
   min-width: 72px;
+}
+
+.report-btn-pass.rv-button {
+  color: #389e0d !important;
+  border-color: #95de64 !important;
+  background: #f6ffed !important;
+}
+
+.report-btn-pass.rv-button.is-active {
+  color: #fff !important;
+  border-color: #52c41a !important;
+  background: #52c41a !important;
+}
+
+.report-btn-fail.rv-button {
+  color: #cf1322 !important;
+  border-color: #ffa39e !important;
+  background: #fff2f0 !important;
+}
+
+.report-btn-fail.rv-button.is-active {
+  color: #fff !important;
+  border-color: #ff4d4f !important;
+  background: #ff4d4f !important;
 }
 
 .report-photos {
