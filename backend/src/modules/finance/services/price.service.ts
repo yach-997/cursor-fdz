@@ -78,7 +78,7 @@ export class PriceService implements OnModuleInit {
         unitPrice: Number(dto.unitPrice).toFixed(2),
         workHours: dto.workHours == null ? null : Number(dto.workHours).toFixed(2),
         effectiveDate: dto.effectiveDate || new Date().toISOString().slice(0, 10),
-        status: dto.status || 'active',
+        status: 'active',
         createdBy: user.id,
         changeRemark: dto.changeRemark || null,
       }),
