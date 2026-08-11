@@ -4,7 +4,6 @@ import {
   Button,
   Checkbox,
   Drawer,
-  Image,
   Input,
   Modal,
   Space,
@@ -28,8 +27,8 @@ import {
   type RecordEntry,
   type AuditTrailEvent,
 } from '../../api/record';
-import { displayPhotoUrl } from '../../utils/photo-url';
-import { CHECK_RESULT_LABEL, formatDateTime } from '../../utils/displayLabels';
+import { formatDateTime } from '../../utils/displayLabels';
+import EntryReviewCard from '../../components/EntryReviewCard';
 
 const STATUS_MAP: Record<string, { color: string; text: string }> = {
   submitted: { color: 'processing', text: '待审核' },
@@ -191,7 +190,7 @@ export default function AuditPage() {
     const label = result === 'pass' ? '合格' : '不合格';
     const busyKey = `${entry.templateEntryId}:${result}`;
     Modal.confirm({
-      title: `人工确认${label}`,
+      title: `确认设为${label}`,
       content: `将该检查项最终结论设为「${label}」？`,
       okText: '确认',
       cancelText: '取消',
@@ -506,106 +505,25 @@ export default function AuditPage() {
               <div style={{ color: '#999', marginBottom: 20 }}>暂无追溯记录</div>
             )}
 
-            {detail.entries?.map((entry) => {
-              const needRedo = detail.rejectReason?.entryIds?.includes(entry.templateEntryId);
-              const aiFail = entry.aiResult?.status === 'fail';
-              const aiError = entry.aiResult?.status === 'error';
-              const manualResult = entry.manualResult;
-              const canConfirm = ['submitted', 'approved', 'rejected'].includes(detail.status);
-              return (
-                <div key={entry.templateEntryId} style={{ marginBottom: 20 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 8 }}>
-                    {tplName(entry.templateEntryId)}
-                    {aiFail ? (
-                      <Tag color="error" style={{ marginLeft: 8 }}>
-                        AI 不合格
-                      </Tag>
-                    ) : null}
-                    {aiError ? (
-                      <Tag color="warning" style={{ marginLeft: 8 }}>
-                        AI 异常
-                      </Tag>
-                    ) : null}
-                    {manualResult === 'pass' || manualResult === 'fail' ? (
-                      <Tag
-                        color={manualResult === 'fail' ? 'error' : 'success'}
-                        style={{ marginLeft: 8 }}
-                      >
-                        人工确认{manualResult === 'fail' ? '不合格' : '合格'}
-                      </Tag>
-                    ) : (
-                      <Tag style={{ marginLeft: 8 }}>待人工确认</Tag>
-                    )}
-                    {needRedo ? (
-                      <Tag color="error" style={{ marginLeft: 8 }}>
-                        需返工
-                      </Tag>
-                    ) : null}
-                  </div>
-                  <div style={{ marginBottom: 8, color: '#666' }}>
-                    智能分析：
-                    {CHECK_RESULT_LABEL[entry.aiResult?.status || 'pending'] || '待人工判断'}（
-                    {((entry.aiResult?.confidence || 0) * 100).toFixed(0)}%）
-                    {entry.aiResult?.reason ? ` · ${entry.aiResult.reason}` : ''}
-                  </div>
-                  <div style={{ marginBottom: 8, color: '#666' }}>
-                    最终结论：
-                    {entry.finalResult === 'pass'
-                      ? manualResult === 'pass'
-                        ? '合格（人工确认）'
-                        : '合格'
-                      : entry.finalResult === 'fail'
-                        ? manualResult === 'fail'
-                          ? '不合格（人工确认）'
-                          : '不合格'
-                        : '待确认'}
-                  </div>
-                  {canConfirm ? (
-                    <Space wrap style={{ marginBottom: 8 }}>
-                      <Button
-                        size="small"
-                        type={manualResult === 'pass' ? 'primary' : 'default'}
-                        loading={manualBusyKey === `${entry.templateEntryId}:pass`}
-                        onClick={() => handleManualConfirm(entry, 'pass')}
-                      >
-                        人工确认合格
-                      </Button>
-                      <Button
-                        size="small"
-                        danger={manualResult !== 'fail'}
-                        type={manualResult === 'fail' ? 'primary' : 'default'}
-                        loading={manualBusyKey === `${entry.templateEntryId}:fail`}
-                        onClick={() => handleManualConfirm(entry, 'fail')}
-                      >
-                        人工确认不合格
-                      </Button>
-                      {(entry.photos || []).length > 0 ? (
-                        <Button
-                          size="small"
-                          loading={retryingEntryId === entry.templateEntryId}
-                          onClick={() => void retryAnalysis(entry)}
-                        >
-                          重新分析
-                        </Button>
-                      ) : null}
-                    </Space>
-                  ) : null}
-                  <Image.PreviewGroup>
-                    <Space wrap>
-                      {(entry.photos || []).map((url) => (
-                        <Image
-                          key={url}
-                          src={displayPhotoUrl(url)}
-                          width={96}
-                          height={96}
-                          style={{ objectFit: 'cover' }}
-                        />
-                      ))}
-                    </Space>
-                  </Image.PreviewGroup>
-                </div>
-              );
-            })}
+            {detail.entries?.map((entry) => (
+              <EntryReviewCard
+                key={entry.templateEntryId}
+                title={tplName(entry.templateEntryId)}
+                entry={entry}
+                needRedo={detail.rejectReason?.entryIds?.includes(entry.templateEntryId)}
+                canConfirm={['submitted', 'approved', 'rejected'].includes(detail.status)}
+                manualBusy={
+                  manualBusyKey === `${entry.templateEntryId}:pass`
+                    ? 'pass'
+                    : manualBusyKey === `${entry.templateEntryId}:fail`
+                      ? 'fail'
+                      : null
+                }
+                retrying={retryingEntryId === entry.templateEntryId}
+                onConfirm={(result) => handleManualConfirm(entry, result)}
+                onRetry={() => void retryAnalysis(entry)}
+              />
+            ))}
           </>
         ) : null}
       </Drawer>

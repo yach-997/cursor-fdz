@@ -101,13 +101,19 @@
 .report-entry-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
   padding: 4px 0 2px;
 }
 
-.report-entry-actions .rv-button {
-  flex: 1 1 auto;
-  min-width: 108px;
+.report-entry-toggle {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.report-entry-toggle .rv-button {
+  min-width: 72px;
 }
 
 .report-photos {

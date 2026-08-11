@@ -34,18 +34,18 @@ function finalLabel(entry: RecordEntry) {
     entry.manualResult === 'pass' || entry.manualResult === 'fail' ? entry.manualResult : null;
   if (entry.finalResult === 'pass') {
     return {
-      text: manual === 'pass' ? '合格（人工确认）' : '合格',
+      text: manual === 'pass' ? '合格 · 人工' : '合格',
       type: 'success' as const,
     };
   }
   if (entry.finalResult === 'fail') {
     return {
-      text: manual === 'fail' ? '不合格（人工确认）' : '不合格',
+      text: manual === 'fail' ? '不合格 · 人工' : '不合格',
       type: 'danger' as const,
     };
   }
   if (entry.aiResult?.status === 'error') {
-    return { text: '待人工判断', type: 'warning' as const };
+    return { text: '待判断', type: 'warning' as const };
   }
   return { text: '分析中', type: 'primary' as const };
 }
@@ -125,7 +125,7 @@ export default function ReportPage() {
     const label = result === 'pass' ? '合格' : '不合格';
     try {
       await Dialog.confirm({
-        title: `人工确认${label}`,
+        title: `确认设为${label}`,
         message: `将该检查项最终结论设为「${label}」？`,
       });
     } catch {
@@ -304,6 +304,12 @@ export default function ReportPage() {
               const st = entry.aiResult?.status || 'pending';
               const final = finalLabel(entry);
               const needRedo = record.rejectReason?.entryIds?.includes(entry.templateEntryId);
+              const selected =
+                entry.manualResult === 'pass' || entry.manualResult === 'fail'
+                  ? entry.manualResult
+                  : entry.finalResult === 'pass' || entry.finalResult === 'fail'
+                    ? entry.finalResult
+                    : null;
               return (
                 <div
                   key={entry.templateEntryId}
@@ -314,21 +320,17 @@ export default function ReportPage() {
                     title={`${idx + 1}. ${tpl?.name || '检查项'}${needRedo ? ' · 需返工' : ''}`}
                   >
                     <Cell
-                      title="智能分析结论"
-                      value={
-                        <Tag type={AI_TAG[st] || 'primary'}>{AI_LABEL[st] || '待人工判断'}</Tag>
-                      }
+                      title="结论"
+                      value={<Tag type={final.type}>{final.text}</Tag>}
                       label={
                         entry.aiResult
-                          ? `置信度 ${Math.round((entry.aiResult.confidence || 0) * 100)}% · ${
-                              entry.aiResult.reason || ''
-                            }`
-                          : '等待分析'
+                          ? `AI ${AI_LABEL[st] || '待判断'}${
+                              ['pass', 'fail'].includes(st)
+                                ? ` ${Math.round((entry.aiResult.confidence || 0) * 100)}%`
+                                : ''
+                            }${entry.aiResult.reason ? ` · ${entry.aiResult.reason}` : ''}`
+                          : '等待 AI 分析'
                       }
-                    />
-                    <Cell
-                      title="最终结论"
-                      value={<Tag type={final.type}>{final.text}</Tag>}
                     />
                     {(entry.photos || []).length > 0 && (
                       <Cell title="现场照片">
@@ -358,29 +360,32 @@ export default function ReportPage() {
                     {canManualConfirm && statusAllowsConfirm ? (
                       <Cell>
                         <div className="report-entry-actions">
-                          <Button
-                            size="small"
-                            round
-                            type={entry.manualResult === 'pass' ? 'primary' : 'default'}
-                            loading={busyKey === `${entry.templateEntryId}:pass`}
-                            onClick={() => void confirmManual(entry, 'pass')}
-                          >
-                            人工确认合格
-                          </Button>
-                          <Button
-                            size="small"
-                            round
-                            type={entry.manualResult === 'fail' ? 'danger' : 'default'}
-                            loading={busyKey === `${entry.templateEntryId}:fail`}
-                            onClick={() => void confirmManual(entry, 'fail')}
-                          >
-                            人工确认不合格
-                          </Button>
+                          <div className="report-entry-toggle">
+                            <Button
+                              size="small"
+                              round
+                              type={selected === 'pass' ? 'primary' : 'default'}
+                              loading={busyKey === `${entry.templateEntryId}:pass`}
+                              onClick={() => void confirmManual(entry, 'pass')}
+                            >
+                              合格
+                            </Button>
+                            <Button
+                              size="small"
+                              round
+                              type={selected === 'fail' ? 'danger' : 'default'}
+                              loading={busyKey === `${entry.templateEntryId}:fail`}
+                              onClick={() => void confirmManual(entry, 'fail')}
+                            >
+                              不合格
+                            </Button>
+                          </div>
                           {(entry.photos || []).length > 0 ? (
                             <Button
                               size="small"
                               round
                               plain
+                              hairline
                               loading={busyKey === `${entry.templateEntryId}:retry`}
                               onClick={() => void retryAnalysis(entry)}
                             >
