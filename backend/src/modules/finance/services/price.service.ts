@@ -57,7 +57,9 @@ export class PriceService implements OnModuleInit {
     if (query.keyword)
       qb.andWhere('(p.item_code ILIKE :kw OR p.item_name ILIKE :kw)', { kw: `%${query.keyword}%` });
     const [list, total] = await qb
-      .orderBy('p.updated_at', 'DESC')
+      .orderBy('p.created_at', 'DESC')
+      .addOrderBy('p.updated_at', 'DESC')
+      .addOrderBy('p.id', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();
