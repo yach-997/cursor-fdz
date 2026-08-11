@@ -16,6 +16,8 @@ import type {
   AssessmentEventCatalogItem,
   AssessmentEventRow,
   FinanceMonthlySettlement,
+  UpdateCaseProfilePayload,
+  UpdatePoOrderPayload,
 } from '../types/finance';
 
 const unwrap = <T>(response: { data: ApiResponse<T> }) => response.data.data;
@@ -300,8 +302,19 @@ export async function reviewFinanceDeduction(caseId: string, approved: boolean, 
 export async function fetchFinanceCase(id: string) {
   return unwrap(await request.get<ApiResponse<FinanceCase>>(`/cases/${id}`));
 }
+export async function updateCaseProfile(id: string, payload: UpdateCaseProfilePayload) {
+  return unwrap(
+    await request.patch<ApiResponse<FinanceCase & { reprice?: Record<string, unknown> | null }>>(
+      `/cases/${id}/profile`,
+      payload,
+    ),
+  );
+}
 export async function fetchPoOrders(params: Record<string, unknown>) {
   return unwrap(await request.get<ApiResponse<FinancePage<PoOrder>>>('/po-orders', { params }));
+}
+export async function updatePoOrder(id: string, payload: UpdatePoOrderPayload) {
+  return unwrap(await request.patch<ApiResponse<PoOrder>>(`/po-orders/${id}`, payload));
 }
 export async function clearPoOrders() {
   return unwrap(

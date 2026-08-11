@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Put,
   Query,
@@ -32,6 +33,7 @@ import {
   SetCaseSiteDto,
   SetCaseTaskTypeDto,
   SetCaseWorkPlanDto,
+  UpdateCaseProfileDto,
 } from '../dto/finance.dto';
 import { FinanceQueryService } from '../services/finance-query.service';
 import { FinanceWorkflowService } from '../services/finance-workflow.service';
@@ -120,6 +122,15 @@ export class FinanceCaseController {
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.bridge.setSite(id, dto, user);
+  }
+  @Patch(':id/profile')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
+  updateProfile(
+    @Param('id') id: string,
+    @Body() dto: UpdateCaseProfileDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.service.updateCaseProfile(id, dto, user);
   }
   @Put(':id/task-type') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) setTaskType(
     @Param('id') id: string,

@@ -5,6 +5,7 @@ import {
   Card,
   Descriptions,
   Drawer,
+  Form,
   Input,
   Modal,
   Select,
@@ -17,6 +18,7 @@ import {
 import {
   DeleteOutlined,
   DownloadOutlined,
+  EditOutlined,
   EyeOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -36,6 +38,7 @@ import {
   setFinanceCaseSite,
   setFinanceCaseTaskType,
   setFinanceCaseWorkPlan,
+  updateCaseProfile,
   withdrawFinanceAssignee,
 } from '../../../api/finance';
 import { fetchSiteMembers, fetchSites } from '../../../api/site';
@@ -174,6 +177,10 @@ export default function FinanceCasesPage() {
   const [clearing, setClearing] = useState(false);
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<Record<string, any>>();
+  const [profileEdit, setProfileEdit] = useState<FinanceCase>();
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileForm] = Form.useForm();
+  const profileProvince = Form.useWatch('province', profileForm);
   const [sites, setSites] = useState<SiteItem[]>([]);
   const [taskTypes, setTaskTypes] = useState<TemplateItem[]>([]);
   const [provinces, setProvinces] = useState<string[]>([]);
@@ -802,6 +809,25 @@ export default function FinanceCasesPage() {
                       {['finished', 'settle_review'].includes(r.status) ? '增补台数' : '调台数'}
                     </Button>
                   )}
+                {r.status !== 'month_locked' && (
+                  <Button
+                    type="link"
+                    icon={<EditOutlined />}
+                    onClick={() => {
+                      setProfileEdit(r);
+                      profileForm.setFieldsValue({
+                        projectName: r.projectName || '',
+                        province: r.province || undefined,
+                        city: r.city || undefined,
+                        siteDesc: r.siteDesc || '',
+                        serviceType: r.serviceType || '',
+                        productLine: r.productLine || '',
+                      });
+                    }}
+                  >
+                    编辑
+                  </Button>
+                )}
                 <Button
                   type="link"
                   icon={<EyeOutlined />}
@@ -1709,6 +1735,105 @@ export default function FinanceCasesPage() {
           onChange={(e) => setPlanUnits(Number(e.target.value) || 1)}
         />
       </Modal>
+      <Drawer
+        width={520}
+        open={!!profileEdit}
+        title={`编辑案例主数据 · ${profileEdit?.gspCaseNo || ''}`}
+        onClose={() => {
+          if (profileSaving) return;
+          setProfileEdit(undefined);
+          profileForm.resetFields();
+        }}
+        destroyOnClose
+        extra={
+          <Space>
+            <Button
+              onClick={() => {
+                if (profileSaving) return;
+                setProfileEdit(undefined);
+                profileForm.resetFields();
+              }}
+            >
+              取消
+            </Button>
+            <Button
+              type="primary"
+              loading={profileSaving}
+              onClick={() => {
+                void (async () => {
+                  if (!profileEdit) return;
+                  const values = await profileForm.validateFields();
+                  setProfileSaving(true);
+                  try {
+                    await updateCaseProfile(profileEdit.id, {
+                      projectName: String(values.projectName || '').trim(),
+                      province: values.province ? String(values.province).trim() : null,
+                      city: values.city ? String(values.city).trim() : null,
+                      siteDesc: values.siteDesc ? String(values.siteDesc).trim() : null,
+                      serviceType: values.serviceType ? String(values.serviceType).trim() : null,
+                      productLine: values.productLine ? String(values.productLine).trim() : null,
+                    });
+                    message.success('案例主数据已保存');
+                    setProfileEdit(undefined);
+                    profileForm.resetFields();
+                    void load();
+                  } finally {
+                    setProfileSaving(false);
+                  }
+                })();
+              }}
+            >
+              保存
+            </Button>
+          </Space>
+        }
+      >
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="此处仅改案例主数据"
+          description="网格、服务类型模板与派单请用列表上的对应操作。修改省份可能重算区域并影响已挂接 PO 的绩效计价。"
+        />
+        <Form form={profileForm} layout="vertical">
+          <Form.Item
+            name="projectName"
+            label="项目名称"
+            rules={[{ required: true, message: '请输入项目名称' }]}
+          >
+            <Input maxLength={128} />
+          </Form.Item>
+          <Form.Item name="serviceType" label="服务类型（需求类型原文）">
+            <Input maxLength={32} placeholder="如：巡检 / 故障恢复" />
+          </Form.Item>
+          <Form.Item name="productLine" label="产品线">
+            <Input maxLength={64} placeholder="如：地面-组串式" />
+          </Form.Item>
+          <Form.Item name="province" label="省份">
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={provinces.map((p) => ({ value: p, label: p }))}
+              onChange={() => profileForm.setFieldValue('city', undefined)}
+            />
+          </Form.Item>
+          <Form.Item name="city" label="城市" dependencies={['province']}>
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={(citiesByProvince[String(profileProvince || '')] || []).map((c) => ({
+                value: c,
+                label: c,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="siteDesc" label="站点/失效现象描述">
+            <Input.TextArea rows={3} />
+          </Form.Item>
+        </Form>
+      </Drawer>
       <Drawer
         width={760}
         open={!!detail}

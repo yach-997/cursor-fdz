@@ -1,9 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { UserRole } from '../../../common/enums';
 import { CurrentUserContext } from '../../../common/interfaces';
-import { ClearConfirmQueryDto, MatchPoDto, PoOrderQueryDto } from '../dto/finance.dto';
+import { ClearConfirmQueryDto, MatchPoDto, PoOrderQueryDto, UpdatePoOrderDto } from '../dto/finance.dto';
 import { FinanceQueryService } from '../services/finance-query.service';
 
 @Controller('po-orders')
@@ -25,6 +25,15 @@ export class FinancePoController {
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.service.generateCasesFromPo(user);
+  }
+  @Patch(':id')
+  @Roles(UserRole.SUPER_ADMIN)
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdatePoOrderDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.service.updatePo(id, dto, user);
   }
   @Post(':id/match') @Roles(UserRole.SUPER_ADMIN) match(
     @Param('id') id: string,

@@ -50,27 +50,77 @@ export interface PoItemRow {
   itemDesc?: string | null;
   unit?: string | null;
   qty: string | number;
+  settlePrice?: string | null;
+  perfPrice?: string | null;
+  itemRevenue?: string | null;
+  itemPerf?: string | null;
   priceStatus?: string;
+}
+export interface PoLinkedCase {
+  id: string;
+  gspCaseNo: string;
+  projectName: string;
+  province?: string | null;
+  city?: string | null;
+  siteDesc?: string | null;
+  serviceType?: string | null;
+  productLine?: string | null;
+  region?: string;
+  status?: string;
 }
 export interface PoOrder {
   id: string;
   poNo: string;
   gspCaseNo: string;
+  serviceCaseId?: string | null;
   poTotalAmount: string;
-  demandDate?: string;
-  demandType?: string;
-  productModel?: string;
+  demandDate?: string | null;
+  demander?: string | null;
+  demandType?: string | null;
+  productLine?: string | null;
+  productModel?: string | null;
   productQty?: string | number | null;
-  faultLevel?: string;
-  durationReq?: string;
-  province?: string;
-  projectName?: string;
-  projectScene?: string;
+  faultPhenomenon?: string | null;
+  faultLevel?: string | null;
+  durationReq?: string | null;
+  demandDesc?: string | null;
+  projectArea?: string | null;
+  projectCountry?: string | null;
+  projectRegion?: string | null;
+  province?: string | null;
+  projectName?: string | null;
+  projectScene?: string | null;
+  submitter?: string | null;
+  dingtalkCreatedAt?: string | null;
+  dingtalkUpdatedAt?: string | null;
   matchStatus: 'matched' | 'pending';
+  linkedCase?: PoLinkedCase | null;
   items?: PoItemRow[];
   specialItemCount?: number;
   generalItemCount?: number;
 }
+export type UpdatePoItemPayload = {
+  itemCategory: 'special' | 'general';
+  itemName: string;
+  itemDesc?: string | null;
+  unit?: string | null;
+  qty: number;
+};
+export type UpdatePoOrderPayload = {
+  poTotalAmount?: number;
+  productModel?: string | null;
+  productQty?: number | null;
+  projectScene?: string | null;
+  items?: UpdatePoItemPayload[];
+};
+export type UpdateCaseProfilePayload = {
+  projectName?: string;
+  province?: string | null;
+  city?: string | null;
+  siteDesc?: string | null;
+  serviceType?: string | null;
+  productLine?: string | null;
+};
 export interface PriceItem {
   id: string;
   priceType: 'settle' | 'perf';

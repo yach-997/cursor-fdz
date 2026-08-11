@@ -11,6 +11,7 @@ import {
   MaxLength,
   Min,
   Max,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
@@ -98,6 +99,37 @@ export class ClearConfirmQueryDto {
 
 export class MatchPoDto {
   @IsString() @MaxLength(32) gspCaseNo: string;
+}
+
+/** 案例主数据编辑（网格/任务类型/派单仍走原接口） */
+export class UpdateCaseProfileDto {
+  @IsOptional() @IsString() @MaxLength(128) projectName?: string;
+  @IsOptional() @IsString() @MaxLength(16) province?: string | null;
+  @IsOptional() @IsString() @MaxLength(32) city?: string | null;
+  @IsOptional() @IsString() siteDesc?: string | null;
+  @IsOptional() @IsString() @MaxLength(32) serviceType?: string | null;
+  @IsOptional() @IsString() @MaxLength(64) productLine?: string | null;
+}
+
+export class UpdatePoItemDto {
+  @IsIn(['special', 'general']) itemCategory: 'special' | 'general';
+  @IsString() @MaxLength(255) itemName: string;
+  @IsOptional() @IsString() itemDesc?: string | null;
+  @IsOptional() @IsString() @MaxLength(32) unit?: string | null;
+  @Type(() => Number) @IsNumber() @Min(0) qty: number;
+}
+
+/** PO 商务增量：仅白名单字段 + 全量条目替换 */
+export class UpdatePoOrderDto {
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) poTotalAmount?: number;
+  @IsOptional() @IsString() @MaxLength(64) productModel?: string | null;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) productQty?: number | null;
+  @IsOptional() @IsString() @MaxLength(32) projectScene?: string | null;
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UpdatePoItemDto)
+  items?: UpdatePoItemDto[];
 }
 
 export class CreatePriceDto {

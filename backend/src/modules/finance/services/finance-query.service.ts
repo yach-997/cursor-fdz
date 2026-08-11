@@ -1,14 +1,23 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { CasePerformance, InspectionTemplate, PoItem, PoOrder, ServiceCase } from '../../../entities';
 import { CurrentUserContext } from '../../../common/interfaces';
 import { ChangeLogService } from './change-log.service';
 import { FinanceScopeService } from './finance-scope.service';
-import { DashboardQueryDto, FinanceCaseQueryDto, PoOrderQueryDto } from '../dto/finance.dto';
+import { PriceMappingService } from './price-mapping.service';
+import {
+  DashboardQueryDto,
+  FinanceCaseQueryDto,
+  PoOrderQueryDto,
+  UpdateCaseProfileDto,
+  UpdatePoOrderDto,
+} from '../dto/finance.dto';
 import { UserRole } from '../../../common/enums';
 import { assertFinanceClearAllowed } from '../../../common/utils/finance-clear-guard';
 import { applyDemandTypeForCases } from './demand-type-match';
+
+const money = (value: number) => (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2);
 
 @Injectable()
 export class FinanceQueryService {
@@ -21,6 +30,7 @@ export class FinanceQueryService {
     private readonly templates: Repository<InspectionTemplate>,
     private readonly scope: FinanceScopeService,
     private readonly logs: ChangeLogService,
+    private readonly mappings: PriceMappingService,
   ) {}
 
   async clearCases(user: CurrentUserContext, confirm?: string) {
@@ -409,12 +419,32 @@ export class FinanceQueryService {
       list.push(item);
       itemsByPo.set(item.poId, list);
     }
+    const caseIds = [
+      ...new Set(raw.entities.map((entity) => entity.serviceCaseId).filter(Boolean) as string[]),
+    ];
+    const linkedCases = caseIds.length ? await this.cases.find({ where: { id: In(caseIds) } }) : [];
+    const linkedMap = new Map(linkedCases.map((item) => [item.id, item]));
     return {
       list: raw.entities.map((entity, index) => {
         const poItems = itemsByPo.get(entity.id) || [];
+        const linked = entity.serviceCaseId ? linkedMap.get(entity.serviceCaseId) : null;
         return {
           ...entity,
           caseRegion: raw.raw[index]?.caseRegion,
+          linkedCase: linked
+            ? {
+                id: linked.id,
+                gspCaseNo: linked.gspCaseNo,
+                projectName: linked.projectName,
+                province: linked.province,
+                city: linked.city,
+                siteDesc: linked.siteDesc,
+                serviceType: linked.serviceType,
+                productLine: linked.productLine,
+                region: linked.region,
+                status: linked.status,
+              }
+            : null,
           items: poItems,
           specialItemCount: poItems.filter((x) => x.itemCategory === 'special').length,
           generalItemCount: poItems.filter((x) => x.itemCategory === 'general').length,
@@ -423,6 +453,214 @@ export class FinanceQueryService {
       total,
       page,
       limit,
+    };
+  }
+
+  async updateCaseProfile(id: string, dto: UpdateCaseProfileDto, user: CurrentUserContext) {
+    const item = await this.cases.findOne({ where: { id } });
+    if (!item) throw new NotFoundException('案例不存在');
+    this.scope.assertCaseAccess(user, item);
+    if (item.status === 'month_locked') {
+      throw new BadRequestException('案例已月结，不可修改主数据');
+    }
+    const old = {
+      projectName: item.projectName,
+      province: item.province,
+      city: item.city,
+      siteDesc: item.siteDesc,
+      serviceType: item.serviceType,
+      productLine: item.productLine,
+      region: item.region,
+    };
+    let needReprice = false;
+    if (dto.projectName !== undefined) {
+      const name = String(dto.projectName || '').trim();
+      if (!name) throw new BadRequestException('项目名称不能为空');
+      item.projectName = name.slice(0, 128);
+    }
+    if (dto.province !== undefined) {
+      item.province = dto.province ? String(dto.province).trim().slice(0, 16) : null;
+      const nextRegion = item.province?.includes('云南') ? 'yunnan' : 'south_china';
+      if (item.region !== nextRegion) {
+        item.region = nextRegion;
+        needReprice = true;
+      }
+    }
+    if (dto.city !== undefined) {
+      item.city = dto.city ? String(dto.city).trim().slice(0, 32) : null;
+    }
+    if (dto.siteDesc !== undefined) {
+      item.siteDesc = dto.siteDesc ? String(dto.siteDesc).trim() : null;
+    }
+    if (dto.serviceType !== undefined) {
+      const next = dto.serviceType ? String(dto.serviceType).trim().slice(0, 32) : null;
+      if (next !== item.serviceType) needReprice = true;
+      item.serviceType = next;
+    }
+    if (dto.productLine !== undefined) {
+      const next = dto.productLine ? String(dto.productLine).trim().slice(0, 64) : null;
+      if (next !== item.productLine) needReprice = true;
+      item.productLine = next;
+    }
+    await this.cases.save(item);
+    let reprice: Awaited<ReturnType<PriceMappingService['repriceByPoIds']>> | null = null;
+    if (needReprice) {
+      const linkedPos = await this.orders.find({
+        where: { serviceCaseId: id },
+        select: ['id'],
+      });
+      if (linkedPos.length) {
+        reprice = await this.mappings.repriceByPoIds(linkedPos.map((row) => row.id));
+      }
+    }
+    await this.logs.write(
+      'service_case',
+      item.id,
+      'case_profile_update',
+      old,
+      {
+        projectName: item.projectName,
+        province: item.province,
+        city: item.city,
+        siteDesc: item.siteDesc,
+        serviceType: item.serviceType,
+        productLine: item.productLine,
+        region: item.region,
+      },
+      user.id,
+      '编辑案例主数据',
+    );
+    return { ...item, reprice };
+  }
+
+  async updatePo(id: string, dto: UpdatePoOrderDto, user: CurrentUserContext) {
+    if (user.role !== UserRole.SUPER_ADMIN) {
+      throw new ForbiddenException('仅管理员可编辑 PO');
+    }
+    const order = await this.orders.findOne({ where: { id } });
+    if (!order) throw new NotFoundException('PO不存在');
+    if (order.serviceCaseId) {
+      const serviceCase = await this.cases.findOne({ where: { id: order.serviceCaseId } });
+      if (serviceCase?.status === 'month_locked') {
+        throw new BadRequestException('关联案例已月结，不可编辑 PO');
+      }
+    }
+    const oldItems = await this.items.find({ where: { poId: id }, order: { sourceRow: 'ASC' } });
+    const old = {
+      poTotalAmount: order.poTotalAmount,
+      productModel: order.productModel,
+      productQty: order.productQty,
+      projectScene: order.projectScene,
+      items: oldItems.map((row) => ({
+        itemCategory: row.itemCategory,
+        itemName: row.itemName,
+        itemDesc: row.itemDesc,
+        unit: row.unit,
+        qty: row.qty,
+      })),
+    };
+    if (dto.poTotalAmount !== undefined) {
+      order.poTotalAmount = money(Number(dto.poTotalAmount));
+    }
+    if (dto.productModel !== undefined) {
+      order.productModel = dto.productModel ? String(dto.productModel).trim().slice(0, 64) : null;
+    }
+    if (dto.productQty !== undefined) {
+      order.productQty = dto.productQty == null ? null : money(Number(dto.productQty));
+    }
+    if (dto.projectScene !== undefined) {
+      order.projectScene = dto.projectScene
+        ? String(dto.projectScene).trim().slice(0, 32)
+        : null;
+    }
+    await this.orders.save(order);
+
+    if (dto.items !== undefined) {
+      if (!Array.isArray(dto.items)) throw new BadRequestException('条目格式无效');
+      for (const row of dto.items) {
+        const name = String(row.itemName || '').trim();
+        if (!name) throw new BadRequestException('服务条目名称不能为空');
+        if (!['special', 'general'].includes(row.itemCategory)) {
+          throw new BadRequestException('条目分类无效');
+        }
+        if (Number.isNaN(Number(row.qty)) || Number(row.qty) < 0) {
+          throw new BadRequestException(`条目「${name}」数量无效`);
+        }
+      }
+      await this.items.delete({ poId: id });
+      if (dto.items.length) {
+        await this.items.save(
+          dto.items.map((row, index) => {
+            const itemName = String(row.itemName).trim().slice(0, 255);
+            return this.items.create({
+              poId: id,
+              sourceRow: index + 1,
+              itemCategory: row.itemCategory,
+              itemCode: itemName,
+              itemName,
+              itemDesc: row.itemDesc ? String(row.itemDesc).trim() : null,
+              unit: row.unit ? String(row.unit).trim().slice(0, 32) : null,
+              qty: money(Number(row.qty)),
+              settlePrice: null,
+              perfPrice: null,
+              itemRevenue: '0.00',
+              itemPerf: '0.00',
+              priceStatus: 'pending_price',
+            });
+          }),
+        );
+      }
+    }
+
+    const reprice = await this.mappings.repriceByPoIds([id]);
+    const items = await this.items.find({
+      where: { poId: id },
+      order: { sourceRow: 'ASC', id: 'ASC' },
+    });
+    await this.logs.write(
+      'po_order',
+      order.id,
+      'po_update',
+      old,
+      {
+        poTotalAmount: order.poTotalAmount,
+        productModel: order.productModel,
+        productQty: order.productQty,
+        projectScene: order.projectScene,
+        items: items.map((row) => ({
+          itemCategory: row.itemCategory,
+          itemName: row.itemName,
+          itemDesc: row.itemDesc,
+          unit: row.unit,
+          qty: row.qty,
+        })),
+      },
+      user.id,
+      '编辑 PO 商务增量',
+    );
+    const linked = order.serviceCaseId
+      ? await this.cases.findOne({ where: { id: order.serviceCaseId } })
+      : null;
+    return {
+      ...order,
+      items,
+      specialItemCount: items.filter((x) => x.itemCategory === 'special').length,
+      generalItemCount: items.filter((x) => x.itemCategory === 'general').length,
+      linkedCase: linked
+        ? {
+            id: linked.id,
+            gspCaseNo: linked.gspCaseNo,
+            projectName: linked.projectName,
+            province: linked.province,
+            city: linked.city,
+            siteDesc: linked.siteDesc,
+            serviceType: linked.serviceType,
+            productLine: linked.productLine,
+            region: linked.region,
+            status: linked.status,
+          }
+        : null,
+      reprice,
     };
   }
 

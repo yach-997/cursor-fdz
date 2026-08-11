@@ -119,18 +119,38 @@ export class PriceMappingService {
   }
 
   async recalculate(sourceItemName?: string) {
+    return this.repriceItems({ sourceItemName });
+  }
+
+  /** 仅重算指定 PO 下条目（手工编辑 PO / 案例区域变更后） */
+  async repriceByPoIds(poIds: string[]) {
+    const ids = [...new Set(poIds.filter(Boolean))];
+    if (!ids.length) {
+      return { affectedItems: 0, pricedItems: 0, pendingPrice: 0, income: '0.00' };
+    }
+    return this.repriceItems({ poIds: ids });
+  }
+
+  private async repriceItems(filter: { sourceItemName?: string; poIds?: string[] }) {
     const [prices, mappings, orders, cases] = await Promise.all([
       this.prices.find({ where: { status: 'active' }, order: { effectiveDate: 'DESC' } }),
       this.mappings.find({ where: { status: 'active' } }),
-      this.orders.find(),
+      filter.poIds?.length
+        ? this.orders.find({ where: { id: In(filter.poIds) } })
+        : this.orders.find(),
       this.cases.find(),
     ]);
     const orderMap = new Map(orders.map((order) => [order.id, order]));
     const caseMap = new Map(cases.map((item) => [item.id, item]));
     const entries = await this.items.find({
-      where: sourceItemName ? { itemCode: sourceItemName } : {},
+      where: filter.poIds?.length
+        ? { poId: In(filter.poIds) }
+        : filter.sourceItemName
+          ? { itemCode: filter.sourceItemName }
+          : {},
     });
-    const contextEntries = sourceItemName ? await this.items.find() : entries;
+    const contextEntries =
+      filter.sourceItemName && !filter.poIds?.length ? await this.items.find() : entries;
     const entriesByPo = new Map<string, PoItem[]>();
     for (const entry of contextEntries) {
       if (!entriesByPo.has(entry.poId)) entriesByPo.set(entry.poId, []);
@@ -190,11 +210,18 @@ export class PriceMappingService {
     }
     await this.items.save(entries, { chunk: 100 });
     await this.recalculateLedgers([...affectedCases], caseMap);
-    const totals = await this.items
-      .createQueryBuilder('item')
-      .select("COUNT(*) FILTER (WHERE item.price_status='pending_price')", 'pendingPrice')
-      .addSelect('COALESCE(SUM(item.item_revenue),0)', 'income')
-      .getRawOne();
+    const totals = filter.poIds?.length
+      ? await this.items
+          .createQueryBuilder('item')
+          .select("COUNT(*) FILTER (WHERE item.price_status='pending_price')", 'pendingPrice')
+          .addSelect('COALESCE(SUM(item.item_revenue),0)', 'income')
+          .where('item.po_id IN (:...poIds)', { poIds: filter.poIds })
+          .getRawOne()
+      : await this.items
+          .createQueryBuilder('item')
+          .select("COUNT(*) FILTER (WHERE item.price_status='pending_price')", 'pendingPrice')
+          .addSelect('COALESCE(SUM(item.item_revenue),0)', 'income')
+          .getRawOne();
     return {
       affectedItems: entries.length,
       pricedItems: priced,
