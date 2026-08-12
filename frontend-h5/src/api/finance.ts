@@ -323,17 +323,16 @@ export async function saveUnitDeviceSerial(
   unitId: string,
   payload: { deviceSerial: string; serialPhotoUrl?: string },
 ) {
-  return unwrap(
-    await request.post<
-      ApiResponse<{
-        id: string;
-        seq: number;
-        deviceSerial: string;
-        serialPhotoUrl?: string | null;
-        serialConfirmedAt?: string;
-      }>
-    >(`/cases/${caseId}/units/${unitId}/serial`, payload, { skipErrorToast: true }),
-  );
+  const res = await request.post<
+    ApiResponse<{
+      id: string;
+      seq: number;
+      deviceSerial: string;
+      serialPhotoUrl?: string | null;
+      serialConfirmedAt?: string;
+    }>
+  >(`/cases/${caseId}/units/${unitId}/serial`, payload, { skipErrorToast: true } as never);
+  return unwrap(res);
 }
 
 /** @deprecated 使用 saveUnitTripExpense */
