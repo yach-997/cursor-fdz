@@ -13,7 +13,7 @@ import {
 import { FinanceWorkflowService } from '../services/finance-workflow.service';
 
 @Controller('review')
-@Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
+@Roles(UserRole.SUPER_ADMIN)
 export class FinanceReviewController {
   constructor(private readonly workflow: FinanceWorkflowService) {}
 

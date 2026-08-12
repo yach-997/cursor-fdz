@@ -79,7 +79,7 @@ export const menuConfig: MenuConfig[] = [
         path: '/finance/review',
         label: '结算审核',
         icon: 'AuditOutlined',
-        roles: ['super_admin', 'site_manager'],
+        roles: ['super_admin'],
       },
       {
         key: 'finance-assessment',
@@ -93,7 +93,7 @@ export const menuConfig: MenuConfig[] = [
         path: '/finance/monthly',
         label: '月度结算',
         icon: 'HistoryOutlined',
-        roles: ['super_admin', 'site_manager'],
+        roles: ['super_admin'],
       },
     ],
   },

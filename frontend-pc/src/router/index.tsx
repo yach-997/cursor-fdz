@@ -240,14 +240,20 @@ export const router = createBrowserRouter([
           {
             path: 'review',
             element: (
-              <Lazy>
-                <FinanceReviewPage />
-              </Lazy>
+              <AuthGuard roles={['super_admin']}>
+                <Lazy>
+                  <FinanceReviewPage />
+                </Lazy>
+              </AuthGuard>
             ),
           },
           {
             path: 'expenses',
-            element: <Navigate to="/finance/review?scope=expense" replace />,
+            element: (
+              <AuthGuard roles={['super_admin']}>
+                <Navigate to="/finance/review?scope=expense" replace />
+              </AuthGuard>
+            ),
           },
           {
             path: 'assessment',
@@ -260,9 +266,11 @@ export const router = createBrowserRouter([
           {
             path: 'monthly',
             element: (
-              <Lazy>
-                <FinanceMonthlyPage />
-              </Lazy>
+              <AuthGuard roles={['super_admin']}>
+                <Lazy>
+                  <FinanceMonthlyPage />
+                </Lazy>
+              </AuthGuard>
             ),
           },
         ],

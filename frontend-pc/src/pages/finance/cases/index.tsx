@@ -1988,14 +1988,18 @@ export default function FinanceCasesPage() {
                     return `${people} 人 / ${plan} 台`;
                   })(),
                 },
-                {
-                  key: 'revenue',
-                  label: '案例收入',
-                  children: `¥ ${Number(detail.caseRevenue || 0).toFixed(2)}`,
-                },
+                ...(admin
+                  ? [
+                      {
+                        key: 'revenue',
+                        label: '案例收入',
+                        children: `¥ ${Number(detail.caseRevenue || 0).toFixed(2)}`,
+                      },
+                    ]
+                  : []),
               ]}
             />
-            {detail.reconciliation?.warning && (
+            {admin && detail.reconciliation?.warning ? (
               <Alert
                 className="finance-warning"
                 style={{ marginTop: 16 }}
@@ -2004,14 +2008,14 @@ export default function FinanceCasesPage() {
                 message={detail.reconciliation.warning}
                 description={`PO总额 ¥${detail.reconciliation.poTotal}，已核算收入 ¥${detail.reconciliation.caseRevenue}`}
               />
-            )}
+            ) : null}
             <div className="finance-detail-section">
-              <h3>PO 与核算条目</h3>
+              <h3>{admin ? 'PO 与核算条目' : '服务条目'}</h3>
               {(detail.orders || []).map((po: any) => (
                 <Card
                   size="small"
                   key={po.id}
-                  title={`${po.poNo} · ¥${po.poTotalAmount}`}
+                  title={admin ? `${po.poNo} · ¥${po.poTotalAmount}` : String(po.poNo || 'PO')}
                   style={{ marginBottom: 10 }}
                 >
                   <Table
@@ -2038,18 +2042,22 @@ export default function FinanceCasesPage() {
                           return <Tag>{v || '-'}</Tag>;
                         },
                       },
-                      {
-                        title: '结算单价',
-                        dataIndex: 'settlePrice',
-                        render: (v, row: { priceStatus?: string }) =>
-                          row.priceStatus === 'ignored' ? '—' : v ? `¥${v}` : '待定价',
-                      },
-                      {
-                        title: '收入',
-                        dataIndex: 'itemRevenue',
-                        render: (v, row: { priceStatus?: string }) =>
-                          row.priceStatus === 'ignored' ? '—' : `¥${v}`,
-                      },
+                      ...(admin
+                        ? [
+                            {
+                              title: '结算单价',
+                              dataIndex: 'settlePrice',
+                              render: (v: string, row: { priceStatus?: string }) =>
+                                row.priceStatus === 'ignored' ? '—' : v ? `¥${v}` : '待定价',
+                            },
+                            {
+                              title: '收入',
+                              dataIndex: 'itemRevenue',
+                              render: (v: string, row: { priceStatus?: string }) =>
+                                row.priceStatus === 'ignored' ? '—' : `¥${v}`,
+                            },
+                          ]
+                        : []),
                     ]}
                   />
                 </Card>

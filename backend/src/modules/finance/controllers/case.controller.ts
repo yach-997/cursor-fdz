@@ -112,7 +112,7 @@ export class FinanceCaseController {
   ) {
     return this.workflow.myCase(id, user);
   }
-  @Get('expenses/pending') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) pendingExpenses(
+  @Get('expenses/pending') @Roles(UserRole.SUPER_ADMIN) pendingExpenses(
     @Query('status') status: string | undefined,
     @Query('keyword') keyword: string | undefined,
     @Query('month') month: string | undefined,
@@ -120,14 +120,14 @@ export class FinanceCaseController {
   ) {
     return this.multi.listExpenses(user, { status, keyword, month });
   }
-  @Post('expenses/:expenseId/approve') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) approveExpense(
+  @Post('expenses/:expenseId/approve') @Roles(UserRole.SUPER_ADMIN) approveExpense(
     @Param('expenseId') expenseId: string,
     @Body() dto: ReviewExpenseDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.multi.reviewExpense(expenseId, true, dto.note, user, dto.approvedAmount);
   }
-  @Post('expenses/:expenseId/reject') @Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER) rejectExpense(
+  @Post('expenses/:expenseId/reject') @Roles(UserRole.SUPER_ADMIN) rejectExpense(
     @Param('expenseId') expenseId: string,
     @Body() dto: ReviewExpenseDto,
     @CurrentUser() user: CurrentUserContext,
