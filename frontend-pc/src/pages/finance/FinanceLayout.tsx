@@ -8,7 +8,7 @@ const pageMeta: Array<{ prefix: string; title: string; desc: string }> = [
   { prefix: '/finance/prices', title: '价格库', desc: '内部绩效价与甲方结算价维护' },
   { prefix: '/finance/review', title: '结算审核', desc: '案例结算与行程报销统一审核' },
   { prefix: '/finance/assessment', title: '考核管理', desc: '打分排名与奖罚补助' },
-  { prefix: '/finance/monthly', title: '月度结算', desc: '按月汇总结算单；网格长只读本网格' },
+  { prefix: '/finance/monthly', title: '月度结算', desc: '按月汇总结算单（仅管理员）' },
 ];
 
 export default function FinanceLayout() {
