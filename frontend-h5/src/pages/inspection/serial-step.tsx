@@ -87,7 +87,12 @@ export const SerialStepPanel = forwardRef<SerialStepHandle, Props>(function Seri
           serial: saved.deviceSerial,
           photoUrl: saved.serialPhotoUrl,
         };
-      } catch {
+      } catch (error: unknown) {
+        const msg =
+          error instanceof Error && error.message
+            ? error.message
+            : '序列号保存失败，请重试';
+        Toast.fail(msg);
         return null;
       }
     },

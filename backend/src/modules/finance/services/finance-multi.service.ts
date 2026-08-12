@@ -411,11 +411,7 @@ export class FinanceMultiService implements OnModuleInit {
       });
       for (const u of claimed) {
         if (keepingExisting && u.inspectorId === target) continue;
-        u.status = 'open';
-        u.inspectorId = null;
-        u.claimedAt = null;
-        u.submittedAt = null;
-        u.inspectionTaskId = null;
+        this.releaseUnitToOpen(u);
         await this.units.save(u);
       }
     }
@@ -983,6 +979,22 @@ export class FinanceMultiService implements OnModuleInit {
     if (!serial || serial.length < 4) {
       throw new BadRequestException('请填写有效的设备序列号（至少 4 位）');
     }
+    const occupied = await this.units
+      .createQueryBuilder('u')
+      .innerJoin(ServiceCase, 'c', 'c.id = u.service_case_id')
+      .where('u.id <> :unitId', { unitId: unit.id })
+      .andWhere('u.device_serial IS NOT NULL')
+      .andWhere(`UPPER(REPLACE(TRIM(u.device_serial), ' ', '')) = :serial`, { serial })
+      .select(['u.seq AS seq', 'c.gsp_case_no AS "gspCaseNo"'])
+      .limit(1)
+      .getRawOne<{ seq: number; gspCaseNo: string | null }>();
+    if (occupied) {
+      const caseNo = occupied.gspCaseNo || '未知案例';
+      const seq = occupied.seq != null ? `台 #${occupied.seq}` : '其他作业台';
+      throw new BadRequestException(
+        `序列号 ${serial} 已被占用（案例 ${caseNo} · ${seq}），请确认是否拍错设备`,
+      );
+    }
     unit.deviceSerial = serial.slice(0, 128);
     if (dto.serialPhotoUrl?.trim()) {
       unit.serialPhotoUrl = dto.serialPhotoUrl.trim();
@@ -1312,6 +1324,22 @@ export class FinanceMultiService implements OnModuleInit {
    * 多人模式：撤回一名工程师（零完成台、无已提交报告）。
    * 单人请走「改派/换人」，不要用撤回。
    */
+  /** 台回到 open 时清空序列号，避免半途放弃仍占用号段 */
+  private clearUnitSerial(unit: CaseWorkUnit) {
+    unit.deviceSerial = null;
+    unit.serialPhotoUrl = null;
+    unit.serialConfirmedAt = null;
+  }
+
+  private releaseUnitToOpen(unit: CaseWorkUnit) {
+    unit.status = 'open';
+    unit.inspectorId = null;
+    unit.claimedAt = null;
+    unit.submittedAt = null;
+    unit.inspectionTaskId = null;
+    this.clearUnitSerial(unit);
+  }
+
   /** 释放仅认领、尚未提交的作业台（及其未提交巡检任务），用于单人/多人模式切换 */
   private async releaseUnsubmittedClaims(caseId: string) {
     const claimed = await this.units.find({
@@ -1327,11 +1355,7 @@ export class FinanceMultiService implements OnModuleInit {
         ]);
         await this.tasks.delete({ id: u.inspectionTaskId });
       }
-      u.status = 'open';
-      u.inspectorId = null;
-      u.claimedAt = null;
-      u.submittedAt = null;
-      u.inspectionTaskId = null;
+      this.releaseUnitToOpen(u);
       await this.units.save(u);
     }
   }
@@ -1398,11 +1422,7 @@ export class FinanceMultiService implements OnModuleInit {
           u.inspectionTaskId,
         ]);
       }
-      u.status = 'open';
-      u.inspectorId = null;
-      u.claimedAt = null;
-      u.submittedAt = null;
-      u.inspectionTaskId = null;
+      this.releaseUnitToOpen(u);
       await this.units.save(u);
     }
 

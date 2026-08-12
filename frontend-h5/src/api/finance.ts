@@ -332,7 +332,7 @@ export async function saveUnitDeviceSerial(
         serialPhotoUrl?: string | null;
         serialConfirmedAt?: string;
       }>
-    >(`/cases/${caseId}/units/${unitId}/serial`, payload),
+    >(`/cases/${caseId}/units/${unitId}/serial`, payload, { skipErrorToast: true }),
   );
 }
 
