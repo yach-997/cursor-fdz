@@ -93,7 +93,7 @@ export const menuConfig: MenuConfig[] = [
         path: '/finance/monthly',
         label: '月度结算',
         icon: 'HistoryOutlined',
-        roles: ['super_admin'],
+        roles: ['super_admin', 'site_manager'],
       },
     ],
   },

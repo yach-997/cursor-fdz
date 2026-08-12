@@ -266,7 +266,7 @@ export const router = createBrowserRouter([
           {
             path: 'monthly',
             element: (
-              <AuthGuard roles={['super_admin']}>
+              <AuthGuard roles={['super_admin', 'site_manager']}>
                 <Lazy>
                   <FinanceMonthlyPage />
                 </Lazy>

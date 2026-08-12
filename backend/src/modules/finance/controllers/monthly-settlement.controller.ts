@@ -8,7 +8,7 @@ import { CorrectMonthlyDto, MonthlyExportDto, MonthlyQueryDto } from '../dto/fin
 import { FinanceSettlementService } from '../services/finance-settlement.service';
 
 @Controller('monthly-settlements')
-@Roles(UserRole.SUPER_ADMIN)
+@Roles(UserRole.SUPER_ADMIN, UserRole.SITE_MANAGER)
 export class FinanceMonthlySettlementController {
   constructor(private readonly service: FinanceSettlementService) {}
   @Get() list(@Query() query: MonthlyQueryDto, @CurrentUser() user: CurrentUserContext) {
