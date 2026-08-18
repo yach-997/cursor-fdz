@@ -31,6 +31,19 @@ type ParseCacheEntry = { expires: number; data: unknown };
 
 type UploadNameOpts = { clientFilename?: string | null };
 
+const PLAN_SAMPLE = 8;
+
+type ImportDupPlan = {
+  createCount: number;
+  updateCount: number;
+  fileDupCount: number;
+  frozenSkipCount: number;
+  createSamples: string[];
+  updateSamples: string[];
+  fileDupSamples: string[];
+  frozenSkipSamples: string[];
+};
+
 @Injectable()
 export class FinanceImportService {
   /** 同一文件分片入库时复用解析结果，避免每片重传后重复解析 Excel */
@@ -67,12 +80,22 @@ export class FinanceImportService {
     this.fileName(file, opts);
     this.assertExcel(file);
     const parsed = await this.parser.parseGspCases(file.buffer);
-    if (preview)
+    if (preview) {
+      const gspNos = parsed.cases.map((x) => x.gspCaseNo);
+      const uniqueNos = [...new Set(gspNos.filter(Boolean))];
+      const existing: ServiceCase[] = [];
+      for (let i = 0; i < uniqueNos.length; i += 500) {
+        existing.push(
+          ...(await this.cases.find({ where: { gspCaseNo: In(uniqueNos.slice(i, i + 500)) } })),
+        );
+      }
       return {
         preview: parsed.cases.slice(0, 20),
         totalRows: parsed.cases.length,
         failures: parsed.failures,
+        dupPlan: this.planByKeys(gspNos, new Set(existing.map((row) => row.gspCaseNo))),
       };
+    }
     const batch = await this.createBatch(
       'gsp_case',
       file.originalname,
@@ -156,14 +179,29 @@ export class FinanceImportService {
       if (!preview) this.setCached(cacheKey, parsed);
     }
     if (!parsed) throw new BadRequestException('PO 文件解析失败');
-    if (preview)
+    const poNos = parsed.orders.map((row) => row.poNo);
+    const frozenPoNos = await this.findFrozenPoNos(poNos);
+    if (preview) {
+      const uniquePo = [...new Set(poNos.filter(Boolean))];
+      const existing: PoOrder[] = [];
+      for (let i = 0; i < uniquePo.length; i += 500) {
+        existing.push(
+          ...(await this.orders.find({ where: { poNo: In(uniquePo.slice(i, i + 500)) } })),
+        );
+      }
       return {
         preview: parsed.orders.slice(0, 20),
         totalOrders: parsed.orders.length,
         sourceItemRows: parsed.sourceItemRows,
         normalizedItemCount: parsed.normalizedItemCount,
         failures: parsed.failures,
+        dupPlan: this.planByKeys(
+          poNos,
+          new Set(existing.map((row) => row.poNo)),
+          frozenPoNos,
+        ),
       };
+    }
 
     const totalOrders = parsed.orders.length;
     const offset = Math.max(0, options.offset ?? 0);
@@ -186,15 +224,23 @@ export class FinanceImportService {
     const activeMappings = await this.mappings.find({ where: { status: 'active' } });
     let success = 0;
     let generatedCases = 0;
+    let skippedFrozen = 0;
     const failures: Array<{ row: number; reason: string }> =
       offset === 0 ? [...parsed.failures] : [];
 
     for (let i = 0; i < slice.length; i += PO_CHUNK) {
       const chunk = slice.slice(i, i + PO_CHUNK);
       try {
-        const result = await this.savePoChunk(chunk, batch.id, activePrices, activeMappings);
+        const result = await this.savePoChunk(
+          chunk,
+          batch.id,
+          activePrices,
+          activeMappings,
+          frozenPoNos,
+        );
         success += result.success;
         generatedCases += result.generatedCases;
+        skippedFrozen += result.skippedFrozen;
         failures.push(...result.failures);
       } catch (error) {
         for (const parsedOrder of chunk) {
@@ -221,6 +267,7 @@ export class FinanceImportService {
       failRows: mergedFailures.length,
       generatedCases,
       matchedOrders: totalSuccess,
+      skippedFrozen,
       offset,
       nextOffset,
       done,
@@ -289,12 +336,22 @@ export class FinanceImportService {
       flat = !!parsed.flat;
     }
     if (!parsed) throw new BadRequestException('价格文件解析失败');
-    if (preview)
+    if (preview) {
+      const effectiveDate = new Date().toISOString().slice(0, 10);
+      const keys = parsed.prices.map((price) =>
+        this.settlePriceKey(price.itemCode, price.productModel, price.scene),
+      );
+      const existing = await this.findSettlePriceKeys(
+        parsed.prices.map((price) => price.itemCode),
+        effectiveDate,
+      );
       return {
         preview: parsed.prices.slice(0, 20),
         totalRows: parsed.prices.length,
         failures: parsed.failures,
+        dupPlan: this.planByKeys(keys, existing),
       };
+    }
 
     const totalRows = parsed.prices.length;
     const offset = Math.max(0, options.offset ?? 0);
@@ -402,12 +459,26 @@ export class FinanceImportService {
       if (!preview) this.setCached(cacheKey, parsed);
     }
     if (!parsed) throw new BadRequestException('绩效价文件解析失败');
-    if (preview)
+    if (preview) {
+      const fallbackDate = new Date().toISOString().slice(0, 10);
+      const keys = parsed.prices.map((price) =>
+        this.perfPriceKey(
+          price.itemCode,
+          price.productModel,
+          price.scene,
+          price.region,
+          price.coopType,
+          price.effectiveDate || fallbackDate,
+        ),
+      );
+      const existing = await this.findPerfPriceKeys(parsed.prices);
       return {
         preview: parsed.prices.slice(0, 20),
         totalRows: parsed.prices.length,
         failures: parsed.failures,
+        dupPlan: this.planByKeys(keys, existing),
       };
+    }
 
     const totalRows = parsed.prices.length;
     const offset = Math.max(0, options.offset ?? 0);
@@ -539,6 +610,7 @@ export class FinanceImportService {
     batchId: string,
     prices: PriceLibrary[],
     mappings: ItemPriceMapping[],
+    frozenPoNos: Set<string>,
   ) {
     return this.dataSource.transaction(async (manager) => {
       const caseRepo = manager.getRepository(ServiceCase);
@@ -557,6 +629,7 @@ export class FinanceImportService {
 
       let success = 0;
       let generatedCases = 0;
+      let skippedFrozen = 0;
       const failures: Array<{ row: number; reason: string }> = [];
       const overwriteIds: string[] = [];
       const ordersToSave: PoOrder[] = [];
@@ -569,6 +642,10 @@ export class FinanceImportService {
 
       for (const parsed of chunk) {
         try {
+          if (frozenPoNos.has(parsed.poNo)) {
+            skippedFrozen += 1;
+            continue;
+          }
           const region = parsed.province?.includes('云南') ? 'yunnan' : 'south_china';
 
           const serviceCase = caseMap.get(parsed.gspCaseNo) || null;
@@ -726,7 +803,7 @@ export class FinanceImportService {
         if (ledgersToSave.length) await performanceRepo.save(ledgersToSave);
       }
 
-      return { success, generatedCases, failures };
+      return { success, generatedCases, skippedFrozen, failures };
     });
   }
 
@@ -803,6 +880,126 @@ export class FinanceImportService {
       }
     }
     return { success, failures };
+  }
+
+  private settlePriceKey(itemCode: string, productModel: string | null, scene: string | null) {
+    return `${itemCode}|${productModel || ''}|${scene || ''}`;
+  }
+
+  private perfPriceKey(
+    itemCode: string,
+    productModel: string | null,
+    scene: string | null,
+    region: string | null,
+    coopType: string | null,
+    effectiveDate: string,
+  ) {
+    return `${itemCode}|${productModel || ''}|${scene || ''}|${region || ''}|${coopType || ''}|${effectiveDate}`;
+  }
+
+  private planByKeys(keys: string[], existing: Set<string>, frozen?: Set<string>): ImportDupPlan {
+    const counts = new Map<string, number>();
+    for (const key of keys) {
+      const k = String(key || '').trim();
+      if (!k) continue;
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    const unique = [...counts.keys()];
+    const frozenSet = frozen || new Set<string>();
+    const fileDupKeys = unique.filter((k) => (counts.get(k) || 0) > 1);
+    const frozenKeys = unique.filter((k) => frozenSet.has(k));
+    const updateKeys = unique.filter((k) => existing.has(k) && !frozenSet.has(k));
+    const createKeys = unique.filter((k) => !existing.has(k) && !frozenSet.has(k));
+    const sample = (arr: string[]) => arr.slice(0, PLAN_SAMPLE);
+    return {
+      createCount: createKeys.length,
+      updateCount: updateKeys.length,
+      fileDupCount: fileDupKeys.reduce((n, k) => n + Math.max((counts.get(k) || 1) - 1, 0), 0),
+      frozenSkipCount: frozenKeys.length,
+      createSamples: sample(createKeys),
+      updateSamples: sample(updateKeys),
+      fileDupSamples: sample(fileDupKeys),
+      frozenSkipSamples: sample(frozenKeys),
+    };
+  }
+
+  private async findFrozenPoNos(poNos: string[]): Promise<Set<string>> {
+    const unique = [...new Set(poNos.map((x) => String(x || '').trim()).filter(Boolean))];
+    if (!unique.length) return new Set();
+    const existing: PoOrder[] = [];
+    for (let i = 0; i < unique.length; i += 500) {
+      existing.push(...(await this.orders.find({ where: { poNo: In(unique.slice(i, i + 500)) } })));
+    }
+    const caseIds = [
+      ...new Set(existing.map((row) => row.serviceCaseId).filter((id): id is string => !!id)),
+    ];
+    if (!caseIds.length) return new Set();
+    const [caseRows, ledgers] = await Promise.all([
+      this.cases.find({ where: { id: In(caseIds) } }),
+      this.performance.find({ where: { serviceCaseId: In(caseIds) } }),
+    ]);
+    const statusByCase = new Map(caseRows.map((row) => [row.id, row.status]));
+    const reviewByCase = new Map(ledgers.map((row) => [row.serviceCaseId, row.reviewStatus]));
+    const frozen = new Set<string>();
+    for (const order of existing) {
+      if (!order.serviceCaseId) continue;
+      const status = statusByCase.get(order.serviceCaseId);
+      const review = reviewByCase.get(order.serviceCaseId);
+      if (status === 'settled' || status === 'month_locked' || review === 'approved') {
+        frozen.add(order.poNo);
+      }
+    }
+    return frozen;
+  }
+
+  private async findSettlePriceKeys(itemCodes: string[], effectiveDate: string): Promise<Set<string>> {
+    const codes = [...new Set(itemCodes.map((x) => String(x || '').trim()).filter(Boolean))];
+    if (!codes.length) return new Set();
+    const rows: PriceLibrary[] = [];
+    for (let i = 0; i < codes.length; i += 500) {
+      rows.push(
+        ...(await this.prices.find({
+          where: { priceType: 'settle', effectiveDate, itemCode: In(codes.slice(i, i + 500)) },
+        })),
+      );
+    }
+    return new Set(
+      rows.map((row) => this.settlePriceKey(row.itemCode, row.productModel, row.scene)),
+    );
+  }
+
+  private async findPerfPriceKeys(
+    prices: Array<{
+      itemCode: string;
+      productModel: string | null;
+      scene: string | null;
+      region: string | null;
+      coopType: string | null;
+      effectiveDate: string | null;
+    }>,
+  ): Promise<Set<string>> {
+    const codes = [...new Set(prices.map((x) => String(x.itemCode || '').trim()).filter(Boolean))];
+    if (!codes.length) return new Set();
+    const rows: PriceLibrary[] = [];
+    for (let i = 0; i < codes.length; i += 500) {
+      rows.push(
+        ...(await this.prices.find({
+          where: { priceType: 'perf', itemCode: In(codes.slice(i, i + 500)) },
+        })),
+      );
+    }
+    return new Set(
+      rows.map((row) =>
+        this.perfPriceKey(
+          row.itemCode,
+          row.productModel,
+          row.scene,
+          row.region,
+          row.coopType,
+          row.effectiveDate,
+        ),
+      ),
+    );
   }
 
   private assertExcel(file?: Express.Multer.File) {

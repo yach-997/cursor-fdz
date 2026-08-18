@@ -4,6 +4,102 @@ import { DownloadOutlined, InboxOutlined } from '@ant-design/icons';
 import { downloadFinanceImportTemplate, uploadFinanceExcel } from '../../../api/finance';
 import type { ImportResult } from '../../../types/finance';
 
+function sampleText(items?: string[]) {
+  if (!items?.length) return '';
+  return `例如：${items.slice(0, 5).join('、')}${items.length > 5 ? '…' : ''}`;
+}
+
+function consequenceLines(
+  kind: 'gsp' | 'po' | 'price' | 'perf-price',
+  plan: NonNullable<ImportResult['dupPlan']>,
+) {
+  const unit = kind === 'po' ? '张' : '条';
+  const lines: string[] = [];
+  if (kind === 'gsp') {
+    if (plan.createCount > 0) {
+      lines.push(`新建 ${plan.createCount} 条：系统里会出现新案例，还没派网格和工程师。`);
+    }
+    if (plan.updateCount > 0) {
+      lines.push(
+        `更新 ${plan.updateCount} 条：会改项目名、服务类型、产品线、现场描述。已派的网格、工程师、作业进度和结算状态不会动。${sampleText(plan.updateSamples)}`,
+      );
+    }
+  } else if (kind === 'po') {
+    if (plan.createCount > 0) {
+      lines.push(
+        `新建 ${plan.createCount} 张：按案例号挂上；找不到对应案例会进「待匹配」，不会自动派工。`,
+      );
+    }
+    if (plan.updateCount > 0) {
+      lines.push(
+        `更新 ${plan.updateCount} 张：条目和金额会被这张表整份换掉，未结算案例的钱会变。已完工但还没结算的，可能回到「待结算审核」。${sampleText(plan.updateSamples)}`,
+      );
+    }
+    if (plan.frozenSkipCount > 0) {
+      lines.push(
+        `跳过 ${plan.frozenSkipCount} 张：已结算或已月结，点确认也不会改金额、不会改账。${sampleText(plan.frozenSkipSamples)}`,
+      );
+    }
+  } else if (kind === 'price') {
+    if (plan.createCount > 0) {
+      lines.push(`新建 ${plan.createCount} 条：写入今天的甲方结算单价。`);
+    }
+    if (plan.updateCount > 0) {
+      lines.push(
+        `更新 ${plan.updateCount} 条：今天已有的单价会改成表里的数。还没结算的 PO 会按新价重算；已经结算或月结的金额不会跟着变。${sampleText(plan.updateSamples)}`,
+      );
+    }
+  } else {
+    if (plan.createCount > 0) {
+      lines.push(`新建 ${plan.createCount} 条：写入内部绩效单价。`);
+    }
+    if (plan.updateCount > 0) {
+      lines.push(
+        `更新 ${plan.updateCount} 条：同一生效日的绩效单价会改成表里的数。还没结算的作业绩效会按新价重算；已经结算或月结的不会跟着变。${sampleText(plan.updateSamples)}`,
+      );
+    }
+  }
+  if (!lines.length) {
+    lines.push(`没有需要新建或更新的${unit}。`);
+  }
+  if (plan.fileDupCount > 0) {
+    lines.push(
+      `这张表里同一号写了多次，多出来 ${plan.fileDupCount} 行，点确认后只认最后一次，前面的作废。${sampleText(plan.fileDupSamples)}`,
+    );
+  }
+  return lines;
+}
+
+function DupPlanAlert({
+  kind,
+  plan,
+}: {
+  kind: 'gsp' | 'po' | 'price' | 'perf-price';
+  plan: NonNullable<ImportResult['dupPlan']>;
+}) {
+  const lines = consequenceLines(kind, plan);
+  const warn =
+    plan.updateCount > 0 ||
+    plan.fileDupCount > 0 ||
+    (kind === 'po' && plan.frozenSkipCount > 0);
+  return (
+    <Alert
+      showIcon
+      type={warn ? 'warning' : 'info'}
+      message="点「确认入库」之后会怎样"
+      description={
+        <div>
+          {lines.map((line) => (
+            <div key={line} style={{ marginTop: 4 }}>
+              {line}
+            </div>
+          ))}
+        </div>
+      }
+    />
+  );
+}
+
 const IMPORT_CHUNK_PO = 80;
 /** 价格库每批写入条数（需 ≤ 后端 ImportPreviewQueryDto.limit 上限） */
 const IMPORT_CHUNK_PRICE = 200;
@@ -128,8 +224,10 @@ export default function ImportDialog({
         if (last.done || offset >= total) break;
       }
 
+      const skipped = Number(preview.dupPlan?.frozenSkipCount || last?.skippedFrozen || 0);
+      const skipText = kind === 'po' && skipped > 0 ? `，已结算跳过 ${skipped}` : '';
       message.success(
-        `导入完成：成功 ${last?.successRows || 0}，失败 ${last?.failRows || 0}`,
+        `导入完成：成功 ${last?.successRows || 0}，失败 ${last?.failRows || 0}${skipText}`,
       );
       onDone();
     } catch (error) {
@@ -206,7 +304,7 @@ export default function ImportDialog({
           <InboxOutlined style={{ fontSize: 32, color: '#15936b' }} />
         </p>
         <p>点击或拖入 Excel 文件</p>
-        <p className="ant-upload-hint">先解析前 20 行并校验，确认后才写入数据库</p>
+        <p className="ant-upload-hint">先解析并提示新建/更新/跳过，确认后才写入</p>
       </Upload.Dragger>
       {kind === 'gsp' && (
         <Alert
@@ -223,7 +321,7 @@ export default function ImportDialog({
           type="info"
           showIcon
           message="第二次导入（钉钉 PO 表，单文件）"
-          description="使用钉钉导出的一张 PO Excel（双行表头）：含 PO单号、GSP案例号/GSP服务案例号、金额与产品信息，以及同表内的专用/通用服务条目（服务条目、说明、单位、数量）。合并单元格格式不统一也可解析。按案例号挂接已有 GSP 案例并补全价格；若案例尚不存在则进入「待匹配」。"
+          description="使用钉钉导出的一张 PO Excel（双行表头）：含 PO单号、GSP案例号/GSP服务案例号、金额与产品信息，以及同表内的专用/通用服务条目（服务条目、说明、单位、数量）。合并单元格格式不统一也可解析。按案例号挂接已有 GSP 案例并补全价格；若案例尚不存在则进入「待匹配」。已结算或已月结的 PO 会跳过，不会改金额。"
         />
       )}
       {(loading || progress) && progress && (
@@ -272,14 +370,28 @@ export default function ImportDialog({
       )}
       {preview && (
         <div style={{ marginTop: 16 }}>
+          {preview.dupPlan ? <DupPlanAlert kind={kind} plan={preview.dupPlan} /> : null}
           <Alert
+            style={{ marginTop: preview.dupPlan ? 12 : 0 }}
             showIcon
             type={(preview.failures?.length || 0) > 0 ? 'warning' : 'success'}
-            message={`解析完成：${preview.totalOrders ?? preview.totalRows ?? 0} 个主记录；原始条目 ${preview.sourceItemRows ?? '-'}；标准化明细 ${preview.normalizedItemCount ?? '-'}；问题 ${preview.failures?.length || 0}`}
+            message={`已解析 ${preview.totalOrders ?? preview.totalRows ?? 0} 条${
+              kind === 'po'
+                ? `；原始条目 ${preview.sourceItemRows ?? '-'}，标准化明细 ${preview.normalizedItemCount ?? '-'}`
+                : ''
+            }；格式问题 ${preview.failures?.length || 0} 条`}
+            description={
+              (preview.failures?.length || 0) > 0 ? (
+                <ul style={{ margin: '8px 0 0', paddingLeft: 18, maxHeight: 140, overflow: 'auto' }}>
+                  {preview.failures!.slice(0, 20).map((item, i) => (
+                    <li key={`${item.row}-${i}`}>
+                      第{item.row}行：{item.reason}
+                    </li>
+                  ))}
+                </ul>
+              ) : undefined
+            }
           />
-          <pre className="finance-preview">
-            {JSON.stringify(preview.preview ?? preview.failures ?? preview, null, 2)}
-          </pre>
         </div>
       )}
     </Modal>

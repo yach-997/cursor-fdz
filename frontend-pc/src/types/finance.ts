@@ -428,8 +428,19 @@ export interface ImportResult {
   batchId?: string;
   generatedCases?: number;
   matchedOrders?: number;
+  skippedFrozen?: number;
   offset?: number;
   nextOffset?: number;
   done?: boolean;
   chunkSuccess?: number;
+  dupPlan?: {
+    createCount: number;
+    updateCount: number;
+    fileDupCount: number;
+    frozenSkipCount: number;
+    createSamples: string[];
+    updateSamples: string[];
+    fileDupSamples: string[];
+    frozenSkipSamples: string[];
+  };
 }
