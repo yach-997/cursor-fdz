@@ -907,9 +907,9 @@ export class FinanceImportService {
     const unique = [...counts.keys()];
     const frozenSet = frozen || new Set<string>();
     const fileDupKeys = unique.filter((k) => (counts.get(k) || 0) > 1);
-    const frozenKeys = unique.filter((k) => frozenSet.has(k));
-    const updateKeys = unique.filter((k) => existing.has(k) && !frozenSet.has(k));
-    const createKeys = unique.filter((k) => !existing.has(k) && !frozenSet.has(k));
+    const frozenKeys = unique.filter((k) => existing.has(k) && frozenSet.has(k));
+    const updateKeys = unique.filter((k) => existing.has(k));
+    const createKeys = unique.filter((k) => !existing.has(k));
     const sample = (arr: string[]) => arr.slice(0, PLAN_SAMPLE);
     return {
       createCount: createKeys.length,

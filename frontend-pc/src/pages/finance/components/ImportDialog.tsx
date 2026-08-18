@@ -58,6 +58,7 @@ function DupPlanAlert({
           : '写入内部绩效单价。';
 
   const more = (count: number, shown: number) => Math.max(0, count - shown);
+  const willWrite = Math.max(0, plan.updateCount - (kind === 'po' ? plan.frozenSkipCount : 0));
 
   return (
     <Alert
@@ -71,11 +72,28 @@ function DupPlanAlert({
               <b>
                 重复 {plan.updateCount} {unit}
               </b>
-              （系统里已有这些{noName}，不会变成两条，会按表更新）。{effect}
+              （系统里已有这些{noName}，不会变成两条）。
               <KeyList
                 items={plan.updateSamples}
                 moreCount={more(plan.updateCount, plan.updateSamples.length)}
               />
+              {kind === 'po' && plan.frozenSkipCount > 0 ? (
+                <>
+                  <div style={{ marginTop: 10 }}>
+                    <b>其中跳过 {plan.frozenSkipCount} 张</b>
+                    ：已结算或已月结，点确认也不会改金额。
+                    <KeyList
+                      items={plan.frozenSkipSamples}
+                      moreCount={more(plan.frozenSkipCount, plan.frozenSkipSamples.length)}
+                    />
+                  </div>
+                  <div style={{ marginTop: 10 }}>
+                    其余 {willWrite} 张会按表整份换掉条目和金额，未结算的钱会变；已完工但还没结算的，可能回到「待结算审核」。
+                  </div>
+                </>
+              ) : (
+                <div style={{ marginTop: 6 }}>{effect}</div>
+              )}
             </div>
           ) : (
             <div style={{ marginTop: 4 }}>没有与系统里已有{noName}重复的记录。</div>
@@ -101,16 +119,6 @@ function DupPlanAlert({
           ) : (
             <div style={{ marginTop: 10 }}>这张表里没有同一号写两遍的情况。</div>
           )}
-          {kind === 'po' && plan.frozenSkipCount > 0 ? (
-            <div style={{ marginTop: 10 }}>
-              <b>跳过 {plan.frozenSkipCount} 张</b>
-              ：已结算或已月结，点确认也不会改金额。
-              <KeyList
-                items={plan.frozenSkipSamples}
-                moreCount={more(plan.frozenSkipCount, plan.frozenSkipSamples.length)}
-              />
-            </div>
-          ) : null}
           <div style={{ marginTop: 10 }}>
             {failCount > 0
               ? `格式问题 ${failCount} 条，见下方明细，这些行不会入库。`
