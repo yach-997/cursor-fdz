@@ -13,7 +13,7 @@ const HomeIcon = HomeO as unknown as ComponentType;
 const TasksIcon = OrdersO as unknown as ComponentType;
 const UserIcon = UserO as unknown as ComponentType;
 
-/** 底部 Tab 导航布局（首页 / 任务 / 我的） */
+/** 底部 Tab 导航布局（首页 / 作业 / 我的） */
 export default function TabLayout() {
   const navigate = useNavigate();
   const location = useLocation();

@@ -274,7 +274,7 @@ export default function FinanceReviewPage() {
                 ? '已通过的结算记录不会从系统消失，可按完工日期/网格继续查询。'
                 : tab === 'rejected'
                   ? '已驳回记录可在此查看原因；工程师补齐后仍会出现在待审核队列。'
-                  : '全部状态汇总；仍可用下方筛选缩小范围。网格长仅见本网格案例。'}
+                  : '全部状态汇总；仅管理员可审结算。仍可用下方筛选缩小范围。'}
           </div>
           <Space className="finance-toolbar" wrap style={{ marginBottom: 12 }}>
             <Input

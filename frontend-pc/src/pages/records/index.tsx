@@ -659,7 +659,7 @@ export default function RecordsPage() {
   return (
     <div>
       <p style={{ color: '#666', marginBottom: 12 }}>
-        按案例汇总已提交报告。点进案例可查看全部单元（含通过/驳回/待审）；审核仍在「报告审核」按单条处理。
+        按案例汇总已提交报告。点进案例可查看全部单元（含通过/驳回/待审）；审核仍在「验图审核」按单条处理。
       </p>
       <Space wrap style={{ marginBottom: 16 }}>
         <Input

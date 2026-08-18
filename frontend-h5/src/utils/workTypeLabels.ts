@@ -93,7 +93,7 @@ export function workActionLabel(
     case 'doing':
       return `${work}中`;
     case 'task_noun':
-      return `${work}任务`;
+      return `${work}作业`;
     case 'tip_photo':
       return `按检查条目现场拍照完成${work}；提交后系统辅助分析生成报告，并自动完工。行程与费用请在作业详情底部按需填写（每人各填自己的）。`;
     case 'tip_unit':

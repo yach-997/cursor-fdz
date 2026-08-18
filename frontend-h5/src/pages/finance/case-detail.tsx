@@ -7,6 +7,7 @@ import {
   startFinanceCase,
   type MobileFinanceCase,
 } from '../../api/finance';
+import { fetchTask } from '../../api/task';
 import { useAuthStore } from '../../stores/auth';
 import { resolveWorkTypeLabel, workActionLabel } from '../../utils/workTypeLabels';
 import './finance.css';
@@ -389,12 +390,24 @@ export default function FinanceCaseDetailPage() {
     }
   };
 
-  const viewUnitReport = (unit: UnitItem) => {
-    if (!unit.inspectionTaskId) {
+  const viewUnitReport = async (taskId?: string | null) => {
+    if (!taskId) {
       Toast.fail('该台暂无报告可查看');
       return;
     }
-    navigate(`/m/tasks/${unit.inspectionTaskId}`);
+    setBusy(true);
+    try {
+      const t = await fetchTask(taskId);
+      if (!t.record?.id) {
+        Toast.fail('报告尚未生成');
+        return;
+      }
+      navigate(`/m/report/${t.record.id}`);
+    } catch {
+      /* 拦截器 */
+    } finally {
+      setBusy(false);
+    }
   };
 
   const enterInspection = async (autoStart: boolean) => {
@@ -609,7 +622,8 @@ export default function FinanceCaseDetailPage() {
             type="button"
             className="mobile-finance-secondary"
             style={{ width: '100%', marginTop: 12 }}
-            onClick={() => navigate(`/m/tasks/${item.inspectionTaskId}`)}
+            disabled={busy}
+            onClick={() => void viewUnitReport(item.inspectionTaskId)}
           >
             {workActionLabel(workType, 'report')}
           </button>
@@ -777,7 +791,7 @@ export default function FinanceCaseDetailPage() {
                           <button
                             type="button"
                             className="unit-enter-btn"
-                            onClick={() => viewUnitReport(u)}
+                            onClick={() => void viewUnitReport(u.inspectionTaskId)}
                           >
                             查看报告
                           </button>
@@ -875,7 +889,7 @@ export default function FinanceCaseDetailPage() {
                               <button
                                 type="button"
                                 className="unit-enter-btn"
-                                onClick={() => viewUnitReport(u)}
+                                onClick={() => void viewUnitReport(u.inspectionTaskId)}
                               >
                                 查看报告
                               </button>
@@ -921,7 +935,7 @@ export default function FinanceCaseDetailPage() {
                                 <button
                                   type="button"
                                   className="unit-enter-btn"
-                                  onClick={() => viewUnitReport(u)}
+                                  onClick={() => void viewUnitReport(u.inspectionTaskId)}
                                 >
                                   查看报告
                                 </button>

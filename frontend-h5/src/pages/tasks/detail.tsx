@@ -33,7 +33,7 @@ const RECORD_STATUS: Record<string, string> = {
   archived: '已归档',
 };
 
-/** 任务详情：继续巡检 / 查看报告 / 删除重来 */
+/** 作业信息（遗留页）：继续拍照 / 查看报告 / 删除未绑定案例的作业 */
 export default function TaskDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -75,7 +75,7 @@ export default function TaskDetailPage() {
     if (!id || !task) return;
     try {
       await Dialog.confirm({
-        title: '删除任务',
+        title: '删除作业',
         message: '删除后可重新创建，现场已拍照片也会清除，确认删除？',
         confirmButtonText: '删除',
         confirmButtonColor: '#ee0a24',
@@ -86,7 +86,7 @@ export default function TaskDetailPage() {
     setDeleting(true);
     try {
       await deleteTask(id);
-      Toast.success('任务已删除');
+      Toast.success('作业已删除');
       navigate('/m/tasks', { replace: true });
     } catch {
       /* 拦截器 */
@@ -128,13 +128,13 @@ export default function TaskDetailPage() {
 
   return (
     <div>
-      <NavBar title="任务详情" leftText="返回" onClickLeft={() => navigate(-1)} />
+      <NavBar title="作业信息" leftText="返回" onClickLeft={() => navigate(-1)} />
       {loading || !task ? (
-        <Empty description={loading ? '加载中...' : '任务不存在'} />
+        <Empty description={loading ? '加载中...' : '作业不存在'} />
       ) : (
         <>
           <Cell.Group inset title="基本信息">
-            <Cell title="任务名称" value={task.taskName} />
+            <Cell title="名称" value={task.taskName} />
             <Cell
               title="状态"
               value={
@@ -306,7 +306,7 @@ export default function TaskDetailPage() {
                 loading={deleting}
                 onClick={() => void onDelete()}
               >
-                删除任务
+                删除作业
               </Button>
             )}
           </div>

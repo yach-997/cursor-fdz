@@ -255,7 +255,7 @@ export default function InspectionPage() {
   const [analyzingIds, setAnalyzingIds] = useState<string[]>([]);
 
   const verifyLocation = useCallback(async () => {
-    if (!taskId) throw new Error('缺少作业任务');
+    if (!taskId) throw new Error('缺少作业');
     setLocationStatus('checking');
     setLocationError('正在获取高精度现场定位…');
     try {
@@ -435,7 +435,7 @@ export default function InspectionPage() {
           /* 允许离开 */
         }
       }
-      Toast.info('已保存，可在任务列表继续');
+      Toast.info('已保存，可在作业列表继续');
       if (task?.serviceCaseId) {
         navigate(`/m/finance-cases/${task.serviceCaseId}`, { replace: true });
       } else {
@@ -1135,7 +1135,7 @@ export default function InspectionPage() {
             重新加载
           </Button>
           <button type="button" className="inspection-load-back" onClick={onClickBack}>
-            返回任务列表
+            返回作业列表
           </button>
         </div>
       ) : !task || !record ? (
@@ -1687,7 +1687,7 @@ export default function InspectionPage() {
                     ? 'AI 后台分析中，无需等待，直接点「下一步」即可。'
                     : currentEntry?.aiResult && aiStatus !== 'pending'
                       ? `智能分析：${RESULT_LABEL[aiStatus] || '待人工判断'}（稍后可在报告中查看详情）`
-                      : '上传照片后 AI 将后台对比样本；全部拍完再提交，做完其他任务可回来看报告。'}
+                      : '上传照片后 AI 将后台对比样本；全部拍完再提交，做完其他作业可回来看报告。'}
                 </div>
               ) : (
                 <div

@@ -65,7 +65,7 @@ function unitTitle(row: RecordItem) {
   return row.task?.taskName || '-';
 }
 
-/** 报告审核：按案例聚合 → 待审单元 → 单条通过/驳回 */
+/** 验图审核：按案例聚合 → 待审单元 → 单条通过/驳回 */
 export default function AuditPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -411,8 +411,8 @@ export default function AuditPage() {
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="报告审核与费用结算相互独立"
-        description="本页只审巡检报告照片/AI 结果，不改 PO 金额。案例号与项目名来自案例主数据；可点「案例」跳转案例管理。AI 全部合格的报告已自动通过，不会出现在待审列表。"
+        message="验图审核与费用结算相互独立"
+        description="本页只审现场照片和 AI 结果，不改金额。网格长可审本网格；结算审核仅管理员。案例号与项目名来自案例主数据；可点「案例」跳转案例管理。AI 全部合格的报告已自动通过，不会出现在待审列表。"
       />
       <Space style={{ marginBottom: 16 }}>
         <Button

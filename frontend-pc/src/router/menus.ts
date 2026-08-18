@@ -107,7 +107,7 @@ export const menuConfig: MenuConfig[] = [
   {
     key: 'audit',
     path: '/audit',
-    label: '报告审核',
+    label: '验图审核',
     icon: 'AuditOutlined',
     roles: ['super_admin', 'site_manager'],
   },

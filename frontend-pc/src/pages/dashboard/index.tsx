@@ -172,7 +172,7 @@ export default function DashboardPage() {
           <h2>
             {greeting}，{user?.realName || '管理员'}
           </h2>
-          <p>现场任务与质量总览。派工、结算请走侧栏「费用结算」。</p>
+          <p>现场作业与质量总览。派工、结算请走侧栏「费用结算」。网格长可审本网格验图；结算审核仅管理员。</p>
           <Space wrap className="dashboard-welcome__actions">
             <Button type="primary" onClick={() => navigate('/finance/cases')}>
               案例管理
@@ -180,7 +180,7 @@ export default function DashboardPage() {
             {isAdmin && (
               <Button onClick={() => navigate('/finance/dashboard')}>经营看板</Button>
             )}
-            <Button onClick={() => navigate('/audit')}>报告审核</Button>
+            <Button onClick={() => navigate('/audit')}>验图审核</Button>
             <Button onClick={() => navigate('/analysis')}>数据分析</Button>
           </Space>
         </div>

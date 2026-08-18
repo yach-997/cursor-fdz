@@ -430,7 +430,7 @@ export default function ReportPage() {
 
             <div className="report-actions">
               <Button block round onClick={() => navigate('/m/tasks')}>
-                返回任务列表
+                返回作业列表
               </Button>
             </div>
           </div>
