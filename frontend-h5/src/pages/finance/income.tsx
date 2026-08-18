@@ -182,6 +182,12 @@ function CaseSheet({
         </p>
       )}
 
+      {earned < 0.009 && Number(item.caseRevenue || 0) > 0.009 && (
+        <p className="inc-bill-sheet-warn">
+          本单已有结算收入，但绩效价未匹配，计件暂为 ¥0。请管理员导入/核对绩效价库后重算。
+        </p>
+      )}
+
       {item.reviewComment?.trim() ? (
         <div className="inc-bill-sheet-block">
           <h4>审核意见</h4>

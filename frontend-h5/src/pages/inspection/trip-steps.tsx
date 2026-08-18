@@ -1,8 +1,8 @@
 import { useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { Button, Toast } from 'react-vant';
+import { ActionSheet, Toast } from 'react-vant';
 import {
-  ocrUnitMileage,
-  saveUnitTripExpense,
+  ocrMyMileage,
+  saveMyTripExpense,
   uploadFinanceWorkPhoto,
   type TripExpenseClaim,
 } from '../../api/finance';
@@ -90,7 +90,7 @@ export function isStartTripReady(form: TripFormState) {
 export function isEndTripReady(form: TripFormState) {
   if (!form.endOdometerUrl || !form.endNavUrls.length) return false;
   if (form.endMileage === '' || !Number.isFinite(Number(form.endMileage))) return false;
-  if (Number(form.amount) > 0 && !form.voucherUrls.length) return false;
+  // 行程已有里程/导航，费用凭证可选
   return true;
 }
 
@@ -173,7 +173,7 @@ export function TripChoiceCard({
 
 type TripPanelsProps = {
   caseId: string;
-  unitId: string;
+  unitId?: string;
   form: TripFormState;
   setForm: Dispatch<SetStateAction<TripFormState>>;
   readonly?: boolean;
@@ -199,9 +199,10 @@ function SlotUploadBar({
   disabled?: boolean;
   onUploaded: (urls: string[], slot: SlotKey) => void;
 }) {
-  const camRef = useRef<HTMLInputElement>(null);
-  const galRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const run = async (files: File[]) => {
     if (!files.length || disabled) return;
@@ -209,8 +210,8 @@ function SlotUploadBar({
     try {
       const list = multi ? files.slice(0, 12) : [files[0]];
       const urls: string[] = [];
-      for (const f of list) {
-        const url = await uploadOne(caseId, f);
+      for (let i = 0; i < list.length; i += 1) {
+        const url = await uploadOne(caseId, list[i]);
         if (url) urls.push(url);
       }
       if (!urls.length) {
@@ -218,7 +219,7 @@ function SlotUploadBar({
         return;
       }
       onUploaded(urls, slot);
-      Toast.success(multi ? `已上传 ${urls.length} 张` : '已上传');
+      Toast.success(multi && urls.length > 1 ? `已上传 ${urls.length} 张` : '已上传');
     } catch {
       Toast.fail('上传失败');
     } finally {
@@ -227,21 +228,9 @@ function SlotUploadBar({
   };
 
   return (
-    <div className="inspection-upload-actions" style={{ marginTop: 8 }}>
+    <>
       <input
-        ref={camRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        hidden
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void run([f]);
-          e.target.value = '';
-        }}
-      />
-      <input
-        ref={galRef}
+        ref={fileRef}
         type="file"
         accept="image/*"
         multiple={!!multi}
@@ -252,27 +241,49 @@ function SlotUploadBar({
           e.target.value = '';
         }}
       />
-      <Button
-        plain
-        round
-        size="small"
-        loading={busy}
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        hidden
+        onChange={(e) => {
+          const list = e.target.files ? Array.from(e.target.files) : [];
+          if (list.length) void run(list);
+          e.target.value = '';
+        }}
+      />
+      <button
+        type="button"
+        className="trip-upload-add"
         disabled={disabled || busy}
-        onClick={() => galRef.current?.click()}
+        aria-label="添加照片"
+        onClick={() => {
+          if (disabled || busy) return;
+          setSheetOpen(true);
+        }}
       >
-        相册{multi ? '（可多选）' : ''}
-      </Button>
-      <Button
-        type="primary"
-        round
-        size="small"
-        loading={busy}
-        disabled={disabled || busy}
-        onClick={() => camRef.current?.click()}
-      >
-        拍照
-      </Button>
-    </div>
+        {busy ? '…' : '+'}
+      </button>
+      <ActionSheet
+        visible={sheetOpen}
+        onCancel={() => setSheetOpen(false)}
+        cancelText="取消"
+        actions={[
+          { name: '拍照' },
+          {
+            name: multi ? '从相册选择（可多选）' : '从相册选择',
+          },
+        ]}
+        onSelect={(action) => {
+          setSheetOpen(false);
+          setTimeout(() => {
+            if (action.name === '拍照') cameraRef.current?.click();
+            else fileRef.current?.click();
+          }, 0);
+        }}
+      />
+    </>
   );
 }
 
@@ -289,7 +300,7 @@ export function TripStartPanel({
   const runOcr = async (url: string) => {
     setOcrBusy(true);
     try {
-      const res = await ocrUnitMileage(caseId, unitId, url, 'start');
+      const res = await ocrMyMileage(caseId, url, 'start');
       if (res.mileage != null) {
         setForm((p) => ({ ...p, startMileage: String(res.mileage) }));
         Toast.success(`识别里程 ${res.mileage} km`);
@@ -319,34 +330,27 @@ export function TripStartPanel({
                   : () => setForm((p) => ({ ...p, startOdometerUrl: '', startMileage: '' }))
               }
             />
-          ) : (
-            <div className="inspection-photo-placeholder">
-              <strong>＋</strong>
-              <span>里程表</span>
-            </div>
-          )}
+          ) : !readonly ? (
+            <SlotUploadBar
+              caseId={caseId}
+              slot="startOdo"
+              onUploaded={(urls) => {
+                const url = urls[0];
+                setForm((p) => ({ ...p, startOdometerUrl: url }));
+                void runOcr(url);
+              }}
+            />
+          ) : null}
         </div>
-        {!readonly && (
-          <SlotUploadBar
-            caseId={caseId}
-            slot="startOdo"
-            onUploaded={(urls) => {
-              const url = urls[0];
-              setForm((p) => ({ ...p, startOdometerUrl: url }));
-              void runOcr(url);
-            }}
-          />
-        )}
         {form.startOdometerUrl && !readonly && (
-          <Button
-            plain
-            size="small"
-            loading={ocrBusy}
-            style={{ marginTop: 8 }}
+          <button
+            type="button"
+            className="trip-ocr-link"
+            disabled={ocrBusy}
             onClick={() => void runOcr(form.startOdometerUrl)}
           >
-            重新识别里程
-          </Button>
+            {ocrBusy ? '识别中…' : '重新识别里程'}
+          </button>
         )}
         <label className="trip-wizard-field">
           <span>开始里程（km）</span>
@@ -379,26 +383,20 @@ export function TripStartPanel({
               }
             />
           ))}
-          {!form.startNavUrls.length && (
-            <div className="inspection-photo-placeholder">
-              <strong>＋</strong>
-              <span>导航</span>
-            </div>
+          {!readonly && form.startNavUrls.length < 12 && (
+            <SlotUploadBar
+              caseId={caseId}
+              slot="startNav"
+              multi
+              onUploaded={(urls) =>
+                setForm((p) => ({
+                  ...p,
+                  startNavUrls: [...p.startNavUrls, ...urls].slice(0, 12),
+                }))
+              }
+            />
           )}
         </div>
-        {!readonly && form.startNavUrls.length < 12 && (
-          <SlotUploadBar
-            caseId={caseId}
-            slot="startNav"
-            multi
-            onUploaded={(urls) =>
-              setForm((p) => ({
-                ...p,
-                startNavUrls: [...p.startNavUrls, ...urls].slice(0, 12),
-              }))
-            }
-          />
-        )}
       </div>
     </div>
   );
@@ -423,7 +421,7 @@ export function TripEndPanel({
   const runOcr = async (url: string) => {
     setOcrBusy(true);
     try {
-      const res = await ocrUnitMileage(caseId, unitId, url, 'end');
+      const res = await ocrMyMileage(caseId, url, 'end');
       if (res.mileage != null) {
         setForm((p) => ({ ...p, endMileage: String(res.mileage) }));
         Toast.success(`识别里程 ${res.mileage} km`);
@@ -453,34 +451,27 @@ export function TripEndPanel({
                   : () => setForm((p) => ({ ...p, endOdometerUrl: '', endMileage: '' }))
               }
             />
-          ) : (
-            <div className="inspection-photo-placeholder">
-              <strong>＋</strong>
-              <span>里程表</span>
-            </div>
-          )}
+          ) : !readonly ? (
+            <SlotUploadBar
+              caseId={caseId}
+              slot="endOdo"
+              onUploaded={(urls) => {
+                const url = urls[0];
+                setForm((p) => ({ ...p, endOdometerUrl: url }));
+                void runOcr(url);
+              }}
+            />
+          ) : null}
         </div>
-        {!readonly && (
-          <SlotUploadBar
-            caseId={caseId}
-            slot="endOdo"
-            onUploaded={(urls) => {
-              const url = urls[0];
-              setForm((p) => ({ ...p, endOdometerUrl: url }));
-              void runOcr(url);
-            }}
-          />
-        )}
         {form.endOdometerUrl && !readonly && (
-          <Button
-            plain
-            size="small"
-            loading={ocrBusy}
-            style={{ marginTop: 8 }}
+          <button
+            type="button"
+            className="trip-ocr-link"
+            disabled={ocrBusy}
             onClick={() => void runOcr(form.endOdometerUrl)}
           >
-            重新识别里程
-          </Button>
+            {ocrBusy ? '识别中…' : '重新识别里程'}
+          </button>
         )}
         <label className="trip-wizard-field">
           <span>结束里程（km）</span>
@@ -518,26 +509,20 @@ export function TripEndPanel({
               }
             />
           ))}
-          {!form.endNavUrls.length && (
-            <div className="inspection-photo-placeholder">
-              <strong>＋</strong>
-              <span>导航</span>
-            </div>
+          {!readonly && form.endNavUrls.length < 12 && (
+            <SlotUploadBar
+              caseId={caseId}
+              slot="endNav"
+              multi
+              onUploaded={(urls) =>
+                setForm((p) => ({
+                  ...p,
+                  endNavUrls: [...p.endNavUrls, ...urls].slice(0, 12),
+                }))
+              }
+            />
           )}
         </div>
-        {!readonly && form.endNavUrls.length < 12 && (
-          <SlotUploadBar
-            caseId={caseId}
-            slot="endNav"
-            multi
-            onUploaded={(urls) =>
-              setForm((p) => ({
-                ...p,
-                endNavUrls: [...p.endNavUrls, ...urls].slice(0, 12),
-              }))
-            }
-          />
-        )}
       </div>
 
       <div className="trip-wizard-block">
@@ -570,26 +555,20 @@ export function TripEndPanel({
               }
             />
           ))}
-          {!form.voucherUrls.length && (
-            <div className="inspection-photo-placeholder">
-              <strong>＋</strong>
-              <span>费用凭证</span>
-            </div>
+          {!readonly && form.voucherUrls.length < 20 && (
+            <SlotUploadBar
+              caseId={caseId}
+              slot="voucher"
+              multi
+              onUploaded={(urls) =>
+                setForm((p) => ({
+                  ...p,
+                  voucherUrls: [...p.voucherUrls, ...urls].slice(0, 20),
+                }))
+              }
+            />
           )}
         </div>
-        {!readonly && form.voucherUrls.length < 20 && (
-          <SlotUploadBar
-            caseId={caseId}
-            slot="voucher"
-            multi
-            onUploaded={(urls) =>
-              setForm((p) => ({
-                ...p,
-                voucherUrls: [...p.voucherUrls, ...urls].slice(0, 20),
-              }))
-            }
-          />
-        )}
         <label className="trip-wizard-field">
           <span>备注</span>
           <textarea
@@ -605,8 +584,8 @@ export function TripEndPanel({
   );
 }
 
-export async function persistTripSkip(caseId: string, unitId: string) {
-  return saveUnitTripExpense(caseId, unitId, {
+export async function persistTripSkip(caseId: string, _unitId?: string) {
+  return saveMyTripExpense(caseId, {
     tripSkipped: true,
     amount: 0,
     voucherUrls: [],
@@ -615,10 +594,10 @@ export async function persistTripSkip(caseId: string, unitId: string) {
 
 export async function persistTripStart(
   caseId: string,
-  unitId: string,
+  _unitId: string | undefined,
   form: TripFormState,
 ) {
-  return saveUnitTripExpense(caseId, unitId, {
+  return saveMyTripExpense(caseId, {
     tripSkipped: false,
     startOdometerUrl: form.startOdometerUrl || null,
     startNavUrls: form.startNavUrls,
@@ -629,12 +608,12 @@ export async function persistTripStart(
 
 export async function persistTripEnd(
   caseId: string,
-  unitId: string,
+  _unitId: string | undefined,
   form: TripFormState,
   submitFee: boolean,
 ) {
   // 开始资料可能已在开工时落库；结束保存只带非空开始字段，避免空值把已上传的开始图冲掉
-  return saveUnitTripExpense(caseId, unitId, {
+  return saveMyTripExpense(caseId, {
     tripSkipped: false,
     ...(form.startOdometerUrl ? { startOdometerUrl: form.startOdometerUrl } : {}),
     ...(form.startNavUrls.length

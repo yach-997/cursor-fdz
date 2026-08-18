@@ -29,8 +29,10 @@ import { ChangeLogService } from './change-log.service';
 import { FinanceScopeService } from './finance-scope.service';
 import { FinanceWorkflowService } from './finance-workflow.service';
 import { FinanceSettlementService } from './finance-settlement.service';
+import type { ExpenseLineItem, ExpenseNavShot } from '../../../entities/case-expense-claim.entity';
 
 type TripExpenseInput = {
+  lineItems?: Array<Partial<ExpenseLineItem> & { type?: string; content?: string }>;
   startOdometerUrl?: string;
   startNavUrl?: string;
   startNavUrls?: string[];
@@ -79,6 +81,36 @@ export class FinanceMultiService implements OnModuleInit {
 
   async onModuleInit() {
     await this.ensureDeviceSerialColumns();
+    await this.ensureExpenseLineItemsColumn();
+    await this.ensureAssignRemarkColumn();
+  }
+
+  /** 兼容未跑迁移：派单备注 */
+  private async ensureAssignRemarkColumn() {
+    try {
+      await this.cases.manager.query(`
+        ALTER TABLE service_case
+          ADD COLUMN IF NOT EXISTS assign_remark text NULL
+      `);
+    } catch (err) {
+      this.logger.warn(
+        `ensureAssignRemarkColumn skipped: ${(err as Error).message || err}`,
+      );
+    }
+  }
+
+  /** 兼容未跑迁移的环境：补齐费用明细列 */
+  private async ensureExpenseLineItemsColumn() {
+    try {
+      await this.expenses.manager.query(`
+        ALTER TABLE case_expense_claim
+          ADD COLUMN IF NOT EXISTS line_items jsonb NOT NULL DEFAULT '[]'::jsonb
+      `);
+    } catch (err) {
+      this.logger.warn(
+        `ensureExpenseLineItemsColumn skipped: ${(err as Error).message || err}`,
+      );
+    }
   }
 
   /** 兼容未跑迁移的环境：补齐序列号相关列 */
@@ -341,6 +373,10 @@ export class FinanceMultiService implements OnModuleInit {
     serviceCase.assignMode = nextMode;
     serviceCase.unitLabel = '台';
     serviceCase.expenseEnabled = true;
+    if (dto.reason !== undefined) {
+      const remark = String(dto.reason || '').trim();
+      serviceCase.assignRemark = remark || null;
+    }
     const fromPlanned = serviceCase.plannedUnits;
     if (dto.plannedUnits != null) {
       serviceCase.plannedUnits = Math.max(1, Math.min(500, Number(dto.plannedUnits) || 1));
@@ -405,14 +441,37 @@ export class FinanceMultiService implements OnModuleInit {
         a.status = 'withdrawn';
         await this.assignments.save(a);
       }
-      // 释放被撤回工程师的认领台；整案换人时释放全部认领
+      // 释放被撤回工程师的认领台，并删除未提交巡检任务（避免新人挂上旧任务 → 无权访问）
       const claimed = await this.units.find({
         where: { serviceCaseId: caseId, status: In(['claimed', 'submitted']) },
       });
       for (const u of claimed) {
         if (keepingExisting && u.inspectorId === target) continue;
+        if (u.inspectionTaskId) {
+          await this.cases.manager.query(`DELETE FROM inspection_records WHERE task_id = $1`, [
+            u.inspectionTaskId,
+          ]);
+          await this.tasks.delete({ id: u.inspectionTaskId });
+        }
         this.releaseUnitToOpen(u);
         await this.units.save(u);
+      }
+      // 再清掉被撤回工程师名下、未挂台或残留的未提交任务
+      for (const a of toWithdraw) {
+        if (!a.inspectorId) continue;
+        const pendingTasks = await this.tasks.find({
+          where: {
+            serviceCaseId: caseId,
+            inspectorId: a.inspectorId,
+            status: In([TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.REJECTED]),
+          },
+        });
+        for (const t of pendingTasks) {
+          await this.cases.manager.query(`DELETE FROM inspection_records WHERE task_id = $1`, [
+            t.id,
+          ]);
+          await this.tasks.delete(t.id);
+        }
       }
     }
 
@@ -450,7 +509,32 @@ export class FinanceMultiService implements OnModuleInit {
       serviceCase.inspectorId = primary.inspectorId;
       serviceCase.assignBy = user.id;
       serviceCase.assignTime = new Date();
-      if (serviceCase.status === 'pending_assign') serviceCase.status = 'assigned';
+      // 首次派单 → 已派单；换人且尚无实质进度 → 回到已派单（新人未开工）
+      if (serviceCase.status === 'pending_assign') {
+        serviceCase.status = 'assigned';
+      } else if (
+        mode === 'single' &&
+        serviceCase.status === 'working' &&
+        ids.length === 1
+      ) {
+        const hasRealProgress = await this.units.count({
+          where: {
+            serviceCaseId: caseId,
+            status: In(['submitted', 'completed', 'accepted', 'settled']),
+          },
+        });
+        const hasDoneUnits = actives.some((a) => Number(a.completedUnits || 0) > 0);
+        if (!hasRealProgress && !hasDoneUnits) {
+          serviceCase.status = 'assigned';
+          // 在派记录也回到 assigned，表示待开工
+          for (const a of actives) {
+            if (a.status === 'working') {
+              a.status = 'assigned';
+              await this.assignments.save(a);
+            }
+          }
+        }
+      }
       await this.cases.save(serviceCase);
 
       // 单人：直接认领唯一单元并建任务
@@ -554,7 +638,7 @@ export class FinanceMultiService implements OnModuleInit {
     if (!unit) throw new NotFoundException('执行单元不存在');
     if (unit.inspectorId !== user.id) throw new BadRequestException('只能完成自己认领的单元');
     if (unit.status === 'completed') return this.afterUnitProgress(serviceCase, user);
-    await this.assertTripEndReady(caseId, unitId, user);
+    // 行程已改为案例详情可选填写，完成本台不再强绑结束里程
 
     if (unit.status === 'claimed') {
       // 允许：任务已提交则一并完成
@@ -656,8 +740,10 @@ export class FinanceMultiService implements OnModuleInit {
         const unit = units.find((u) => u.id === e.workUnitId);
         const startNavUrls = this.normalizeNavUrls(e.startNavUrls, e.startNavUrl);
         const endNavUrls = this.normalizeNavUrls(e.endNavUrls, e.endNavUrl);
+        const lineItems = Array.isArray(e.lineItems) ? e.lineItems : [];
         return {
           ...e,
+          lineItems,
           startNavUrls,
           endNavUrls,
           startNavUrl: startNavUrls[0] || e.startNavUrl || null,
@@ -731,24 +817,28 @@ export class FinanceMultiService implements OnModuleInit {
     return this.shares.save(rows);
   }
 
-  // —— 行程报销（按台，可选） ——
+  // —— 行程报销（案例 × 工程师一条，可选） ——
   async upsertExpense(
     caseId: string,
     dto: TripExpenseInput & { workUnitId?: string },
     user: CurrentUserContext,
   ) {
-    const unitId =
-      dto.workUnitId ||
-      (
-        await this.resolveExpenseUnit(caseId, user, undefined)
-      ).id;
-    return this.upsertTripExpense(caseId, unitId, dto, user);
+    return this.upsertMyTripExpense(caseId, dto, user);
   }
 
+  /** 兼容旧路径 /units/:unitId/expense：仍落到本人本案例一条 */
   async upsertTripExpense(
     caseId: string,
-    unitId: string,
+    _unitId: string,
     dto: TripExpenseInput,
+    user: CurrentUserContext,
+  ) {
+    return this.upsertMyTripExpense(caseId, dto, user);
+  }
+
+  async upsertMyTripExpense(
+    caseId: string,
+    dto: TripExpenseInput & { workUnitId?: string },
     user: CurrentUserContext,
   ) {
     const serviceCase = await this.caseForAssignee(caseId, user);
@@ -756,27 +846,38 @@ export class FinanceMultiService implements OnModuleInit {
       serviceCase.expenseEnabled = true;
       await this.cases.save(serviceCase);
     }
-    const unit = await this.resolveExpenseUnit(caseId, user, unitId);
+
     let claim = await this.expenses.findOne({
-      where: { workUnitId: unit.id, inspectorId: user.id },
+      where: { serviceCaseId: caseId, inspectorId: user.id },
     });
-    if (!claim) {
-      claim = await this.expenses.findOne({
-        where: { serviceCaseId: caseId, workUnitId: unit.id },
-      });
-    }
-    if (claim && claim.inspectorId !== user.id) {
-      throw new BadRequestException('该台行程报销已由他人填写');
-    }
-    if (claim?.status === 'submitted' && !dto.submit) {
-      throw new BadRequestException('已提交的报销请等待审核');
+    if (claim?.status === 'submitted') {
+      throw new BadRequestException('已提交的报销请等待审核，驳回后才能修改');
     }
     if (claim?.status === 'approved') {
       throw new BadRequestException('已通过的报销不可修改');
     }
+
+    // 兼容旧数据：可选挂一个本人台，仅作展示，不再作为唯一键
+    let linkUnitId: string | null = claim?.workUnitId || null;
+    if (dto.workUnitId) {
+      try {
+        const unit = await this.resolveExpenseUnit(caseId, user, dto.workUnitId);
+        linkUnitId = unit.id;
+      } catch {
+        /* ignore */
+      }
+    } else if (!linkUnitId) {
+      try {
+        const unit = await this.resolveExpenseUnit(caseId, user, undefined);
+        linkUnitId = unit.id;
+      } catch {
+        linkUnitId = null;
+      }
+    }
+
     claim ||= this.expenses.create({
       serviceCaseId: caseId,
-      workUnitId: unit.id,
+      workUnitId: linkUnitId,
       inspectorId: user.id,
       amount: '0.00',
       claimAmount: '0.00',
@@ -789,9 +890,27 @@ export class FinanceMultiService implements OnModuleInit {
       otherVoucherUrls: [],
       startNavUrls: [],
       endNavUrls: [],
+      lineItems: [],
       tripSkipped: false,
       status: 'draft',
     });
+    if (linkUnitId) claim.workUnitId = linkUnitId;
+
+    if (dto.lineItems !== undefined) {
+      const normalized = this.normalizeLineItems(dto.lineItems);
+      this.applyLineItemsToClaim(claim, normalized);
+      if (dto.submit) {
+        this.assertLineItemsReady(normalized);
+        claim.amount = Number(claim.claimAmount || claim.amount || 0).toFixed(2);
+        claim.status = 'submitted';
+        claim.reviewNote = null;
+        claim.reviewBy = null;
+        claim.reviewAt = null;
+      } else if (claim.status === 'rejected') {
+        claim.status = 'draft';
+      }
+      return this.expenses.save(claim);
+    }
 
     if (dto.tripSkipped === true) {
       claim.tripSkipped = true;
@@ -875,17 +994,7 @@ export class FinanceMultiService implements OnModuleInit {
 
     if (dto.submit) {
       const hasMoney = Number(claim.claimAmount || claim.amount) > 0;
-      const navUrls = [...this.navUrlList(claim, 'start'), ...this.navUrlList(claim, 'end')];
-      const feeVouchers = (claim.voucherUrls || []).filter(
-        (u) =>
-          u &&
-          u !== claim.startOdometerUrl &&
-          u !== claim.endOdometerUrl &&
-          !navUrls.includes(u),
-      );
-      if (hasMoney && !feeVouchers.length) {
-        throw new BadRequestException('有报销金额时请上传费用凭证');
-      }
+      // 旧流程：有行程里程/导航即可；费用凭证不再强制
       if (
         !hasMoney &&
         !claim.startOdometerUrl &&
@@ -906,13 +1015,11 @@ export class FinanceMultiService implements OnModuleInit {
   }
 
   /**
-   * 开工前须二选一：无行程 或 已填开始里程+导航。
-   * 未做选择时抛错，由前端引导。
+   * @deprecated 开工门禁已移出巡检；保留兼容。
    */
-  async assertTripStartReady(caseId: string, unitId: string, user: CurrentUserContext) {
-    const unit = await this.resolveExpenseUnit(caseId, user, unitId);
+  async assertTripStartReady(caseId: string, _unitId: string, user: CurrentUserContext) {
     const claim = await this.expenses.findOne({
-      where: { workUnitId: unit.id, inspectorId: user.id },
+      where: { serviceCaseId: caseId, inspectorId: user.id },
     });
     if (claim?.tripSkipped) return claim;
     const hasStart =
@@ -925,12 +1032,11 @@ export class FinanceMultiService implements OnModuleInit {
   }
 
   /**
-   * 完成本台：无行程可过；若填过开始行程则必须结束里程+导航。
+   * 软校验：有开始无结束时返回提示用信息；完成本台不再调用。
    */
-  async assertTripEndReady(caseId: string, unitId: string, user: CurrentUserContext) {
-    const unit = await this.resolveExpenseUnit(caseId, user, unitId);
+  async assertTripEndReady(caseId: string, _unitId: string, user: CurrentUserContext) {
     const claim = await this.expenses.findOne({
-      where: { workUnitId: unit.id, inspectorId: user.id },
+      where: { serviceCaseId: caseId, inspectorId: user.id },
     });
     if (!claim || claim.tripSkipped) return claim;
     const hasStart =
@@ -948,16 +1054,25 @@ export class FinanceMultiService implements OnModuleInit {
     return claim;
   }
 
-  async ocrUnitMileage(
+  async ocrMyMileage(
     caseId: string,
-    unitId: string,
     imageUrl: string,
     kind: 'start' | 'end' | undefined,
     user: CurrentUserContext,
   ) {
-    await this.resolveExpenseUnit(caseId, user, unitId);
+    await this.caseForAssignee(caseId, user);
     const result = await this.vision.readOdometerMileage(imageUrl);
     return { ...result, kind: kind || 'start' };
+  }
+
+  async ocrUnitMileage(
+    caseId: string,
+    _unitId: string,
+    imageUrl: string,
+    kind: 'start' | 'end' | undefined,
+    user: CurrentUserContext,
+  ) {
+    return this.ocrMyMileage(caseId, imageUrl, kind, user);
   }
 
   async ocrUnitDeviceSerial(caseId: string, unitId: string, imageUrl: string, user: CurrentUserContext) {
@@ -979,20 +1094,21 @@ export class FinanceMultiService implements OnModuleInit {
     if (!serial || serial.length < 4) {
       throw new BadRequestException('请填写有效的设备序列号（至少 4 位）');
     }
+    // 仅本案例内查重（不同案例允许相同序列号）
     const occupied = await this.units
       .createQueryBuilder('u')
-      .innerJoin(ServiceCase, 'c', 'c.id = u.service_case_id')
-      .where('u.id <> :unitId', { unitId: unit.id })
+      .where('u.service_case_id = :caseId', { caseId })
+      .andWhere('u.id <> :unitId', { unitId: unit.id })
       .andWhere('u.device_serial IS NOT NULL')
       .andWhere(`UPPER(REPLACE(TRIM(u.device_serial), ' ', '')) = :serial`, { serial })
-      .select(['u.seq AS seq', 'c.gsp_case_no AS "gspCaseNo"'])
+      .select(['u.seq AS seq'])
       .limit(1)
-      .getRawOne<{ seq: number; gspCaseNo: string | null }>();
+      .getRawOne<{ seq: number }>();
     if (occupied) {
-      const caseNo = occupied.gspCaseNo || '未知案例';
-      const seq = occupied.seq != null ? `台 #${occupied.seq}` : '其他作业台';
+      const seq =
+        occupied.seq != null ? `台 #${occupied.seq}` : '其他作业台';
       throw new BadRequestException(
-        `序列号 ${serial} 已被占用（案例 ${caseNo} · ${seq}），请确认是否拍错设备`,
+        `序列号 ${serial} 已在本案例用于${seq}，同一案例内不能重复`,
       );
     }
     unit.deviceSerial = serial.slice(0, 128);
@@ -1120,10 +1236,18 @@ export class FinanceMultiService implements OnModuleInit {
       qb.andWhere("c.status IN ('finished','settle_review','settled','month_locked')");
     }
     if (query.month?.trim()) {
-      qb.andWhere(
-        `(e.month = :month OR (e.month IS NULL AND to_char(COALESCE(c.finish_time, e.created_at) AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM') = :month))`,
-        { month: query.month.trim() },
-      );
+      const finishKey = query.month.trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(finishKey)) {
+        qb.andWhere(
+          `to_char(COALESCE(c.finish_time, e.created_at) AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD') = :finishDay`,
+          { finishDay: finishKey },
+        );
+      } else if (/^\d{4}-\d{2}$/.test(finishKey)) {
+        qb.andWhere(
+          `(e.month = :month OR (e.month IS NULL AND to_char(COALESCE(c.finish_time, e.created_at) AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM') = :month))`,
+          { month: finishKey },
+        );
+      }
     }
     if (query.keyword?.trim()) {
       qb.andWhere(
@@ -1155,6 +1279,7 @@ export class FinanceMultiService implements OnModuleInit {
         'e.fuel_amount AS "fuelAmount"',
         'e.other_amount AS "otherAmount"',
         'e.note AS note',
+        'e.line_items AS "lineItems"',
         'e.voucher_urls AS "voucherUrls"',
         'e.toll_voucher_urls AS "tollVoucherUrls"',
         'e.fuel_voucher_urls AS "fuelVoucherUrls"',
@@ -1202,11 +1327,34 @@ export class FinanceMultiService implements OnModuleInit {
         caseTotals.set(String(s.serviceCaseId), Number(s.total || 0));
       }
     }
+    /** 报销按人×案例，展示该工程师完成台数，避免误显示「台#1」 */
+    const completedByKey = new Map<string, number>();
+    if (caseIds.length && userIds.length) {
+      const countRows = await this.units
+        .createQueryBuilder('u')
+        .select('u.service_case_id', 'serviceCaseId')
+        .addSelect('u.inspector_id', 'inspectorId')
+        .addSelect('COUNT(*)::int', 'cnt')
+        .where('u.service_case_id IN (:...caseIds)', { caseIds })
+        .andWhere('u.inspector_id IN (:...userIds)', { userIds })
+        .andWhere("u.status IN ('submitted','completed')")
+        .groupBy('u.service_case_id')
+        .addGroupBy('u.inspector_id')
+        .getRawMany();
+      for (const r of countRows) {
+        completedByKey.set(
+          `${r.serviceCaseId}:${r.inspectorId}`,
+          Number(r.cnt || 0),
+        );
+      }
+    }
     const parseUrls = (v: unknown) =>
       Array.isArray(v) ? v : typeof v === 'string' ? JSON.parse(v || '[]') : [];
     return raw.map((row) => {
       const startNavUrls = this.normalizeNavUrls(row.startNavUrls, row.startNavUrl);
       const endNavUrls = this.normalizeNavUrls(row.endNavUrls, row.endNavUrl);
+      const completedUnits =
+        completedByKey.get(`${row.serviceCaseId}:${row.inspectorId}`) || 0;
       return {
       ...row,
       tripSkipped:
@@ -1216,6 +1364,7 @@ export class FinanceMultiService implements OnModuleInit {
         row.tripSkipped === 1 ||
         row.tripSkipped === '1',
       voucherUrls: parseUrls(row.voucherUrls),
+      lineItems: parseUrls(row.lineItems),
       tollVoucherUrls: parseUrls(row.tollVoucherUrls),
       fuelVoucherUrls: parseUrls(row.fuelVoucherUrls),
       otherVoucherUrls: parseUrls(row.otherVoucherUrls),
@@ -1225,6 +1374,7 @@ export class FinanceMultiService implements OnModuleInit {
       endNavUrl: endNavUrls[0] || row.endNavUrl || null,
       inspectorName: nameMap.get(row.inspectorId) || row.inspectorId,
       caseExpenseTotal: (caseTotals.get(String(row.serviceCaseId)) || 0).toFixed(2),
+      completedUnits,
     };
     });
   }
@@ -1235,6 +1385,230 @@ export class FinanceMultiService implements OnModuleInit {
   }
 
   // —— helpers ——
+  private normalizeNavShots(shots: unknown): ExpenseNavShot[] {
+    if (!Array.isArray(shots)) return [];
+    const out: ExpenseNavShot[] = [];
+    for (const shot of shots) {
+      if (!shot || typeof shot !== 'object') continue;
+      const url = String((shot as ExpenseNavShot).url || '').trim();
+      if (!url) continue;
+      out.push({
+        url,
+        remark: String((shot as ExpenseNavShot).remark || '').trim().slice(0, 500),
+      });
+      if (out.length >= 12) break;
+    }
+    return out;
+  }
+
+  private normalizeLineItems(raw: Array<Partial<ExpenseLineItem> & { type?: string; content?: string }>): ExpenseLineItem[] {
+    const list = Array.isArray(raw) ? raw : [];
+    return list.slice(0, 30).map((item, index) => {
+      const type = item?.type === 'trip' || item?.type === 'toll' || item?.type === 'other'
+        ? item.type
+        : 'other';
+      const content =
+        type === 'trip'
+          ? '行程'
+          : type === 'toll'
+            ? '过路费'
+            : String(item?.content || '').trim().slice(0, 100);
+      const startNavShots = this.normalizeNavShots(item?.startNavShots);
+      const endNavShots = this.normalizeNavShots(item?.endNavShots);
+      const startM =
+        item?.startMileage != null && item.startMileage !== ''
+          ? Number(item.startMileage)
+          : null;
+      const endM =
+        item?.endMileage != null && item.endMileage !== ''
+          ? Number(item.endMileage)
+          : null;
+      let mileageKm: string | null = null;
+      if (
+        startM != null &&
+        endM != null &&
+        Number.isFinite(startM) &&
+        Number.isFinite(endM)
+      ) {
+        if (endM < startM) {
+          throw new BadRequestException(`费用明细 ${index + 1}：结束里程不能小于开始里程`);
+        }
+        mileageKm = (endM - startM).toFixed(1);
+      }
+      const amount = Math.max(0, Number(item?.amount) || 0);
+      return {
+        id: String(item?.id || `line-${index + 1}-${Date.now()}`).slice(0, 64),
+        type,
+        content,
+        expenseDate: String(item?.expenseDate || '').trim().slice(0, 32) || null,
+        amount: amount.toFixed(2),
+        note: String(item?.note || '').trim().slice(0, 1000) || null,
+        startOdometerUrl: String(item?.startOdometerUrl || '').trim() || null,
+        startMileage: startM != null && Number.isFinite(startM) ? startM.toFixed(1) : null,
+        startNavShots,
+        endOdometerUrl: String(item?.endOdometerUrl || '').trim() || null,
+        endMileage: endM != null && Number.isFinite(endM) ? endM.toFixed(1) : null,
+        endNavShots,
+        mileageKm,
+        voucherUrls: [...new Set((item?.voucherUrls || []).filter(Boolean))].slice(0, 20),
+        photoUrls: [...new Set((item?.photoUrls || []).filter(Boolean))].slice(0, 20),
+      };
+    });
+  }
+
+  private applyLineItemsToClaim(claim: CaseExpenseClaim, lines: ExpenseLineItem[]) {
+    claim.lineItems = lines;
+    claim.tripSkipped = false;
+    const trips = lines.filter((l) => l.type === 'trip');
+    if (trips.length) {
+      // 凭证回退仍用首段；里程汇总按全部行程段
+      const first = trips[0];
+      claim.startOdometerUrl = first.startOdometerUrl || null;
+      claim.startNavUrls = (first.startNavShots || []).map((s) => s.url);
+      claim.startNavUrl = claim.startNavUrls[0] || null;
+      claim.endOdometerUrl = first.endOdometerUrl || null;
+      claim.endNavUrls = (first.endNavShots || []).map((s) => s.url);
+      claim.endNavUrl = claim.endNavUrls[0] || null;
+
+      let sumKm = 0;
+      let hasKm = false;
+      let minStart: number | null = null;
+      let maxEnd: number | null = null;
+      for (const trip of trips) {
+        const startM =
+          trip.startMileage != null && trip.startMileage !== ''
+            ? Number(trip.startMileage)
+            : null;
+        const endM =
+          trip.endMileage != null && trip.endMileage !== ''
+            ? Number(trip.endMileage)
+            : null;
+        if (startM != null && Number.isFinite(startM)) {
+          minStart = minStart == null ? startM : Math.min(minStart, startM);
+        }
+        if (endM != null && Number.isFinite(endM)) {
+          maxEnd = maxEnd == null ? endM : Math.max(maxEnd, endM);
+        }
+        let km: number | null = null;
+        if (trip.mileageKm != null && trip.mileageKm !== '') {
+          const n = Number(trip.mileageKm);
+          if (Number.isFinite(n)) km = n;
+        } else if (
+          startM != null &&
+          endM != null &&
+          Number.isFinite(startM) &&
+          Number.isFinite(endM) &&
+          endM >= startM
+        ) {
+          km = Math.round((endM - startM) * 10) / 10;
+        }
+        if (km != null) {
+          sumKm += km;
+          hasKm = true;
+        }
+      }
+      claim.startMileage = minStart != null ? minStart.toFixed(1) : null;
+      claim.endMileage = maxEnd != null ? maxEnd.toFixed(1) : null;
+      claim.mileageKm = hasKm ? sumKm.toFixed(1) : null;
+    } else {
+      claim.startOdometerUrl = null;
+      claim.startMileage = null;
+      claim.startNavUrls = [];
+      claim.startNavUrl = null;
+      claim.endOdometerUrl = null;
+      claim.endMileage = null;
+      claim.endNavUrls = [];
+      claim.endNavUrl = null;
+      claim.mileageKm = null;
+    }
+
+    const vouchers: string[] = [];
+    const notes: string[] = [];
+    let total = 0;
+    for (const line of lines) {
+      total += Number(line.amount || 0);
+      if (line.type === 'trip') {
+        vouchers.push(...(line.voucherUrls || []));
+      } else {
+        vouchers.push(...(line.photoUrls || []));
+      }
+      if (line.note) {
+        notes.push(`${line.content || '明细'}：${line.note}`);
+      }
+    }
+    claim.voucherUrls = [...new Set(vouchers.filter(Boolean))].slice(0, 40);
+    const sum = Math.max(0, total).toFixed(2);
+    claim.claimAmount = sum;
+    claim.amount = sum;
+    claim.note = notes.length ? notes.join('；').slice(0, 1000) : null;
+  }
+
+  private assertLineItemsReady(lines: ExpenseLineItem[]) {
+    if (!lines.length) {
+      throw new BadRequestException('请至少添加一条费用明细');
+    }
+    let hasSubstance = false;
+    const tripRangeIndex = new Map<string, number[]>();
+    lines.forEach((line, index) => {
+      const n = index + 1;
+      const amount = Number(line.amount || 0);
+      if (!line.content?.trim()) {
+        throw new BadRequestException(`费用明细 ${n}：请填写内容`);
+      }
+      if (!line.expenseDate) {
+        throw new BadRequestException(`费用明细 ${n}：请选择日期`);
+      }
+      if (line.type === 'trip') {
+        if (!line.startOdometerUrl) {
+          throw new BadRequestException(`费用明细 ${n}：请上传开始里程图`);
+        }
+        if (!(line.startNavShots || []).length) {
+          throw new BadRequestException(`费用明细 ${n}：请上传开始导航截图`);
+        }
+        if (line.startMileage == null || line.startMileage === '') {
+          throw new BadRequestException(`费用明细 ${n}：请填写开始里程`);
+        }
+        if (!line.endOdometerUrl) {
+          throw new BadRequestException(`费用明细 ${n}：请上传结束里程图`);
+        }
+        if (!(line.endNavShots || []).length) {
+          throw new BadRequestException(`费用明细 ${n}：请上传结束导航截图`);
+        }
+        if (line.endMileage == null || line.endMileage === '') {
+          throw new BadRequestException(`费用明细 ${n}：请填写结束里程`);
+        }
+        const startM = Number(line.startMileage);
+        const endM = Number(line.endMileage);
+        if (Number.isFinite(startM) && Number.isFinite(endM)) {
+          const key = `${startM.toFixed(1)}->${endM.toFixed(1)}`;
+          const list = tripRangeIndex.get(key) || [];
+          list.push(n);
+          tripRangeIndex.set(key, list);
+        }
+        // 行程已有里程/导航作依据，费用凭证可选
+        hasSubstance = true;
+      } else {
+        if (amount <= 0) {
+          throw new BadRequestException(`费用明细 ${n}：请填写金额`);
+        }
+        if (!(line.photoUrls || []).length) {
+          throw new BadRequestException(`费用明细 ${n}：请上传照片`);
+        }
+        hasSubstance = true;
+      }
+    });
+    for (const [key, idxs] of tripRangeIndex) {
+      if (idxs.length < 2) continue;
+      const [start, end] = key.split('->');
+      throw new BadRequestException(
+        `行程明细 ${idxs.join('、')} 起止里程完全相同（${start} → ${end}），请核对是否重复填写`,
+      );
+    }
+    if (!hasSubstance) {
+      throw new BadRequestException('请完善费用明细后再提交');
+    }
+  }
+
   private normalizeNavUrls(urls: unknown, legacy?: string | null): string[] {
     const fromArr = Array.isArray(urls)
       ? urls.filter((u): u is string => typeof u === 'string' && !!u)

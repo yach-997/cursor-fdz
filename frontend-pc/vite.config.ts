@@ -17,6 +17,20 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: false,
+    // 临时公网隧道（tunnelmole / cloudflare / localhost.run）Host 头放行
+    allowedHosts: true,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+    },
+  },
+  preview: {
+    port: 4173,
+    strictPort: true,
+    host: true,
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'http://localhost:3000',

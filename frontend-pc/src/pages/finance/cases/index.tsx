@@ -42,6 +42,14 @@ import {
   updateCaseProfile,
   withdrawFinanceAssignee,
 } from '../../../api/finance';
+import {
+  fetchRecord,
+  fetchRecordsByCase,
+  type RecordItem,
+} from '../../../api/record';
+import { formatDateTime } from '../../../utils/displayLabels';
+import type { ColumnsType } from 'antd/es/table';
+import RecordDetailDrawer from '../../../components/RecordDetailDrawer';
 import { fetchSiteMembers, fetchSites } from '../../../api/site';
 import { fetchTemplates, type TemplateItem } from '../../../api/template';
 import type { FinanceCase, FinanceInspectorOption } from '../../../types/finance';
@@ -181,6 +189,17 @@ export default function FinanceCasesPage() {
   const [clearing, setClearing] = useState(false);
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<Record<string, any>>();
+  /** 案例号点击：本页直接打开台次报告（历史查询里的「图3」） */
+  const [reportCase, setReportCase] = useState<{
+    id: string;
+    gspCaseNo: string;
+    projectName?: string;
+    plannedUnits?: number;
+  }>();
+  const [reportUnits, setReportUnits] = useState<RecordItem[]>([]);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportDetail, setReportDetail] = useState<RecordItem | null>(null);
+  const [reportDetailOpen, setReportDetailOpen] = useState(false);
   const [profileEdit, setProfileEdit] = useState<FinanceCase>();
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileForm] = Form.useForm();
@@ -237,6 +256,129 @@ export default function FinanceCasesPage() {
       return true;
     });
   }, [sites, province, city]);
+
+  const openCaseReports = useCallback(
+    async (caseRow: {
+      id: string;
+      gspCaseNo?: string;
+      projectName?: string;
+      plannedUnits?: number;
+    }) => {
+      const id = String(caseRow.id || '').trim();
+      if (!id) return;
+      setDetail(undefined);
+      setReportCase({
+        id,
+        gspCaseNo: String(caseRow.gspCaseNo || '').trim() || id,
+        projectName: caseRow.projectName,
+        plannedUnits: caseRow.plannedUnits,
+      });
+      setReportLoading(true);
+      setReportUnits([]);
+      try {
+        const res = await fetchRecordsByCase(`case-${id}`, {
+          scope: 'history',
+          limit: 100,
+        });
+        const list = res.list || [];
+        setReportUnits(list);
+        if (list.length) {
+          const first = list[0];
+          setReportCase((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  gspCaseNo: first.gspCaseNo || prev.gspCaseNo,
+                  projectName: first.projectName || prev.projectName,
+                  plannedUnits: first.plannedUnits ?? prev.plannedUnits,
+                }
+              : prev,
+          );
+        } else {
+          message.info('该案例暂无已提交的巡检报告');
+        }
+      } catch {
+        message.warning('加载巡检报告失败');
+        setReportCase(undefined);
+      } finally {
+        setReportLoading(false);
+      }
+    },
+    [],
+  );
+
+  const openReportDetail = useCallback(async (recordId: string) => {
+    try {
+      const rec = await fetchRecord(recordId);
+      setReportDetail(rec);
+      setReportDetailOpen(true);
+    } catch {
+      message.warning('加载报告详情失败');
+    }
+  }, []);
+
+  const reportUnitColumns: ColumnsType<RecordItem> = useMemo(
+    () => [
+      {
+        title: '单元',
+        render: (_, row) => {
+          if (row.workUnit) {
+            const label = row.unitLabel || '台';
+            return `${label} #${row.workUnit.seq}`;
+          }
+          return row.task?.taskName || '-';
+        },
+      },
+      {
+        title: '工程师',
+        width: 110,
+        render: (_, row) => row.inspectorName || '-',
+      },
+      {
+        title: 'AI 结果',
+        width: 140,
+        render: (_, row) => {
+          const a = row.aiSummary;
+          if (!a) return '-';
+          if (a.fail > 0) return <Tag color="error">不合格 {a.fail}</Tag>;
+          if (a.pending > 0) return <Tag color="processing">分析中 {a.pending}</Tag>;
+          if (a.error > 0) return <Tag color="warning">待人工判断 {a.error}</Tag>;
+          return <Tag color="success">合格 {a.pass}</Tag>;
+        },
+      },
+      {
+        title: '状态',
+        dataIndex: 'status',
+        width: 100,
+        render: (s: string) => {
+          const map: Record<string, { color: string; text: string }> = {
+            submitted: { color: 'processing', text: '待审核' },
+            approved: { color: 'success', text: '已通过' },
+            rejected: { color: 'error', text: '已驳回' },
+            archived: { color: 'default', text: '已归档' },
+          };
+          const m = map[s] || { color: 'default', text: s || '未知' };
+          return <Tag color={m.color}>{m.text}</Tag>;
+        },
+      },
+      {
+        title: '提交时间',
+        dataIndex: 'submittedAt',
+        width: 170,
+        render: (v?: string) => formatDateTime(v),
+      },
+      {
+        title: '操作',
+        width: 90,
+        render: (_, row) => (
+          <Button type="link" onClick={() => void openReportDetail(row.id)}>
+            详情
+          </Button>
+        ),
+      },
+    ],
+    [openReportDetail],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -539,7 +681,28 @@ export default function FinanceCasesPage() {
         pagination={{ current: page, total, pageSize: 10, onChange: setPage }}
         scroll={{ x: 1180 }}
         columns={[
-          { title: '服务案例号', dataIndex: 'gspCaseNo', width: 140, fixed: 'left' },
+          {
+            title: '服务案例号',
+            dataIndex: 'gspCaseNo',
+            width: 140,
+            fixed: 'left',
+            render: (v: string, r) =>
+              v ? (
+                <Button
+                  type="link"
+                  style={{ padding: 0, height: 'auto' }}
+                  title="查看该案例的巡检报告"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void openCaseReports(r);
+                  }}
+                >
+                  {v}
+                </Button>
+              ) : (
+                '-'
+              ),
+          },
           {
             title: '项目名称',
             dataIndex: 'projectName',
@@ -678,6 +841,11 @@ export default function FinanceCasesPage() {
               return (
                 <div style={{ lineHeight: 1.35 }}>
                   <Tag color={s.color}>{s.text}</Tag>
+                  {r.hasPo === false ? (
+                    <div style={{ marginTop: 2 }}>
+                      <Tag>不计件结算</Tag>
+                    </div>
+                  ) : null}
                   {r.assignMode === 'multi' || Number(r.plannedUnits || 1) > 1 ? (
                     <div style={{ marginTop: 2, fontSize: 12, color: '#8c8c8c' }}>
                       {r.completedUnits || 0}/{r.plannedUnits || 1}
@@ -810,7 +978,9 @@ export default function FinanceCasesPage() {
                                   Number(detail?.plannedUnits ?? r.plannedUnits) || 1,
                                 ),
                           );
-                          setAssignReason('');
+                          setAssignReason(
+                            String(detail?.assignRemark || r.assignRemark || '').trim(),
+                          );
                           if (mode === 'single' && fallbackActive[0]) {
                             setInspectorId(fallbackActive[0].id);
                             setInspectorIds([fallbackActive[0].id]);
@@ -1907,7 +2077,29 @@ export default function FinanceCasesPage() {
               bordered
               column={2}
               items={[
-                { key: 'no', label: '服务案例号', children: detail.gspCaseNo },
+                {
+                  key: 'no',
+                  label: '服务案例号',
+                  children: detail.gspCaseNo ? (
+                    <Button
+                      type="link"
+                      style={{ padding: 0, height: 'auto' }}
+                      title="查看该案例的巡检报告"
+                      onClick={() => {
+                        void openCaseReports({
+                          id: String(detail.id),
+                          gspCaseNo: String(detail.gspCaseNo || ''),
+                          projectName: detail.projectName,
+                          plannedUnits: detail.plannedUnits,
+                        });
+                      }}
+                    >
+                      {detail.gspCaseNo}
+                    </Button>
+                  ) : (
+                    '-'
+                  ),
+                },
                 { key: 'project', label: '项目名称', children: detail.projectName || '-' },
                 {
                   key: 'serviceType',
@@ -1988,6 +2180,12 @@ export default function FinanceCasesPage() {
                     return `${people} 人 / ${plan} 台`;
                   })(),
                 },
+                {
+                  key: 'assignRemark',
+                  label: '派单备注',
+                  span: 2,
+                  children: detail.assignRemark?.trim() ? detail.assignRemark : '-',
+                },
                 ...(admin
                   ? [
                       {
@@ -2066,6 +2264,58 @@ export default function FinanceCasesPage() {
           </>
         )}
       </Drawer>
+
+      <Drawer
+        title={
+          reportCase
+            ? (() => {
+                const planned =
+                  reportUnits[0]?.plannedUnits ?? reportCase.plannedUnits;
+                const unitLabel = reportUnits[0]?.unitLabel || '台';
+                const progress =
+                  planned != null && Number(planned) > 0
+                    ? `${reportUnits.length}/${planned}${unitLabel}`
+                    : `${reportUnits.length}${unitLabel}`;
+                return `${reportCase.gspCaseNo || reportCase.id} · ${progress} · ${
+                  reportCase.projectName || ''
+                }`;
+              })()
+            : '台次报告'
+        }
+        open={!!reportCase}
+        onClose={() => {
+          setReportCase(undefined);
+          setReportUnits([]);
+        }}
+        width={920}
+        destroyOnClose
+      >
+        <Table
+          rowKey="id"
+          size="small"
+          loading={reportLoading}
+          columns={reportUnitColumns}
+          dataSource={reportUnits}
+          pagination={false}
+          scroll={{ x: 'max-content' }}
+          locale={{ emptyText: reportLoading ? '加载中…' : '暂无台次报告' }}
+        />
+      </Drawer>
+
+      <RecordDetailDrawer
+        open={reportDetailOpen}
+        record={reportDetail}
+        onClose={() => {
+          setReportDetailOpen(false);
+          setReportDetail(null);
+        }}
+        onRecordChange={(fresh) => {
+          setReportDetail(fresh);
+          setReportUnits((rows) =>
+            rows.map((row) => (row.id === fresh.id ? fresh : row)),
+          );
+        }}
+      />
     </Card>
   );
 }

@@ -46,9 +46,35 @@ export interface RecordItem {
       description: string;
       isRequired: boolean;
       samplePhotos?: string[];
+      checkType?: 'photo' | 'text';
+      aiEnabled?: boolean;
+      entryKind?: 'check' | 'record';
       isOptionalModule?: boolean;
     }>;
   };
+}
+
+/** 条目是否启用 AI（含旧数据推断） */
+export function resolveEntryAiEnabled(entry: {
+  aiEnabled?: boolean;
+  entryKind?: 'check' | 'record' | string;
+  checkType?: 'photo' | 'text' | string;
+}): boolean {
+  if (entry.aiEnabled === true) return true;
+  if (entry.aiEnabled === false) return false;
+  if (entry.entryKind === 'record') return false;
+  if (entry.entryKind === 'check') return true;
+  if (entry.checkType === 'text') return false;
+  return true;
+}
+
+/** @deprecated 请用 resolveEntryAiEnabled */
+export function resolveEntryKind(entry: {
+  entryKind?: 'check' | 'record' | string;
+  checkType?: 'photo' | 'text' | string;
+  aiEnabled?: boolean;
+}): 'check' | 'record' {
+  return resolveEntryAiEnabled(entry) ? 'check' : 'record';
 }
 
 export async function fetchRecord(id: string) {
@@ -155,11 +181,7 @@ export async function analyzeAi(payload: {
 }) {
   const { data } = await request.post<
     ApiResponse<{ queued: boolean; completed?: boolean }>
-  >(
-    '/ai/analyze',
-    payload,
-    { timeout: 180_000 },
-  );
+  >('/ai/analyze', payload, { timeout: 180_000 });
   return data.data;
 }
 

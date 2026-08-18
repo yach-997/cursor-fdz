@@ -24,6 +24,16 @@ export class Assessment {
   @Column({ name: 'correction_reason', type: 'text', nullable: true }) correctionReason: string | null;
   /** 专业指标事件扣罚合计（正数表示从月结中扣减） */
   @Column({ name: 'event_penalty', type: 'numeric', precision: 12, scale: 2, default: 0 }) eventPenalty: string;
+  /**
+   * 分项打分明细：
+   * { version, items: [{ ruleItemId, score, remark? }], total }
+   */
+  @Column({ name: 'score_detail', type: 'jsonb', nullable: true })
+  scoreDetail: {
+    version?: number;
+    items: Array<{ ruleItemId: string; score: number; remark?: string }>;
+    total: number;
+  } | null;
   @Column({ name: 'updated_by', type: 'uuid', nullable: true }) updatedBy: string | null;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
   @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;

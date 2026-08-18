@@ -9,9 +9,39 @@ import {
 
 export type CaseExpenseStatus = 'draft' | 'submitted' | 'approved' | 'rejected';
 
+export type ExpenseLineType = 'trip' | 'toll' | 'other';
+
+export type ExpenseNavShot = {
+  url: string;
+  remark?: string;
+};
+
+/** 费用明细行（存于 line_items jsonb） */
+export type ExpenseLineItem = {
+  id: string;
+  type: ExpenseLineType;
+  /** 行程/过路费固定；其他自填 */
+  content: string;
+  expenseDate?: string | null;
+  amount?: number | string | null;
+  note?: string | null;
+  /** 行程：起止里程与导航 */
+  startOdometerUrl?: string | null;
+  startMileage?: number | string | null;
+  startNavShots?: ExpenseNavShot[];
+  endOdometerUrl?: string | null;
+  endMileage?: number | string | null;
+  endNavShots?: ExpenseNavShot[];
+  mileageKm?: number | string | null;
+  /** 行程：费用凭证 */
+  voucherUrls?: string[];
+  /** 过路费/其他：照片 */
+  photoUrls?: string[];
+};
+
 /**
- * 行程报销：按作业台（work_unit）一条。
- * 起止里程+导航嵌入作业；费用为工程师自算申报金额，审核可核定为其他金额。
+ * 行程报销：按「案例 × 工程师」一条。
+ * 起止里程与费用在作业详情可选填写；work_unit_id 仅兼容旧数据。
  */
 @Entity('case_expense_claim')
 @Index(['serviceCaseId'])
@@ -38,6 +68,10 @@ export class CaseExpenseClaim {
   otherAmount: string;
 
   @Column({ type: 'text', nullable: true }) note: string | null;
+
+  /** 费用明细列表（行程 / 过路费 / 其他） */
+  @Column({ name: 'line_items', type: 'jsonb', default: () => "'[]'" })
+  lineItems: ExpenseLineItem[];
 
   /** 费用凭证（批量）；里程/导航图另存在 start/end 字段 */
   @Column({ name: 'voucher_urls', type: 'jsonb', default: () => "'[]'" }) voucherUrls: string[];

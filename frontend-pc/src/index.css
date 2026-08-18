@@ -220,4 +220,16 @@ select {
   .ant-space-horizontal {
     flex-wrap: wrap;
   }
+
+  /* 手机端日历弹层：完整显示，避免贴边裁切 */
+  .day-date-picker-calendar .ant-picker-calendar {
+    width: 100%;
+  }
+  .day-date-picker-calendar .ant-picker-content th,
+  .day-date-picker-calendar .ant-picker-content td {
+    min-width: 0;
+  }
+  .day-date-picker-calendar .ant-picker-cell {
+    min-width: 0;
+  }
 }

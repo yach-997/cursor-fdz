@@ -44,7 +44,7 @@ export function matchProductLine(
   return lines.find((p) => String(p.name || '').trim() === name) || null;
 }
 
-/** 解析案例实际使用的检查条目：有产品线用产品线，否则用通用 entries */
+/** 解析案例实际使用的检查条目：有产品线用产品线（可为空列表） */
 export function resolveTemplateEntries(
   template: InspectionTemplate,
   productLine: string | null | undefined,
@@ -52,8 +52,8 @@ export function resolveTemplateEntries(
   const lines = Array.isArray(template.productLines) ? template.productLines : [];
   if (lines.length) {
     const matched = matchProductLine(template, productLine);
-    if (matched?.entries?.length) return matched.entries;
-    return [];
+    if (!matched) return [];
+    return Array.isArray(matched.entries) ? matched.entries : [];
   }
   return Array.isArray(template.entries) ? template.entries : [];
 }

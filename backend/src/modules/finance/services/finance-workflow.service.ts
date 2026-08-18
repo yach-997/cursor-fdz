@@ -50,6 +50,7 @@ import { FinanceScopeService } from './finance-scope.service';
 import { TaskService } from '../../task/task.service';
 import { FinanceMultiService } from './finance-multi.service';
 import { FinanceSettlementService } from './finance-settlement.service';
+import { PriceMappingService } from './price-mapping.service';
 
 const ACTIVE_CASE_STATUSES = ['assigned', 'working'] as const;
 
@@ -96,6 +97,7 @@ export class FinanceWorkflowService {
     private readonly multi: FinanceMultiService,
     @Inject(forwardRef(() => FinanceSettlementService))
     private readonly settlement: FinanceSettlementService,
+    private readonly priceMapping: PriceMappingService,
   ) {}
 
   async availableInspectors(caseId: string, user: CurrentUserContext) {
@@ -273,6 +275,13 @@ export class FinanceWorkflowService {
       ? await this.work.find({ where: { serviceCaseId: In(list.map((item) => item.id)) } })
       : [];
     const workMap = new Map(records.map((item) => [item.serviceCaseId, item]));
+    const poRows = list.length
+      ? await this.orders.find({
+          where: { serviceCaseId: In(list.map((item) => item.id)) },
+          select: ['id', 'serviceCaseId'],
+        })
+      : [];
+    const hasPoSet = new Set(poRows.map((row) => String(row.serviceCaseId)));
     const templateIds = [...new Set(list.map((item) => item.taskTemplateId).filter(Boolean))];
     const nameMap = new Map<string, string>();
     if (templateIds.length) {
@@ -288,6 +297,7 @@ export class FinanceWorkflowService {
     };
     return list.map((item) => ({
       ...item,
+      hasPo: hasPoSet.has(item.id),
       taskTypeName:
         (item.taskTemplateId && nameMap.get(item.taskTemplateId)) ||
         legacyLabel[String(item.taskType || '')] ||
@@ -333,6 +343,7 @@ export class FinanceWorkflowService {
       [TaskStatus.SUBMITTED, TaskStatus.APPROVED].includes(inspectionTask.status as TaskStatus);
     return {
       ...serviceCase,
+      hasPo: orders.length > 0,
       taskTypeName: template?.name || serviceCase.taskType || null,
       taskEntries: (template?.entries || []).slice().sort((a, b) => a.order - b.order),
       checklist,
@@ -497,6 +508,14 @@ export class FinanceWorkflowService {
     }
     const byUnit = await this.tasks.findOne({ where: { workUnitId: unit.id } });
     if (byUnit) {
+      if (
+        inspectorId &&
+        byUnit.inspectorId !== inspectorId &&
+        ![TaskStatus.SUBMITTED, TaskStatus.APPROVED].includes(byUnit.status as TaskStatus)
+      ) {
+        byUnit.inspectorId = inspectorId;
+        await this.tasks.save(byUnit);
+      }
       unit.inspectionTaskId = byUnit.id;
       await this.units.save(unit);
       return byUnit;
@@ -652,9 +671,11 @@ export class FinanceWorkflowService {
   async finish(caseId: string, user: CurrentUserContext) {
     const serviceCase = await this.caseForInspector(caseId, user);
     const mode = serviceCase.assignMode || 'single';
+    const planned = Math.max(1, Number(serviceCase.plannedUnits) || 1);
+    const unitFlow = mode === 'multi' || planned > 1;
 
-    // 多人：完工 = 完成「可完成」的那一台（可同时认领多台，不能误完成未提交的）
-    if (mode === 'multi') {
+    // 分台作业：完工 = 完成「可完成」的那一台，禁止因缺台 id 把整案关掉
+    if (unitFlow) {
       const mine = await this.units.find({
         where: {
           serviceCaseId: caseId,
@@ -733,11 +754,22 @@ export class FinanceWorkflowService {
     return this.finishCaseInternal(serviceCase, user);
   }
 
-  /** 整案结案（全部单元完成或单人模式） */
+  /** 整案结案（全部单元完成或单人一台） */
   async finishCaseInternal(serviceCase: ServiceCase, user: CurrentUserContext) {
     const caseId = serviceCase.id;
     if (['finished', 'settle_review', 'settled', 'month_locked'].includes(serviceCase.status)) {
       return serviceCase;
+    }
+    const planned = Math.max(1, Number(serviceCase.plannedUnits) || 1);
+    if (planned > 1) {
+      const completed = await this.units.count({
+        where: { serviceCaseId: caseId, status: 'completed' },
+      });
+      if (completed < planned) {
+        throw new BadRequestException(
+          `还有未完成的${serviceCase.unitLabel || '台'}（${completed}/${planned}），不能整案完工`,
+        );
+      }
     }
     const hasPo = (await this.orders.count({ where: { serviceCaseId: caseId } })) > 0;
     const from = serviceCase.status;
@@ -926,6 +958,7 @@ export class FinanceWorkflowService {
           endMileage: e.endMileage,
           mileageKm: e.mileageKm,
           tripSkipped: !!e.tripSkipped,
+          lineItems: Array.isArray(e.lineItems) ? e.lineItems : [],
           status: e.status,
           reviewNote: e.reviewNote,
           reviewAt: e.reviewAt,
@@ -1048,9 +1081,17 @@ export class FinanceWorkflowService {
       );
     }
     if (query.month) {
-      qb.andWhere(`to_char(c.finish_time AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM') = :finishMonth`, {
-        finishMonth: query.month,
-      });
+      const finishKey = query.month.trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(finishKey)) {
+        qb.andWhere(
+          `to_char(c.finish_time AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD') = :finishDay`,
+          { finishDay: finishKey },
+        );
+      } else if (/^\d{4}-\d{2}$/.test(finishKey)) {
+        qb.andWhere(`to_char(c.finish_time AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM') = :finishMonth`, {
+          finishMonth: finishKey,
+        });
+      }
     }
     if (statusFilter === 'approved' || statusFilter === 'all') {
       qb.orderBy('p.review_time', 'DESC', 'NULLS LAST').addOrderBy('c.finish_time', 'DESC');
@@ -1200,9 +1241,54 @@ export class FinanceWorkflowService {
     const caseMap = new Map(cases.map((item) => [item.id, item]));
     const orders = caseIds.length ? await this.orders.find({ where: { serviceCaseId: In(caseIds) } }) : [];
     const poIds = orders.map((item) => item.id);
-    const items = poIds.length ? await this.items.find({ where: { poId: In(poIds) } }) : [];
+    let items = poIds.length ? await this.items.find({ where: { poId: In(poIds) } }) : [];
     const orderMap = new Map<string, string>();
     orders.forEach((order) => orderMap.set(order.id, order.serviceCaseId!));
+
+    // 有结算收入但绩效为 0：后补绩效价库时，工程师打开「我的收入」自动重匹配
+    const needRepricePoIds: string[] = [];
+    const revenuePerfByCase = new Map<string, { revenue: number; perf: number }>();
+    for (const item of items) {
+      if (item.priceStatus === 'ignored') continue;
+      const caseId = orderMap.get(item.poId);
+      if (!caseId) continue;
+      const cur = revenuePerfByCase.get(caseId) || { revenue: 0, perf: 0 };
+      cur.revenue += Number(item.itemRevenue || 0);
+      cur.perf += Number(item.itemPerf || 0);
+      revenuePerfByCase.set(caseId, cur);
+    }
+    for (const [caseId, sums] of revenuePerfByCase) {
+      if (sums.revenue > 0.009 && sums.perf < 0.009) {
+        for (const order of orders) {
+          if (order.serviceCaseId === caseId) needRepricePoIds.push(order.id);
+        }
+      }
+    }
+    if (needRepricePoIds.length) {
+      await this.priceMapping.repriceByPoIds(needRepricePoIds, { ignoreFreeze: false });
+      items = await this.items.find({ where: { poId: In(poIds) } });
+      const refreshedLedgers = await this.ledgers.find({
+        where: { serviceCaseId: In(caseIds), month: selectedMonth },
+        order: { updatedAt: 'DESC' },
+      });
+      ledgerByCase.clear();
+      for (const row of refreshedLedgers) ledgerByCase.set(row.serviceCaseId, row);
+      for (const caseId of caseIds) {
+        const serviceCase = caseMap.get(caseId);
+        const ledger = ledgerByCase.get(caseId);
+        if (serviceCase && ledger) {
+          await this.multi.refreshShares(serviceCase, Number(ledger.perfFinal || 0));
+        }
+      }
+      const refreshedShares = await this.shares
+        .createQueryBuilder('s')
+        .innerJoin(CasePerformance, 'p', 'p.service_case_id = s.service_case_id')
+        .where('s.inspector_id = :uid', { uid: user.id })
+        .andWhere('p.month = :month', { month: selectedMonth })
+        .getMany();
+      shareByCase.clear();
+      for (const s of refreshedShares) shareByCase.set(s.serviceCaseId, s);
+    }
 
     const events = await this.assessmentEvents.find({
       where: { month: selectedMonth, userId: user.id },

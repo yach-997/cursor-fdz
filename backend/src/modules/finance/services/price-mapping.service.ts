@@ -123,13 +123,17 @@ export class PriceMappingService {
     return this.repriceItems({ sourceItemName });
   }
 
-  /** 仅重算指定 PO 下条目（手工编辑 PO / 案例区域变更后；管理员显式操作，不冻结） */
-  async repriceByPoIds(poIds: string[]) {
+  /**
+   * 仅重算指定 PO 下条目。
+   * 管理员显式改 PO / 案例主数据：ignoreFreeze=true（已月结仍冻结）。
+   * 打开收入/案例详情的自动补算：必须 ignoreFreeze=false，已通过结算不再改价。
+   */
+  async repriceByPoIds(poIds: string[], options?: { ignoreFreeze?: boolean }) {
     const ids = [...new Set(poIds.filter(Boolean))];
     if (!ids.length) {
       return { affectedItems: 0, pricedItems: 0, skippedFrozen: 0, pendingPrice: 0, income: '0.00' };
     }
-    return this.repriceItems({ poIds: ids, ignoreFreeze: true });
+    return this.repriceItems({ poIds: ids, ignoreFreeze: options?.ignoreFreeze === true });
   }
 
   /**

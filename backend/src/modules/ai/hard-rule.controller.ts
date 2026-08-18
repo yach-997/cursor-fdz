@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
 import { HardRuleService } from './hard-rule.service';
-import { UpdateHardRuleDto } from './dto/hard-rule.dto';
+import { CreateHardRuleDto, UpdateHardRuleDto } from './dto/hard-rule.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '../../common/enums';
@@ -17,6 +17,12 @@ export class HardRuleController {
     return this.service.list();
   }
 
+  @Post()
+  @Roles(UserRole.SUPER_ADMIN)
+  create(@Body() dto: CreateHardRuleDto, @CurrentUser() user: CurrentUserContext) {
+    return this.service.create(dto, user);
+  }
+
   @Get(':code')
   @Roles(UserRole.SUPER_ADMIN)
   detail(@Param('code') code: string) {
@@ -31,6 +37,12 @@ export class HardRuleController {
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.service.update(code, dto, user);
+  }
+
+  @Delete(':code')
+  @Roles(UserRole.SUPER_ADMIN)
+  remove(@Param('code') code: string, @CurrentUser() user: CurrentUserContext) {
+    return this.service.remove(code, user);
   }
 
   @Post(':code/reset')

@@ -34,6 +34,7 @@
   --h5-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --h5-font: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --h5-font-display: 'Outfit', 'Noto Sans SC', 'PingFang SC', sans-serif;
+  --h5-shell-max: 640px;
   --rv-primary-color: var(--h5-green);
   --rv-tabbar-z-index: 100;
   color: var(--h5-ink);
@@ -60,7 +61,7 @@ body {
 }
 
 #root {
-  max-width: 640px;
+  max-width: var(--h5-shell-max);
   margin: 0 auto;
   background:
     radial-gradient(ellipse 120% 40% at 50% -5%, rgba(26, 154, 110, 0.09), transparent 55%),
@@ -198,7 +199,7 @@ body {
 .rv-tabbar {
   z-index: 100 !important;
   left: 50% !important;
-  width: min(100%, 640px) !important;
+  width: min(100%, var(--h5-shell-max)) !important;
   min-height: 60px;
   padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
   transform: translateX(-50%);
@@ -333,12 +334,44 @@ body {
 }
 
 @media (min-width: 641px) {
+  :root {
+    --h5-shell-max: 720px;
+  }
+
   body {
-    background: #cfdcd5;
+    min-height: 100%;
+    padding: 28px 20px;
+    background:
+      radial-gradient(ellipse 70% 45% at 10% 0%, rgba(46, 168, 122, 0.18), transparent 50%),
+      radial-gradient(ellipse 55% 40% at 95% 10%, rgba(20, 90, 70, 0.12), transparent 48%),
+      linear-gradient(165deg, #d5e4dc 0%, #c4d5cc 48%, #b9cdc3 100%);
   }
 
   #root {
-    min-height: 100%;
-    box-shadow: 0 0 80px rgba(12, 48, 36, 0.14);
+    min-height: calc(100vh - 56px);
+    border-radius: 28px;
+    border: 1px solid rgba(18, 70, 52, 0.12);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.35) inset,
+      0 24px 64px rgba(12, 48, 36, 0.18);
+  }
+
+  /* 电脑上看 H5：表单更易读 */
+  .rv-cell {
+    padding: 16px 18px;
+  }
+
+  .rv-field__control,
+  .rv-field__control input,
+  .rv-field__control textarea {
+    font-size: 16px !important;
+  }
+
+  .h5-login-page__inner {
+    max-width: 480px;
+  }
+
+  .tab-layout__content {
+    padding-bottom: calc(84px + env(safe-area-inset-bottom));
   }
 }

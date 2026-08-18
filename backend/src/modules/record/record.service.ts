@@ -19,12 +19,14 @@ import {
   ServiceCase,
   CaseWorkUnit,
   User,
+  resolveEntryAiEnabled,
 } from '../../entities';
 import {
   UserRole,
   TaskStatus,
   RecordStatus,
   CheckResult,
+  CheckType,
 } from '../../common/enums';
 import { CurrentUserContext } from '../../common/interfaces';
 import {
@@ -103,10 +105,9 @@ export class RecordService {
       taskQb.andWhere(
         `(
           task.task_name ILIKE :kw
-          OR EXISTS (
-            SELECT 1 FROM service_case sc
-            WHERE sc.id = task.service_case_id
-              AND (sc.gsp_case_no ILIKE :kw OR sc.project_name ILIKE :kw)
+          OR task.service_case_id IN (
+            SELECT sc.id FROM service_case sc
+            WHERE sc.gsp_case_no ILIKE :kw OR sc.project_name ILIKE :kw
           )
         )`,
         { kw },
@@ -354,10 +355,9 @@ export class RecordService {
       taskQb.andWhere(
         `(
           task.task_name ILIKE :kw
-          OR EXISTS (
-            SELECT 1 FROM service_case sc
-            WHERE sc.id = task.service_case_id
-              AND (sc.gsp_case_no ILIKE :kw OR sc.project_name ILIKE :kw)
+          OR task.service_case_id IN (
+            SELECT sc.id FROM service_case sc
+            WHERE sc.gsp_case_no ILIKE :kw OR sc.project_name ILIKE :kw
           )
         )`,
         { kw: `%${kw}%` },
@@ -703,20 +703,19 @@ export class RecordService {
     }
 
     const snapshot = task.templateSnapshot || [];
-    const enabledOptional = new Set(dto.enabledOptionalModuleIds || []);
     const requiredIds = new Set(
-      snapshot
-        .filter((e) => {
-          if (e.isOptionalModule) return enabledOptional.has(e.id);
-          return e.isRequired !== false;
-        })
-        .map((e) => e.id),
+      snapshot.filter((e) => e.isRequired !== false).map((e) => e.id),
     );
 
     for (const tpl of snapshot) {
       if (!requiredIds.has(tpl.id)) continue;
       const entry = record.entries.find((e) => e.templateEntryId === tpl.id);
-      if (!entry?.photos?.length) {
+      const isText = tpl.checkType === CheckType.TEXT;
+      if (isText) {
+        if (!String(entry?.remark || '').trim()) {
+          throw new BadRequestException(`「${tpl.name}」未填写文字内容，无法提交`);
+        }
+      } else if (!entry?.photos?.length) {
         throw new BadRequestException(`「${tpl.name}」未上传照片，无法提交`);
       }
     }
@@ -1079,18 +1078,27 @@ export class RecordService {
   }
 
   private buildDraftEntries(snapshot: TemplateEntry[]): RecordEntry[] {
-    return snapshot.map((entry) => ({
-      templateEntryId: entry.id,
-      photos: [],
-      aiResult: {
-        status: CheckResult.PENDING,
-        confidence: 0,
-        reason: '',
-      },
-      manualResult: CheckResult.PENDING,
-      finalResult: null,
-      remark: '',
-    }));
+    return snapshot.map((entry) => {
+      const aiOn = resolveEntryAiEnabled(entry);
+      return {
+        templateEntryId: entry.id,
+        photos: [],
+        aiResult: aiOn
+          ? {
+              status: CheckResult.PENDING,
+              confidence: 0,
+              reason: '',
+            }
+          : {
+              status: CheckResult.SKIPPED,
+              confidence: 0,
+              reason: '未启用 AI',
+            },
+        manualResult: CheckResult.PENDING,
+        finalResult: null,
+        remark: '',
+      };
+    });
   }
 
   private pushTrail(
@@ -1112,6 +1120,7 @@ export class RecordService {
   private hasAiPending(entries: RecordEntry[]) {
     return entries.some((e) => {
       const st = e.aiResult?.status;
+      if (st === CheckResult.SKIPPED) return false;
       return !st || st === CheckResult.PENDING;
     });
   }
@@ -1223,6 +1232,7 @@ export class RecordService {
       // 此处只统计 AI 原始判断。网格长/管理员人工确认保存在 manualResult/finalResult，
       // 不能覆盖 AI 统计，否则后台会出现“详情多项 AI 不合格、列表只显示 1 项”的口径冲突。
       const st = e.aiResult?.status;
+      if (st === CheckResult.SKIPPED) continue;
       if (st === CheckResult.FAIL) fail += 1;
       else if (st === CheckResult.PASS) pass += 1;
       else if (st === CheckResult.ERROR) error += 1;

@@ -42,6 +42,17 @@ export class TemplateEntryDto {
   @IsEnum(CheckType)
   checkType: CheckType;
 
+  /** 是否对该条目做 AI（文本默认关，可勾选开启） */
+  @IsOptional()
+  @IsBoolean()
+  aiEnabled?: boolean;
+
+  /** @deprecated 请用 aiEnabled */
+  @IsOptional()
+  @IsIn(['check', 'record'])
+  entryKind?: 'check' | 'record';
+
+  /** @deprecated */
   @IsOptional()
   @IsBoolean()
   isOptionalModule?: boolean;
@@ -61,6 +72,11 @@ export class TemplateProductLineDto {
   @ValidateNested({ each: true })
   @Type(() => TemplateEntryDto)
   entries: TemplateEntryDto[];
+
+  /** 启用检查或记录（二选一） */
+  @IsOptional()
+  @IsIn(['check', 'record'])
+  entryMode?: 'check' | 'record';
 }
 
 /** 创建模板 */

@@ -101,6 +101,7 @@ export default function TaskDetailPage() {
 
   const canDelete =
     task &&
+    !task.serviceCaseId &&
     ['pending', 'in_progress', 'rejected', 'archived'].includes(task.status);
 
   const reject = task?.record?.rejectReason;

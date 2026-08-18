@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { InspectionRecord, InspectionTask } from '../../entities';
+import { InspectionRecord, InspectionTask, resolveEntryAiEnabled } from '../../entities';
 import { CheckResult, UserRole } from '../../common/enums';
 import { CurrentUserContext } from '../../common/interfaces';
 import { RedisService } from '../redis/redis.service';
@@ -81,6 +81,29 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
     const entry = record.entries.find((e) => e.templateEntryId === dto.templateEntryId);
     if (!entry) throw new BadRequestException('条目不存在');
 
+    const snapshotEntry = (task.templateSnapshot || []).find(
+      (item: { id?: string }) => item.id === dto.templateEntryId,
+    ) as
+      | {
+          name?: string;
+          description?: string;
+          samplePhotos?: string[];
+          entryKind?: string;
+          checkType?: string;
+          aiEnabled?: boolean;
+        }
+      | undefined;
+
+    if (
+      !resolveEntryAiEnabled({
+        aiEnabled: snapshotEntry?.aiEnabled,
+        entryKind: snapshotEntry?.entryKind,
+        checkType: snapshotEntry?.checkType,
+      })
+    ) {
+      throw new BadRequestException('该条目未启用 AI 分析');
+    }
+
     const photoUrls = uniqueUrls([
       ...(dto.photoUrls || []),
       dto.photoUrl,
@@ -89,10 +112,6 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
     if (!photoUrls.length) {
       throw new BadRequestException('请先上传现场照片再进行 AI 分析');
     }
-
-    const snapshotEntry = (task.templateSnapshot || []).find(
-      (item: { id?: string }) => item.id === dto.templateEntryId,
-    ) as { name?: string; description?: string; samplePhotos?: string[] } | undefined;
     const checkCriteria = [snapshotEntry?.name, snapshotEntry?.description]
       .filter(Boolean)
       .join('\n')

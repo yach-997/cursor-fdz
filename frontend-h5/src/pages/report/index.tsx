@@ -7,6 +7,7 @@ import {
   analyzeAi,
   type RecordItem,
   type RecordEntry,
+  resolveEntryAiEnabled,
 } from '../../api/record';
 import { useAuthStore } from '../../stores/auth';
 import { displayPhotoUrl } from '../../utils/photo-url';
@@ -53,9 +54,13 @@ export default function ReportPage() {
 
   useEffect(() => {
     if (!record) return;
-    const pending = record.entries.some(
-      (e) => !e.aiResult || e.aiResult.status === 'pending',
-    );
+    const pending = record.entries.some((e) => {
+      const tpl = (record.task?.templateSnapshot || []).find(
+        (t) => t.id === e.templateEntryId,
+      );
+      if (!resolveEntryAiEnabled(tpl || {})) return false;
+      return !e.aiResult || e.aiResult.status === 'pending';
+    });
     if (!pending) return;
     const t = window.setInterval(() => {
       void load();
@@ -77,6 +82,10 @@ export default function ReportPage() {
     let pending = 0;
     let error = 0;
     for (const e of record.entries) {
+      const tpl = (record.task?.templateSnapshot || []).find(
+        (t) => t.id === e.templateEntryId,
+      );
+      if (!resolveEntryAiEnabled(tpl || {})) continue;
       const st =
         e.finalResult === 'pass' || e.finalResult === 'fail'
           ? e.finalResult
@@ -119,6 +128,11 @@ export default function ReportPage() {
   const retryAnalysis = async (entry: RecordEntry) => {
     if (!record || !(entry.photos || []).length) {
       Toast.info('该检查项没有现场照片，无法重新分析');
+      return;
+    }
+    const tpl = snapshot.get(entry.templateEntryId);
+    if (!resolveEntryAiEnabled(tpl || {})) {
+      Toast.info('该条目未启用 AI');
       return;
     }
     const key = `${entry.templateEntryId}:retry`;
@@ -273,6 +287,8 @@ export default function ReportPage() {
 
             {record.entries.map((entry, idx) => {
               const tpl = snapshot.get(entry.templateEntryId);
+              const aiOn = resolveEntryAiEnabled(tpl || {});
+              const isText = tpl?.checkType === 'text';
               const st = entry.aiResult?.status || 'pending';
               const needRedo = record.rejectReason?.entryIds?.includes(entry.templateEntryId);
               const selected =
@@ -288,32 +304,41 @@ export default function ReportPage() {
                     inset
                     title={`${idx + 1}. ${tpl?.name || '检查项'}${needRedo ? ' · 需返工' : ''}`}
                   >
+                    {isText ? (
+                      <Cell title="文字内容" value={entry.remark || '（未填写）'} />
+                    ) : null}
                     <Cell
-                      title="AI分析"
+                      title={aiOn ? 'AI分析' : '存证'}
                       value={
-                        <Tag
-                          type={
-                            st === 'pass'
-                              ? 'success'
-                              : st === 'fail'
-                                ? 'danger'
-                                : st === 'error'
-                                  ? 'warning'
-                                  : 'primary'
-                          }
-                        >
-                          {AI_LABEL[st] || '待判断'}
-                          {['pass', 'fail'].includes(st)
-                            ? ` ${Math.round((entry.aiResult?.confidence || 0) * 100)}%`
-                            : ''}
-                        </Tag>
+                        aiOn ? (
+                          <Tag
+                            type={
+                              st === 'pass'
+                                ? 'success'
+                                : st === 'fail'
+                                  ? 'danger'
+                                  : st === 'error'
+                                    ? 'warning'
+                                    : 'primary'
+                            }
+                          >
+                            {AI_LABEL[st] || '待判断'}
+                            {['pass', 'fail'].includes(st)
+                              ? ` ${Math.round((entry.aiResult?.confidence || 0) * 100)}%`
+                              : ''}
+                          </Tag>
+                        ) : (
+                          <Tag type="primary">未启用AI</Tag>
+                        )
                       }
                       label={
-                        entry.aiResult?.reason
-                          ? entry.aiResult.reason
-                          : entry.aiResult
-                            ? undefined
-                            : '等待 AI 分析'
+                        aiOn
+                          ? entry.aiResult?.reason
+                            ? entry.aiResult.reason
+                            : entry.aiResult
+                              ? undefined
+                              : '等待 AI 分析'
+                          : '本项仅存证，不触发 AI'
                       }
                     />
                     {selected ? (

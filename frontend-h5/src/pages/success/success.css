@@ -1,59 +1,114 @@
 .success-page {
   min-height: 100vh;
-  padding: 24px 20px calc(28px + env(safe-area-inset-bottom));
+  min-height: 100dvh;
+  box-sizing: border-box;
+  padding: 28px 20px calc(32px + env(safe-area-inset-bottom));
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   background:
-    radial-gradient(ellipse 80% 50% at 50% 20%, rgba(26, 154, 110, 0.12), transparent 60%),
-    transparent;
+    radial-gradient(ellipse 90% 55% at 50% 8%, rgba(26, 154, 110, 0.14), transparent 58%),
+    #f2f6f4;
+}
+
+.success-page__card {
+  width: 100%;
+  max-width: 360px;
+  padding: 32px 22px 28px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 10px 32px rgba(23, 75, 58, 0.07);
+  text-align: center;
+  animation: h5-rise 0.4s var(--h5-ease, ease) both;
 }
 
 .success-page__mark {
-  width: 76px;
-  height: 76px;
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 14px;
   display: grid;
   place-items: center;
-  margin-bottom: 18px;
-  border-radius: 22px;
+  border-radius: 16px;
   color: #fff;
-  background: linear-gradient(145deg, var(--h5-green-bright), var(--h5-green-dark));
-  box-shadow: 0 16px 36px rgba(15, 122, 88, 0.26);
-  font-size: 34px;
+  background: #0f7a58;
+  font-size: 26px;
   font-weight: 700;
-  animation: h5-rise 0.45s var(--h5-ease) both;
+  line-height: 1;
 }
 
-.success-page h2 {
-  margin: 0 0 10px;
-  color: var(--h5-ink);
-  font-family: var(--h5-font-display);
-  font-size: 24px;
+.success-page__title {
+  margin: 0 0 8px;
+  color: #16352b;
+  font-family: var(--h5-font-display, inherit);
+  font-size: 22px;
   font-weight: 700;
-  letter-spacing: -0.03em;
-  animation: h5-rise 0.45s var(--h5-ease) 0.05s both;
+  letter-spacing: -0.02em;
 }
 
-.success-page p {
-  max-width: 20em;
-  margin: 0 0 28px;
-  color: var(--h5-muted);
-  text-align: center;
-  line-height: 1.65;
+.success-page__project {
+  margin: 0 0 6px;
+  color: #8a9b93;
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-all;
+}
+
+.success-page__status {
+  margin: 0 0 26px;
+  color: #31584d;
   font-size: 14px;
-  animation: h5-rise 0.45s var(--h5-ease) 0.1s both;
+  line-height: 1.55;
 }
 
 .success-page__actions {
-  width: 100%;
   display: grid;
-  gap: 11px;
-  animation: h5-rise 0.45s var(--h5-ease) 0.14s both;
+  gap: 18px;
 }
 
-.success-page__actions .rv-button {
-  height: 50px;
-  border-radius: 14px !important;
-  font-weight: 700;
+/* 只保留一个实心主按钮 */
+.success-page__cta {
+  width: 100%;
+  height: 48px;
+  border: 0;
+  border-radius: 12px;
+  color: #fff;
+  background: #0f7a58;
+  font-size: 16px;
+  font-weight: 650;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.success-page__cta:active {
+  background: #0c6549;
+}
+
+/* 次要入口：并排文字链接，不再堆三个按钮 */
+.success-page__links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+
+.success-page__link {
+  padding: 8px 14px;
+  border: 0;
+  background: none;
+  color: #0f7a58;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.success-page__link:active {
+  opacity: 0.65;
+}
+
+.success-page__sep {
+  width: 1px;
+  height: 12px;
+  background: #cfdad4;
+  flex-shrink: 0;
 }

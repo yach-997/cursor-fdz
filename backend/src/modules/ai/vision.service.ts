@@ -110,21 +110,34 @@ export class VisionService {
 
       const criteria = String(checkCriteria || '').trim();
       const remark = String(options?.remark || '').trim();
-      const [acMode, gndMode, dcMode, faultMode, sungrowMode, mountMode] = await Promise.all([
-        this.hardRules.getEnforceMode('ac_side'),
-        this.hardRules.getEnforceMode('grounding'),
-        this.hardRules.getEnforceMode('dc_side'),
-        this.hardRules.getEnforceMode('fault_record'),
-        this.hardRules.getEnforceMode('sungrow'),
-        this.hardRules.getEnforceMode('mount_fix'),
-      ]);
-      const grounding = this.isGroundingCheck(criteria) && gndMode !== 'off';
-      const faultRecord = this.isFaultRecordCheck(criteria) && faultMode !== 'off';
-      const sungrowShot = this.isSungrowShotCheck(criteria) && sungrowMode !== 'off';
-      const mountFix = this.isMountFixCheck(criteria) && mountMode !== 'off';
-      const dcSide = this.isDcSideCheck(criteria) && dcMode !== 'off';
-      const acSide = this.isAcSideCheck(criteria) && acMode !== 'off';
-      const hardItem = grounding || faultRecord || sungrowShot || mountFix || dcSide || acSide;
+      const matchedRules = await this.hardRules.resolveMatchedRules(criteria);
+      const matchedByCode = new Map(matchedRules.map((r) => [r.code, r]));
+      const modeOf = (code: string) =>
+        String(matchedByCode.get(code)?.enforceMode || 'off') as string;
+
+      // 内置专项：仍走原有流水线；其余命中规则作为通用硬规则提示词
+      const grounding = matchedByCode.has('grounding');
+      const faultRecord = matchedByCode.has('fault_record');
+      const sungrowShot = matchedByCode.has('sungrow');
+      const mountFix = matchedByCode.has('mount_fix');
+      const dcSide = matchedByCode.has('dc_side');
+      const acSide = matchedByCode.has('ac_side');
+      const gndMode = grounding ? modeOf('grounding') : 'off';
+      const customRules = matchedRules.filter((r) => !r.builtin);
+      const customPrompt = customRules
+        .map((r) => r.promptText)
+        .filter(Boolean)
+        .join('\n\n');
+      const customSchemaHint =
+        customRules.map((r) => r.jsonSchemaHint).find((h) => h && String(h).trim()) || null;
+      const hardItem =
+        grounding ||
+        faultRecord ||
+        sungrowShot ||
+        mountFix ||
+        dcSide ||
+        acSide ||
+        customRules.length > 0;
 
       const [
         groundingPrompt,
@@ -135,7 +148,10 @@ export class VisionService {
         faultPrompt,
       ] = await Promise.all([
         grounding
-          ? this.hardRules.getEffectivePrompt('grounding', this.groundingHardRules(photoInputs.length, sampleInputs.length))
+          ? this.hardRules.getEffectivePrompt(
+              'grounding',
+              this.groundingHardRules(photoInputs.length, sampleInputs.length),
+            )
           : Promise.resolve(''),
         sungrowShot
           ? this.hardRules.getEffectivePrompt('sungrow', this.sungrowShotHardRules())
@@ -167,20 +183,7 @@ export class VisionService {
         };
       }
 
-      // 现场图与标准图逐张近乎一致时使用确定性结果，不再让模型把标准图本身误判为缺陷。
-      // 必须数量相同、每张标准图均匹配不同现场图；存在额外现场图时仍交给 AI 全量检查。
-      const sampleMatch = await this.matchExactSampleSet(photoInputs, sampleInputs);
-      if (sampleMatch.matched) {
-        return {
-          status: CheckResult.PASS,
-          confidence: 0.99,
-          reason: `现场照片与合格标准图逐张一致（最低相似度 ${Math.round(
-            sampleMatch.minSimilarity * 100,
-          )}%），符合要求。`,
-          provider: 'siliconflow',
-        };
-      }
-
+      // 硬条件先过：张数/视角不足时不得被「与样本一致」捷径放过
       if (grounding && photoInputs.length < 2) {
         return {
           status: CheckResult.FAIL,
@@ -200,6 +203,37 @@ export class VisionService {
           };
         }
       }
+      if (faultRecord && photoInputs.length < 2) {
+        return {
+          status: CheckResult.FAIL,
+          confidence: 0.98,
+          reason:
+            '须同时上传「实时故障」与「历史故障」两类截图（至少 2 张），当前张数不足，请补拍后再分析。',
+          provider: 'siliconflow',
+        };
+      }
+      if (mountFix && photoInputs.length < 2) {
+        return {
+          status: CheckResult.FAIL,
+          confidence: 0.96,
+          reason:
+            '安装固定检查至少需要 2 张不同角度照片（如正面+侧面，或支架螺栓特写+整机固定），仅一张侧面无法判定整体是否牢固。',
+          provider: 'siliconflow',
+        };
+      }
+
+      // 硬条件已满足时，现场图与标准图逐张近乎一致可走确定性合格，避免模型把标准图误判为缺陷。
+      const sampleMatch = await this.matchExactSampleSet(photoInputs, sampleInputs);
+      if (sampleMatch.matched) {
+        return {
+          status: CheckResult.PASS,
+          confidence: 0.99,
+          reason: `现场照片与合格标准图逐张一致（最低相似度 ${Math.round(
+            sampleMatch.minSimilarity * 100,
+          )}%），符合要求。`,
+          provider: 'siliconflow',
+        };
+      }
 
       // 接地检查使用专用的逐照片双连接点审核即可。此前先走通用识别、再走专用复核，
       // 会产生两次串行大模型请求，既增加等待时间，也放大上游偶发超时的概率。
@@ -213,28 +247,6 @@ export class VisionService {
           enforceMode: gndMode,
         });
         return { ...checked, provider: 'siliconflow' };
-      }
-
-      // 故障记录：未凑齐至少 2 张就不调用模型，直接不合格
-      if (faultRecord && photoInputs.length < 2) {
-        return {
-          status: CheckResult.FAIL,
-          confidence: 0.98,
-          reason:
-            '须同时上传「实时故障」与「历史故障」两类截图（至少 2 张），当前张数不足，请补拍后再分析。',
-          provider: 'siliconflow',
-        };
-      }
-
-      // 安装固定：单张侧面无法证明整体牢固
-      if (mountFix && photoInputs.length < 2) {
-        return {
-          status: CheckResult.FAIL,
-          confidence: 0.96,
-          reason:
-            '安装固定检查至少需要 2 张不同角度照片（如正面+侧面，或支架螺栓特写+整机固定），仅一张侧面无法判定整体是否牢固。',
-          provider: 'siliconflow',
-        };
       }
 
       const content: Array<Record<string, unknown>> = [
@@ -266,6 +278,7 @@ export class VisionService {
             mountFix ? mountPrompt : '',
             dcSide ? dcPrompt : '',
             acSide ? acPrompt : '',
+            customPrompt || '',
             criteria ? `检查要求：\n${criteria}` : '未提供文字检查要求时，按通用现场质检规范判断。',
             remark ? `工程师备注：${remark}` : '工程师备注：无',
             '只输出 JSON（不要 Markdown）：',
@@ -276,6 +289,7 @@ export class VisionService {
               mountFix,
               dcSide,
               acSide,
+              customSchemaHint,
             }),
             sampleInputs.length
               ? hardItem
@@ -583,6 +597,7 @@ export class VisionService {
     mountFix: boolean;
     dcSide: boolean;
     acSide: boolean;
+    customSchemaHint?: string | null;
   }) {
     if (flags.grounding) {
       return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文，必须逐张说明","evidence":{"photoTypes":["internal_main_pe"|"external_chassis_ground"|"other"],"photoChecks":[{"photoIndex":1,"type":"internal_main_pe|external_chassis_ground|other","internalMainPeConnected":true|false,"externalGroundConnected":true|false,"wireAndTerminalVisibleInSamePhoto":true|false,"reason":"本张独立结论"}],"hasInternalMainPePhoto":true|false,"internalMainPeConnected":true|false,"hasExternalGroundPhoto":true|false,"externalGroundConnected":true|false,"matchesSampleViews":true|false}}';
@@ -602,6 +617,8 @@ export class VisionService {
     if (flags.acSide) {
       return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明，必须区分主PE铜芯线/铜编织带与柜门黄绿跳线","evidence":{"phaseWiresOk":true|false,"sampleRequiresCopperPe":true|false,"mainCopperPeConductorVisible":true|false,"mainCopperPeTerminationVisible":true|false,"mainPeConductorVisible":true|false,"mainPeTerminationVisible":true|false,"doorBondingJumperOnly":true|false,"peWireConnected":true|false,"terminalsCoveredOrProtected":true|false,"photoFindings":["第1张：主PE铜芯线或铜编织带及其压接位置"]}}';
     }
+    const custom = String(flags.customSchemaHint || '').trim();
+    if (custom) return custom;
     return '{"status":"pass"|"fail","confidence":0~1,"reason":"中文简短说明"}';
   }
 

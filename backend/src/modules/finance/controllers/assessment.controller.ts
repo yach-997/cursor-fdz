@@ -9,6 +9,8 @@ import {
   CreateAssessmentEventDto,
   RankAssessmentDto,
   SaveAssessmentDto,
+  SaveAssessmentScoreDto,
+  SaveAssessmentScoreRuleDto,
 } from '../dto/finance.dto';
 import { FinanceSettlementService } from '../services/finance-settlement.service';
 
@@ -20,6 +22,25 @@ export class FinanceAssessmentController {
   @Get('event-catalog')
   catalog() {
     return this.service.eventCatalog();
+  }
+
+  @Get('score-rule')
+  getScoreRule() {
+    return this.service.getScoreRule();
+  }
+
+  @Post('score-rule')
+  @Roles(UserRole.SUPER_ADMIN)
+  saveScoreRule(
+    @Body() dto: SaveAssessmentScoreRuleDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.service.saveScoreRule(dto, user);
+  }
+
+  @Post('score')
+  saveScore(@Body() dto: SaveAssessmentScoreDto, @CurrentUser() user: CurrentUserContext) {
+    return this.service.saveAssessmentScore(dto, user);
   }
 
   @Delete('clear')

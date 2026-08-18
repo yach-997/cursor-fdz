@@ -26,6 +26,7 @@ import {
   type RecordItem,
   type RecordEntry,
   type AuditTrailEvent,
+  resolveEntryKind,
 } from '../../api/record';
 import { formatDateTime } from '../../utils/displayLabels';
 import EntryReviewCard from '../../components/EntryReviewCard';
@@ -219,12 +220,16 @@ export default function AuditPage() {
       message.warning('该检查项没有现场照片，无法重新分析');
       return;
     }
+    const template = detail.task?.templateSnapshot?.find(
+      (item) => item.id === entry.templateEntryId,
+    );
+    if (resolveEntryKind(template || {}) === 'record') {
+      message.info('记录类条目不需要 AI 分析');
+      return;
+    }
     setRetryingEntryId(entry.templateEntryId);
     message.info('已开始重新分析');
     try {
-      const template = detail.task?.templateSnapshot?.find(
-        (item) => item.id === entry.templateEntryId,
-      );
       await analyzeAi({
         recordId: detail.id,
         templateEntryId: entry.templateEntryId,
@@ -505,12 +510,18 @@ export default function AuditPage() {
               <div style={{ color: '#999', marginBottom: 20 }}>暂无追溯记录</div>
             )}
 
-            {detail.entries?.map((entry) => (
+            {detail.entries?.map((entry) => {
+              const tpl = detail.task?.templateSnapshot?.find(
+                (item) => item.id === entry.templateEntryId,
+              );
+              const isRecord = resolveEntryKind(tpl || {}) === 'record';
+              return (
               <EntryReviewCard
                 key={entry.templateEntryId}
                 title={tplName(entry.templateEntryId)}
                 entry={entry}
                 needRedo={detail.rejectReason?.entryIds?.includes(entry.templateEntryId)}
+                showAi={!isRecord}
                 canConfirm={['submitted', 'approved', 'rejected'].includes(detail.status)}
                 manualBusy={
                   manualBusyKey === `${entry.templateEntryId}:pass`
@@ -523,7 +534,8 @@ export default function AuditPage() {
                 onConfirm={(result) => handleManualConfirm(entry, result)}
                 onRetry={() => void retryAnalysis(entry)}
               />
-            ))}
+              );
+            })}
           </>
         ) : null}
       </Drawer>

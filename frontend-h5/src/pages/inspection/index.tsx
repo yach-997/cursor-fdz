@@ -10,6 +10,7 @@ import {
   Dialog,
   Input,
   Tag,
+  ActionSheet,
 } from 'react-vant';
 import { fetchTask, startTask, type TaskItem } from '../../api/task';
 import {
@@ -23,6 +24,7 @@ import {
   fetchAiResult,
   fetchRecord,
   checkTaskLocation,
+  resolveEntryAiEnabled,
   type LocationVerification,
   type RecordEntry,
   type RecordItem,
@@ -33,17 +35,7 @@ import { chineseErrorMessage } from '../../utils/displayLabels';
 import { resolveWorkTypeLabel, workActionLabel } from '../../utils/workTypeLabels';
 import PhotoViewerOverlay from '../../components/PhotoViewerOverlay';
 import {
-  TripChoiceCard,
-  TripEndPanel,
-  TripStartPanel,
   emptyTripForm,
-  isEndTripReady,
-  isStartTripReady,
-  persistTripEnd,
-  persistTripSkip,
-  persistTripStart,
-  resolveTripMode,
-  tripFormFromClaim,
   type TripFormState,
   type TripMode,
 } from './trip-steps';
@@ -221,12 +213,14 @@ export default function InspectionPage() {
   const [tripBusy, setTripBusy] = useState(false);
   /** 单人模式旧任务可能缺 workUnitId，从案例台回填 */
   const [tripUnitId, setTripUnitId] = useState('');
+  const [caseUnitFlow, setCaseUnitFlow] = useState(false);
   const [unitSerial, setUnitSerial] = useState('');
   const [unitSerialPhoto, setUnitSerialPhoto] = useState('');
   const [unitSeq, setUnitSeq] = useState<number | undefined>();
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadSource, setUploadSource] = useState<'camera' | 'gallery' | null>(null);
+  const [pickSheetOpen, setPickSheetOpen] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadNotice, setUploadNotice] = useState('');
   const [pendingPreview, setPendingPreview] = useState('');
@@ -323,26 +317,11 @@ export default function InspectionPage() {
     [task, record],
   );
 
-  /** 可选分项（如中压变压器）：默认关闭，开启后才进入检查流程 */
-  const [enabledOptionalIds, setEnabledOptionalIds] = useState<string[]>([]);
-
-  const optionalModules = useMemo(
-    () => allEntriesTpl.filter((e) => e.isOptionalModule),
-    [allEntriesTpl],
-  );
-
-  const entriesTpl = useMemo(
-    () =>
-      allEntriesTpl.filter(
-        (e) => !e.isOptionalModule || enabledOptionalIds.includes(e.id),
-      ),
-    [allEntriesTpl, enabledOptionalIds],
-  );
+  const entriesTpl = allEntriesTpl;
 
   const caseId = task?.serviceCaseId || '';
   const unitId = tripUnitId || task?.workUnitId || '';
-  const serialRequired =
-    !!caseId && !!unitId && (tripMode === 'need' || tripMode === 'skip');
+  const serialRequired = !!caseId && !!unitId;
   const serialConfirmed = !!unitSerial.trim();
 
   type WizardStep =
@@ -361,19 +340,10 @@ export default function InspectionPage() {
     const serialStep: WizardStep | null = serialRequired
       ? { kind: 'serial', label: '识别序列号' }
       : null;
-    if (tripMode === 'need') {
-      return [
-        { kind: 'start', label: '开始行程' },
-        ...(serialStep ? [serialStep] : []),
-        ...entrySteps,
-        { kind: 'end', label: '结束与费用' },
-      ];
-    }
-    if (tripMode === 'skip' && serialStep) {
-      return [serialStep, ...entrySteps];
-    }
+    // 行程已移到作业详情；产品线仅序列号 + 检查项
+    if (serialStep) return [serialStep, ...entrySteps];
     return entrySteps;
-  }, [entriesTpl, tripMode, serialRequired]);
+  }, [entriesTpl, serialRequired]);
 
   const currentWizard = wizardSteps[wizardIndex];
   const currentTpl =
@@ -382,8 +352,8 @@ export default function InspectionPage() {
   const currentEntry = record?.entries.find(
     (e) => e.templateEntryId === currentTpl?.id,
   );
-  const showTripChoice = tripGateReady && tripMode === 'undecided';
-  const showWorkSteps = tripGateReady && tripMode !== 'undecided';
+  const showTripChoice = false;
+  const showWorkSteps = tripGateReady;
 
   const canJumpWizard = (idx: number) => {
     if (!serialRequired || serialConfirmed) return true;
@@ -502,21 +472,12 @@ export default function InspectionPage() {
               if (!local) return e;
               return {
                 ...e,
-                photos: local.photos?.length ? local.photos : e.photos,
+                photos: e.photos?.length ? e.photos : local.photos?.length ? local.photos : e.photos,
                 manualResult: local.manualResult || e.manualResult,
                 finalResult: local.finalResult ?? e.finalResult,
                 remark: local.remark || e.remark,
               };
             });
-          } catch {
-            /* ignore */
-          }
-        }
-        const optCached = localStorage.getItem(`optmod:${t.record.id}`);
-        if (optCached) {
-          try {
-            const ids = JSON.parse(optCached) as string[];
-            if (Array.isArray(ids)) setEnabledOptionalIds(ids);
           } catch {
             /* ignore */
           }
@@ -540,22 +501,17 @@ export default function InspectionPage() {
             )?.id ||
             '';
           setTripUnitId(resolvedUnit);
+          const planned = Math.max(1, Number(c.plannedUnits) || 1);
+          setCaseUnitFlow(c.assignMode === 'multi' || planned > 1);
           const unitRow = resolvedUnit
             ? (c.units || []).find((u) => u.id === resolvedUnit)
             : undefined;
           setUnitSeq(unitRow?.seq);
           setUnitSerial(String(unitRow?.deviceSerial || '').trim());
           setUnitSerialPhoto(String(unitRow?.serialPhotoUrl || '').trim());
-          const claim = resolvedUnit
-            ? (c.expenses || []).find(
-                (e) =>
-                  e.workUnitId === resolvedUnit &&
-                  (!e.inspectorId || !me || e.inspectorId === me),
-              )
-            : undefined;
-          setTripForm(tripFormFromClaim(claim));
-          // 本台本人尚无行程结论 → undecided，弹出有/无行程（与单人一致）
-          setTripMode(resolveTripMode(claim));
+          // 行程已改为作业详情可选填写，产品线内不再问有无行程
+          setTripMode('na');
+          setTripForm(emptyTripForm());
           // 用案例服务类型覆盖任务上的 inspection 默认文案
           if (c.taskTypeName || c.serviceType) {
             setTask((prev) =>
@@ -570,10 +526,11 @@ export default function InspectionPage() {
           }
         } catch {
           setTripUnitId(t.workUnitId || '');
+          setCaseUnitFlow(false);
           setUnitSeq(undefined);
           setUnitSerial('');
           setUnitSerialPhoto('');
-          setTripMode('undecided');
+          setTripMode('na');
           setTripForm(emptyTripForm());
         } finally {
           setTripGateReady(true);
@@ -581,6 +538,7 @@ export default function InspectionPage() {
       } else {
         setTripMode('na');
         setTripUnitId('');
+        setCaseUnitFlow(false);
         setUnitSeq(undefined);
         setUnitSerial('');
         setUnitSerialPhoto('');
@@ -876,7 +834,12 @@ export default function InspectionPage() {
             );
           }
 
-          if (task?.aiEnabled !== false && photos.length) {
+          if (
+            task?.aiEnabled !== false &&
+            currentTpl &&
+            resolveEntryAiEnabled(currentTpl) &&
+            photos.length
+          ) {
             setAnalyzingIds((ids) =>
               ids.includes(capturedEntryId) ? ids : [...ids, capturedEntryId],
             );
@@ -927,16 +890,19 @@ export default function InspectionPage() {
     await handleCaptureFiles([file], source);
   };
 
-  /** 仅校验必检项是否已拍照，不要求逐步人工确认 */
+  /** 必检项：拍照须有图；文本须有文字 */
   const requiredIncomplete = () => {
     if (!record) return [] as string[];
     const missing: string[] = [];
     for (const tpl of entriesTpl) {
-      // 已开启的可选分项视同必检；普通条目看 isRequired
-      const must =
-        tpl.isOptionalModule || (tpl.isRequired !== false && !tpl.isOptionalModule);
-      if (!must) continue;
+      if (tpl.isRequired === false) continue;
       const entry = record.entries.find((e) => e.templateEntryId === tpl.id);
+      if (tpl.checkType === 'text') {
+        if (!String(entry?.remark || '').trim()) {
+          missing.push(`「${tpl.name}」未填写文字`);
+        }
+        continue;
+      }
       const need = minPhotosRequired(tpl);
       const count = entry?.photos?.length || 0;
       if (count < need) {
@@ -957,26 +923,6 @@ export default function InspectionPage() {
       Toast.info('照片正在上传，请稍候');
       return;
     }
-    if (currentWizard?.kind === 'start') {
-      if (!isStartTripReady(tripForm)) {
-        Toast.info('请上传开始里程表、导航截图并填写里程');
-        return;
-      }
-      void (async () => {
-        if (!caseId || !unitId) return;
-        setTripBusy(true);
-        try {
-          await persistTripStart(caseId, unitId, tripForm);
-          Toast.success('开始行程已保存');
-          setWizardIndex((s) => s + 1);
-        } catch {
-          /* */
-        } finally {
-          setTripBusy(false);
-        }
-      })();
-      return;
-    }
     if (currentWizard?.kind === 'serial') {
       void (async () => {
         setTripBusy(true);
@@ -993,30 +939,31 @@ export default function InspectionPage() {
       })();
       return;
     }
-    if (currentWizard?.kind === 'end') {
-      // 结束步点「下一步」不存在，应点提交
-      return;
-    }
     if (serialRequired && !serialConfirmed) {
       Toast.info('请先完成序列号识别（点下一步保存）');
       const serialIdx = wizardSteps.findIndex((s) => s.kind === 'serial');
       if (serialIdx >= 0) setWizardIndex(serialIdx);
       return;
     }
-    const mustPhoto =
-      !!currentTpl &&
-      (currentTpl.isOptionalModule || currentTpl.isRequired !== false);
-    const need = minPhotosRequired(currentTpl);
-    const count = currentEntry?.photos?.length || 0;
-    if (mustPhoto && count < need) {
-      Toast.info(
-        need > 1
-          ? isFaultRecordItem(currentTpl)
-            ? `本项须同时上传实时故障与历史故障截图（至少 ${need} 张）`
-            : `本项须拍摄至少 ${need} 个不同角度照片`
-          : '请先上传本项照片',
-      );
-      return;
+    const mustFill = !!currentTpl && currentTpl.isRequired !== false;
+    if (mustFill && currentTpl.checkType === 'text') {
+      if (!String(currentEntry?.remark || '').trim()) {
+        Toast.info('请先填写本项文字内容');
+        return;
+      }
+    } else if (mustFill) {
+      const need = minPhotosRequired(currentTpl);
+      const count = currentEntry?.photos?.length || 0;
+      if (count < need) {
+        Toast.info(
+          need > 1
+            ? isFaultRecordItem(currentTpl)
+              ? `本项须同时上传实时故障与历史故障截图（至少 ${need} 张）`
+              : `本项须拍摄至少 ${need} 个不同角度照片`
+            : '请先上传本项照片',
+        );
+        return;
+      }
     }
     void handleSaveDraft(true);
     setWizardIndex((s) => s + 1);
@@ -1034,33 +981,26 @@ export default function InspectionPage() {
       if (serialIdx >= 0) setWizardIndex(serialIdx);
       return;
     }
-    if (tripMode === 'need') {
-      if (!isEndTripReady(tripForm)) {
-        Toast.info(
-          Number(tripForm.amount) > 0 && !tripForm.voucherUrls.length
-            ? '有报销金额时请上传费用凭证'
-            : '请补齐结束里程表、导航截图与里程',
-        );
-        const endIdx = wizardSteps.findIndex((s) => s.kind === 'end');
-        if (endIdx >= 0) setWizardIndex(endIdx);
-        return;
-      }
-    }
     if (currentWizard?.kind === 'entry') {
-      const mustCurrent =
-        !!currentTpl &&
-        (currentTpl.isOptionalModule || currentTpl.isRequired !== false);
-      const needCurrent = minPhotosRequired(currentTpl);
-      const countCurrent = currentEntry?.photos?.length || 0;
-      if (mustCurrent && countCurrent < needCurrent) {
-        Toast.info(
-          needCurrent > 1
-            ? isFaultRecordItem(currentTpl)
-              ? `本项须同时上传实时故障与历史故障截图（至少 ${needCurrent} 张）`
-              : `本项须拍摄至少 ${needCurrent} 个不同角度照片`
-            : '请先上传本项照片',
-        );
-        return;
+      const mustCurrent = !!currentTpl && currentTpl.isRequired !== false;
+      if (mustCurrent && currentTpl.checkType === 'text') {
+        if (!String(currentEntry?.remark || '').trim()) {
+          Toast.info('请先填写本项文字内容');
+          return;
+        }
+      } else if (mustCurrent) {
+        const needCurrent = minPhotosRequired(currentTpl);
+        const countCurrent = currentEntry?.photos?.length || 0;
+        if (countCurrent < needCurrent) {
+          Toast.info(
+            needCurrent > 1
+              ? isFaultRecordItem(currentTpl)
+                ? `本项须同时上传实时故障与历史故障截图（至少 ${needCurrent} 张）`
+                : `本项须拍摄至少 ${needCurrent} 个不同角度照片`
+              : '请先上传本项照片',
+          );
+          return;
+        }
       }
     }
     const missing = requiredIncomplete();
@@ -1094,9 +1034,6 @@ export default function InspectionPage() {
                 : '照片已齐。提交后 AI 将在后台继续分析，你可去做其他作业，稍后再看报告结果。',
       });
       setSaving(true);
-      if (tripMode === 'need' && caseId && unitId) {
-        await persistTripEnd(caseId, unitId, tripForm, true);
-      }
       // 先落库再提交，避免本地有图但服务端未同步
       const saved = await saveDraft(
         record.id,
@@ -1110,18 +1047,17 @@ export default function InspectionPage() {
       );
       setRecord(saved);
       const submitted = await submitRecord(saved.id, {
-        enabledOptionalModuleIds: enabledOptionalIds,
         ...(proof || {}),
         ...(locationMetaRef.current || {}),
       });
       localStorage.removeItem(`draft:${saved.id}`);
-      localStorage.removeItem(`optmod:${saved.id}`);
       navigate('/m/success', {
         state: {
           recordId: submitted.id,
           taskName: task?.taskName,
           serviceCaseId: task?.serviceCaseId || null,
-          workUnitId: task?.workUnitId || null,
+          workUnitId: unitId || task?.workUnitId || null,
+          unitFlow: caseUnitFlow || !!unitId || !!task?.workUnitId,
         },
       });
     } catch {
@@ -1129,45 +1065,6 @@ export default function InspectionPage() {
     } finally {
       setSaving(false);
     }
-  };
-
-  const chooseTripNeed = () => {
-    setTripMode('need');
-    setWizardIndex(0);
-  };
-
-  const chooseTripSkip = async () => {
-    if (!caseId) {
-      setTripMode('skip');
-      setWizardIndex(0);
-      return;
-    }
-    if (!unitId) {
-      Toast.fail('未找到作业台，请返回后重新进入');
-      return;
-    }
-    setTripBusy(true);
-    try {
-      await persistTripSkip(caseId, unitId);
-      setTripForm(emptyTripForm());
-      setTripMode('skip');
-      setWizardIndex(0);
-      Toast.success('已标记无行程');
-    } catch {
-      /* */
-    } finally {
-      setTripBusy(false);
-    }
-  };
-
-  const switchToNeedFromSkip = () => {
-    setTripMode('need');
-    setWizardIndex(0);
-    Toast.info('请填写开始行程');
-  };
-
-  const switchToSkipFromStart = async () => {
-    await chooseTripSkip();
   };
 
   const aiStatus = currentEntry?.aiResult?.status || 'pending';
@@ -1416,108 +1313,10 @@ export default function InspectionPage() {
           {!tripGateReady ? (
             <div className="trip-wizard-card">
               <h3>准备作业…</h3>
-              <p>正在确认行程选项，请稍候</p>
+              <p>正在加载产品线，请稍候</p>
             </div>
-          ) : showTripChoice ? (
-            <TripChoiceCard
-              busy={tripBusy}
-              onNeed={chooseTripNeed}
-              onSkip={() => void chooseTripSkip()}
-            />
           ) : showWorkSteps ? (
             <>
-          {(tripMode === 'skip' || tripMode === 'need') && (
-            <div
-              className={
-                tripMode === 'skip' ? 'trip-wizard-skip-bar' : 'trip-wizard-skip-bar is-need'
-              }
-            >
-              <span>{tripMode === 'skip' ? '本台已选：无行程' : '本台已选：有行程'}</span>
-              <button
-                type="button"
-                disabled={tripBusy}
-                onClick={() => {
-                  if (tripMode === 'skip') switchToNeedFromSkip();
-                  else void switchToSkipFromStart();
-                }}
-              >
-                {tripMode === 'skip' ? '改选有行程' : '改为无行程'}
-              </button>
-            </div>
-          )}
-
-          {optionalModules.length > 0 && (
-            <div
-              style={{
-                margin: '12px 0 0',
-                padding: 12,
-                background: '#fff',
-                borderRadius: 8,
-                border: '1px solid #e8eeea',
-              }}
-            >
-              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>
-                可选分项（按现场需要开启）
-              </div>
-              {optionalModules.map((m) => {
-                const on = enabledOptionalIds.includes(m.id);
-                return (
-                  <div
-                    key={m.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '8px 0',
-                      borderTop: '1px solid #f0f0f0',
-                      fontSize: 13,
-                    }}
-                  >
-                    <span>{m.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEnabledOptionalIds((prev) => {
-                          const next = on
-                            ? prev.filter((id) => id !== m.id)
-                            : [...prev, m.id];
-                          if (record?.id) {
-                            localStorage.setItem(
-                              `optmod:${record.id}`,
-                              JSON.stringify(next),
-                            );
-                          }
-                          return next;
-                        });
-                        if (!on) {
-                          const idx = allEntriesTpl
-                            .filter(
-                              (e) =>
-                                !e.isOptionalModule ||
-                                [...enabledOptionalIds, m.id].includes(e.id),
-                            )
-                            .findIndex((e) => e.id === m.id);
-                          if (idx >= 0) jumpToEntryIndex(idx);
-                        }
-                      }}
-                      style={{
-                        border: 'none',
-                        borderRadius: 14,
-                        padding: '4px 12px',
-                        background: on ? '#07c160' : '#f0f2f1',
-                        color: on ? '#fff' : '#666',
-                        fontSize: 12,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {on ? '已开启' : '开启'}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
           <div
             className="inspection-progress-card"
             style={{
@@ -1529,11 +1328,6 @@ export default function InspectionPage() {
           >
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
               进度 {wizardSteps.length ? wizardIndex + 1 : 0} / {wizardSteps.length || 0}
-              {tripMode === 'need' ? (
-                <span style={{ marginLeft: 8, fontWeight: 500, color: '#087b59', fontSize: 12 }}>
-                  含第1步开始行程、最后一步结束与费用
-                </span>
-              ) : null}
             </div>
             <div
               style={{
@@ -1561,16 +1355,16 @@ export default function InspectionPage() {
                 let done = false;
                 let needRedo = false;
                 let pendingAi = false;
-                const isTrip = ws.kind === 'start' || ws.kind === 'end' || ws.kind === 'serial';
-                if (ws.kind === 'start') {
-                  done = isStartTripReady(tripForm);
-                } else if (ws.kind === 'serial') {
+                const isTrip = ws.kind === 'serial';
+                if (ws.kind === 'serial') {
                   done = serialConfirmed;
-                } else if (ws.kind === 'end') {
-                  done = isEndTripReady(tripForm);
-                } else {
+                } else if (ws.kind === 'entry') {
+                  const tpl = entriesTpl.find((e) => e.id === ws.tplId);
                   const entry = record.entries.find((x) => x.templateEntryId === ws.tplId);
-                  done = !!entry?.photos?.length;
+                  done =
+                    tpl?.checkType === 'text'
+                      ? !!String(entry?.remark || '').trim()
+                      : !!entry?.photos?.length;
                   pendingAi = analyzingIds.includes(ws.tplId);
                   const rejectIds =
                     (task.record?.rejectReason || record.rejectReason)?.entryIds || [];
@@ -1621,16 +1415,6 @@ export default function InspectionPage() {
             </div>
           </div>
 
-          {currentWizard?.kind === 'start' && caseId && unitId && (
-            <TripStartPanel
-              caseId={caseId}
-              unitId={unitId}
-              form={tripForm}
-              setForm={setTripForm}
-              onPreview={(urls, index) => setPhotoPreview({ urls, index })}
-            />
-          )}
-
           {currentWizard?.kind === 'serial' && caseId && unitId && (
             <SerialStepPanel
               key={`serial-${unitId}`}
@@ -1640,16 +1424,6 @@ export default function InspectionPage() {
               unitSeq={unitSeq}
               initialSerial={unitSerial}
               initialPhotoUrl={unitSerialPhoto}
-              onPreview={(urls, index) => setPhotoPreview({ urls, index })}
-            />
-          )}
-
-          {currentWizard?.kind === 'end' && caseId && unitId && (
-            <TripEndPanel
-              caseId={caseId}
-              unitId={unitId}
-              form={tripForm}
-              setForm={setTripForm}
               onPreview={(urls, index) => setPhotoPreview({ urls, index })}
             />
           )}
@@ -1704,6 +1478,17 @@ export default function InspectionPage() {
                 {currentTpl.description || '请按现场规范完成检查并拍照。'}
               </div>
 
+              {currentTpl.checkType === 'text' ? (
+                <Cell title={currentTpl.isRequired !== false ? '文字内容（必填）' : '文字内容'}>
+                  <Input.TextArea
+                    rows={4}
+                    placeholder="请填写本项文字内容"
+                    value={currentEntry?.remark || ''}
+                    onChange={(v) => patchEntry({ remark: v })}
+                  />
+                </Cell>
+              ) : (
+                <>
               <div className="inspection-media-section">
                 <div className="inspection-media-heading">
                   <span>合格样本参考</span>
@@ -1767,11 +1552,16 @@ export default function InspectionPage() {
                       <span>{uploading ? `${Math.max(1, uploadProgress)}%` : '待重试'}</span>
                     </div>
                   )}
-                  {!pendingPreview && !(currentEntry?.photos || []).length && (
-                    <div className="inspection-photo-placeholder">
-                      <strong>＋</strong>
-                      <span>添加第一张照片</span>
-                    </div>
+                  {!pendingPreview && (
+                    <button
+                      type="button"
+                      className="inspection-photo-placeholder is-clickable"
+                      disabled={uploading}
+                      aria-label="添加照片"
+                      onClick={() => setPickSheetOpen(true)}
+                    >
+                      <strong>{uploading ? '…' : '＋'}</strong>
+                    </button>
                   )}
                 </div>
                 <input
@@ -1867,33 +1657,11 @@ export default function InspectionPage() {
                     )}
                   </div>
                 )}
-                <div className="inspection-upload-actions">
-                  <Button
-                    plain
-                    round
-                    loading={uploading && uploadSource === 'gallery'}
-                    disabled={uploading}
-                    className="inspection-gallery-button"
-                    onClick={() => galleryRef.current?.click()}
-                  >
-                    从相册选择（可多选）
-                  </Button>
-                  <Button
-                    type="primary"
-                    round
-                    loading={uploading && uploadSource === 'camera'}
-                    disabled={uploading}
-                    className="inspection-camera-button"
-                    onClick={() => cameraRef.current?.click()}
-                  >
-                    现场拍照
-                  </Button>
-                </div>
                 <div className="inspection-upload-tip">
                   {locationStatus === 'ok'
                     ? isFaultRecordItem(currentTpl)
-                      ? '定位已获取：请分别上传「实时故障」与「历史故障」截图（可相册多选），缺一类 AI 将判不合格'
-                      : '定位已获取：相册可一次多选；现场拍照仍单张拍摄'
+                      ? '定位已获取：请分别上传「实时故障」与「历史故障」截图（相册可多选）'
+                      : '定位已获取：点「＋」可选拍照或相册（相册可多选）'
                     : locationStatus === 'weak'
                       ? '弱定位也可拍照上传；报告将标记弱定位'
                       : locationStatus === 'failed' || locationStatus === 'skipped'
@@ -1902,24 +1670,39 @@ export default function InspectionPage() {
                 </div>
               </div>
 
-              <div
-                className="inspection-ai-note"
-                style={{
-                  margin: '0 16px 12px',
-                  padding: 10,
-                  background: '#f0f7ff',
-                  borderRadius: 8,
-                  fontSize: 12,
-                  color: '#4a6a8a',
-                  lineHeight: 1.5,
-                }}
-              >
-                {isAnalyzing
-                  ? 'AI 后台分析中，无需等待，直接点「下一步」即可。'
-                  : currentEntry?.aiResult && aiStatus !== 'pending'
-                    ? `智能分析：${RESULT_LABEL[aiStatus] || '待人工判断'}（稍后可在报告中查看详情）`
-                    : '上传照片后 AI 将后台对比样本；全部拍完再提交，做完其他任务可回来看报告。'}
-              </div>
+              {resolveEntryAiEnabled(currentTpl) ? (
+                <div
+                  className="inspection-ai-note"
+                  style={{
+                    margin: '0 16px 12px',
+                    padding: 10,
+                    background: '#f0f7ff',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    color: '#4a6a8a',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {isAnalyzing
+                    ? 'AI 后台分析中，无需等待，直接点「下一步」即可。'
+                    : currentEntry?.aiResult && aiStatus !== 'pending'
+                      ? `智能分析：${RESULT_LABEL[aiStatus] || '待人工判断'}（稍后可在报告中查看详情）`
+                      : '上传照片后 AI 将后台对比样本；全部拍完再提交，做完其他任务可回来看报告。'}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    margin: '0 16px 12px',
+                    padding: 10,
+                    background: '#f7faf8',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    color: '#666',
+                  }}
+                >
+                  本项未启用 AI，拍照仅作存证。
+                </div>
+              )}
 
               <Cell title="备注（可选）">
                 <Input.TextArea
@@ -1929,10 +1712,24 @@ export default function InspectionPage() {
                   onChange={(v) => patchEntry({ remark: v })}
                 />
               </Cell>
+                </>
+              )}
             </Cell.Group>
-          ) : currentWizard?.kind === 'start' ||
-            currentWizard?.kind === 'end' ||
-            currentWizard?.kind === 'serial' ? null : (
+          ) : currentWizard?.kind === 'serial' ? null : wizardSteps.length === 0 ? (
+            <div
+              style={{
+                margin: '12px 0',
+                padding: 16,
+                background: '#fff',
+                borderRadius: 8,
+                fontSize: 14,
+                color: '#666',
+                textAlign: 'center',
+              }}
+            >
+              本产品线未配置检查条目，确认序列号后可直接提交完工。
+            </div>
+          ) : (
             <Empty description="无检查条目" />
           )}
             </>
@@ -1940,7 +1737,7 @@ export default function InspectionPage() {
         </div>
       )}
 
-      {task && record && showWorkSteps && currentWizard && (
+      {task && record && showWorkSteps && (currentWizard || wizardSteps.length === 0) && (
         <div
           className="inspection-bottom-actions"
           style={{
@@ -1961,7 +1758,7 @@ export default function InspectionPage() {
           <Button
             round
             style={{ height: 48, flex: 1 }}
-            disabled={wizardIndex <= 0 || uploading || saving || tripBusy}
+            disabled={wizardIndex <= 0 || uploading || saving || tripBusy || wizardSteps.length === 0}
             onClick={() => {
               if (uploading || tripBusy) {
                 Toast.info('照片正在上传，请稍候');
@@ -1972,7 +1769,7 @@ export default function InspectionPage() {
           >
             上一步
           </Button>
-          {wizardIndex < wizardSteps.length - 1 ? (
+          {wizardSteps.length > 0 && wizardIndex < wizardSteps.length - 1 ? (
             <Button
               round
               type="primary"
@@ -2004,6 +1801,22 @@ export default function InspectionPage() {
           onClose={() => setPhotoPreview(null)}
         />
       )}
+      <ActionSheet
+        visible={pickSheetOpen}
+        onCancel={() => setPickSheetOpen(false)}
+        cancelText="取消"
+        actions={[
+          { name: '拍照' },
+          { name: '从相册选择（可多选）' },
+        ]}
+        onSelect={(action) => {
+          setPickSheetOpen(false);
+          setTimeout(() => {
+            if (action.name === '拍照') cameraRef.current?.click();
+            else galleryRef.current?.click();
+          }, 0);
+        }}
+      />
     </div>
   );
 }

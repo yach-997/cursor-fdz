@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Empty, PullRefresh } from 'react-vant';
+import { Empty, PullRefresh, Toast } from 'react-vant';
 import { fetchTasks, type TaskItem } from '../../api/task';
 import { fetchMyFinanceCases, type MobileFinanceCase } from '../../api/finance';
 import { useAuthStore } from '../../stores/auth';
 import { mobileCacheKeys } from '../../utils/mobileCacheKeys';
 import { useCachedResource } from '../../utils/useCachedResource';
+import { useNewOrderNotice, useVisiblePolling } from '../../utils/useVisiblePolling';
 import type { SiteBrief } from '../../types';
 import './tasks.css';
 
@@ -108,6 +109,26 @@ export default function TasksPage() {
       `site-jobs|${tab}|${appliedKeyword}`,
     ),
     loader,
+  );
+
+  useVisiblePolling({ reload, intervalMs: 30_000 });
+
+  const activeCaseIds = useMemo(
+    () =>
+      (data?.financeCases || [])
+        .filter((c) => ['assigned', 'working'].includes(c.status))
+        .map((c) => String(c.id)),
+    [data?.financeCases],
+  );
+
+  const notifyNewOrders = useCallback((count: number) => {
+    Toast.info(count === 1 ? '有新派单，已更新列表' : `有 ${count} 笔新派单，已更新列表`);
+  }, []);
+
+  useNewOrderNotice(
+    activeCaseIds,
+    notifyNewOrders,
+    `${currentSite?.id || 'all'}|${tab}|${appliedKeyword}`,
   );
 
   const { list, otherTips } = useMemo(() => {

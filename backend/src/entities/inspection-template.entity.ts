@@ -1,6 +1,9 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
 import { DeviceType, CheckType } from '../common/enums';
 
+/** @deprecated 兼容旧数据；新逻辑用 aiEnabled + checkType */
+export type TemplateEntryKind = 'check' | 'record';
+
 /** 巡检模板条目结构（JSONB） */
 export interface TemplateEntry {
   id: string;
@@ -9,10 +12,18 @@ export interface TemplateEntry {
   /** 是否必填 */
   isRequired: boolean;
   order: number;
-  /** 样本照片 URL 列表 */
+  /** 样本照片 URL（拍照且启用 AI 时用于对比） */
   samplePhotos: string[];
+  /** photo=现场拍照；text=只填文字 */
   checkType: CheckType;
-  /** 可选模块（如中压变压器） */
+  /**
+   * 是否对该条目做 AI 分析。
+   * 缺省：旧 entryKind=record → false；checkType=text → false；否则 true。
+   */
+  aiEnabled?: boolean;
+  /** @deprecated 请用 aiEnabled */
+  entryKind?: TemplateEntryKind;
+  /** @deprecated 已废弃，忽略 */
   isOptionalModule?: boolean;
 }
 
@@ -21,6 +32,22 @@ export interface TemplateProductLine {
   id: string;
   name: string;
   entries: TemplateEntry[];
+  /** @deprecated 产品线级检查/记录已废弃，忽略 */
+  entryMode?: TemplateEntryKind;
+}
+
+/** 是否对该模板条目启用 AI（含旧数据推断） */
+export function resolveEntryAiEnabled(entry: {
+  aiEnabled?: boolean;
+  entryKind?: string;
+  checkType?: CheckType | string;
+}): boolean {
+  if (entry.aiEnabled === true) return true;
+  if (entry.aiEnabled === false) return false;
+  if (entry.entryKind === 'record') return false;
+  if (entry.entryKind === 'check') return true;
+  if (entry.checkType === CheckType.TEXT || entry.checkType === 'text') return false;
+  return true;
 }
 
 /** 巡检模板实体 */

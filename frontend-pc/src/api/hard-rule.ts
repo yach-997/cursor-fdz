@@ -19,6 +19,7 @@ export interface HardRuleItem {
   updatedBy: string | null;
   createdAt: string;
   updatedAt: string;
+  builtin?: boolean;
 }
 
 export async function fetchHardRules() {
@@ -31,6 +32,22 @@ export async function fetchHardRule(code: string) {
   return data.data;
 }
 
+export async function createHardRule(payload: {
+  name: string;
+  matchMode?: HardRuleMatchMode;
+  matchPattern: string;
+  promptText?: string;
+  passCriteria?: string;
+  failCriteria?: string;
+  jsonSchemaHint?: string | null;
+  enabled?: boolean;
+  enforceMode?: HardRuleEnforceMode;
+  changeNote?: string;
+}) {
+  const { data } = await request.post<ApiResponse<HardRuleItem>>('/ai-hard-rules', payload);
+  return data.data;
+}
+
 export async function updateHardRule(
   code: string,
   payload: {
@@ -38,13 +55,22 @@ export async function updateHardRule(
     matchMode?: HardRuleMatchMode;
     matchPattern?: string;
     promptText?: string;
+    passCriteria?: string;
+    failCriteria?: string;
     jsonSchemaHint?: string | null;
     enabled?: boolean;
     enforceMode?: HardRuleEnforceMode;
-    changeNote: string;
+    changeNote?: string;
   },
 ) {
   const { data } = await request.put<ApiResponse<HardRuleItem>>(`/ai-hard-rules/${code}`, payload);
+  return data.data;
+}
+
+export async function deleteHardRule(code: string) {
+  const { data } = await request.delete<ApiResponse<{ ok: boolean; code: string }>>(
+    `/ai-hard-rules/${code}`,
+  );
   return data.data;
 }
 

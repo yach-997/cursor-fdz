@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { Button, Field, Toast } from 'react-vant';
+import { ActionSheet, Field, Toast } from 'react-vant';
 import {
   ocrUnitDeviceSerial,
   saveUnitDeviceSerial,
@@ -32,6 +32,7 @@ export const SerialStepPanel = forwardRef<SerialStepHandle, Props>(function Seri
   const [serial, setSerial] = useState(initialSerial || '');
   const [ocrBusy, setOcrBusy] = useState(false);
   const [upBusy, setUpBusy] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const camRef = useRef<HTMLInputElement>(null);
   const galRef = useRef<HTMLInputElement>(null);
 
@@ -71,6 +72,11 @@ export const SerialStepPanel = forwardRef<SerialStepHandle, Props>(function Seri
     }
   };
 
+  const openPicker = () => {
+    if (readonly || upBusy || ocrBusy) return;
+    setSheetOpen(true);
+  };
+
   useImperativeHandle(ref, () => ({
     confirmAndSave: async () => {
       const value = serial.trim().replace(/\s+/g, '').toUpperCase();
@@ -88,11 +94,14 @@ export const SerialStepPanel = forwardRef<SerialStepHandle, Props>(function Seri
           photoUrl: saved.serialPhotoUrl,
         };
       } catch (error: unknown) {
-        const msg =
-          error instanceof Error && error.message
-            ? error.message
-            : '序列号保存失败，请重试';
-        Toast.fail(msg);
+        const data =
+          error && typeof error === 'object' && 'response' in error
+            ? (error as { response?: { data?: { message?: string } } }).response?.data
+            : undefined;
+        const msg = data?.message?.trim();
+        if (msg && !/status code/i.test(msg)) {
+          Toast.fail(msg);
+        }
         return null;
       }
     },
@@ -127,62 +136,44 @@ export const SerialStepPanel = forwardRef<SerialStepHandle, Props>(function Seri
                 </button>
               )}
             </div>
-          ) : (
-            <div className="inspection-photo-placeholder">
-              <strong>＋</strong>
-              <span>拍铭牌</span>
-            </div>
+          ) : null}
+          {!readonly && !photoUrl && (
+            <button
+              type="button"
+              className="inspection-photo-placeholder is-clickable"
+              disabled={upBusy || ocrBusy}
+              aria-label="添加照片"
+              onClick={openPicker}
+            >
+              <strong>{upBusy || ocrBusy ? '…' : '＋'}</strong>
+            </button>
           )}
         </div>
-        {!readonly && (
-          <div className="trip-slot-actions">
-            <input
-              ref={galRef}
-              type="file"
-              accept="image/*"
-              hidden
-              onChange={(e) => void onFiles(e.target.files)}
-            />
-            <input
-              ref={camRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              hidden
-              onChange={(e) => void onFiles(e.target.files)}
-            />
-            <Button
-              round
-              size="small"
-              loading={upBusy || ocrBusy}
-              disabled={upBusy || ocrBusy}
-              onClick={() => galRef.current?.click()}
-            >
-              相册
-            </Button>
-            <Button
-              type="primary"
-              round
-              size="small"
-              loading={upBusy || ocrBusy}
-              disabled={upBusy || ocrBusy}
-              onClick={() => camRef.current?.click()}
-            >
-              拍照
-            </Button>
-            {photoUrl ? (
-              <Button
-                round
-                size="small"
-                loading={ocrBusy}
-                disabled={ocrBusy}
-                onClick={() => void runOcr(photoUrl)}
-              >
-                重新识别
-              </Button>
-            ) : null}
-          </div>
+        {photoUrl && !readonly && (
+          <button
+            type="button"
+            className="trip-ocr-link"
+            disabled={ocrBusy}
+            onClick={() => void runOcr(photoUrl)}
+          >
+            {ocrBusy ? '识别中…' : '重新识别'}
+          </button>
         )}
+        <input
+          ref={galRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => void onFiles(e.target.files)}
+        />
+        <input
+          ref={camRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          hidden
+          onChange={(e) => void onFiles(e.target.files)}
+        />
       </div>
 
       <div className="trip-wizard-block">
@@ -194,6 +185,23 @@ export const SerialStepPanel = forwardRef<SerialStepHandle, Props>(function Seri
           onChange={setSerial}
         />
       </div>
+
+      <ActionSheet
+        visible={sheetOpen}
+        onCancel={() => setSheetOpen(false)}
+        cancelText="取消"
+        actions={[
+          { name: '拍照' },
+          { name: '从相册选择' },
+        ]}
+        onSelect={(action) => {
+          setSheetOpen(false);
+          setTimeout(() => {
+            if (action.name === '拍照') camRef.current?.click();
+            else galRef.current?.click();
+          }, 0);
+        }}
+      />
     </div>
   );
 });

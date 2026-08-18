@@ -5,6 +5,8 @@ import {
   correctMonthlySettlement,
   exportMonthlySettlements,
   fetchMonthlySettlements,
+  lockMonthlySettlements,
+  unlockMonthlySettlements,
 } from '../../../api/finance';
 import { fetchSites } from '../../../api/site';
 import type { FinanceMonthlySettlement } from '../../../types/finance';
@@ -21,7 +23,10 @@ export default function FinanceMonthlyPage() {
   const [rows, setRows] = useState<FinanceMonthlySettlement[]>([]);
   const [loading, setLoading] = useState(false);
   const [current, setCurrent] = useState<FinanceMonthlySettlement>();
+  const [lockBusy, setLockBusy] = useState(false);
   const [form] = Form.useForm();
+  const monthLocked = rows.length > 0 && rows.some((row) => row.status === 'locked');
+  const monthFullyLocked = rows.length > 0 && rows.every((row) => row.status === 'locked');
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -57,7 +62,7 @@ export default function FinanceMonthlyPage() {
   return (
     <Card className="finance-card" title="月度结算">
       <div className="finance-review-tip">
-        最终金额 = 已审核计件绩效 + 已通过行程报销 + 排名奖罚 − 事件扣罚 + 补助 + 校正增补。打开本页或结算/报销审核通过时会自动重算。网格长只读本网格；校正/导出仅管理员。
+        最终金额 = 已审核计件绩效 + 已通过行程报销 + 排名奖罚 − 事件扣罚 + 补助 + 校正增补。打开本页或结算/报销审核通过时会自动重算。网格长只读本网格；锁定/解锁、校正、导出仅管理员。锁定后该月已通过结算的案例变为「已月结」，不能再改 PO；解锁后回到「已结算」。
       </div>
       <Space className="finance-toolbar" wrap>
         <Input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
@@ -102,6 +107,66 @@ export default function FinanceMonthlyPage() {
             <Button disabled={!rows.length} onClick={() => exportMonthlySettlements(month, 'payroll')}>
               导出发薪表
             </Button>
+            {!monthFullyLocked ? (
+              <Button
+                type="primary"
+                disabled={!rows.length}
+                loading={lockBusy}
+                onClick={() => {
+                  Modal.confirm({
+                    title: `锁定 ${month} 月结？`,
+                    content:
+                      '锁定后，本月已通过结算的案例会变成「已月结」：管理员也不能再改 PO、不能再自动重算。需要纠偏时再解锁。',
+                    okText: '锁定',
+                    cancelText: '取消',
+                    onOk: async () => {
+                      setLockBusy(true);
+                      try {
+                        const result = await lockMonthlySettlements(month);
+                        message.success(`已锁定 ${result.locked} 人`);
+                        await load();
+                      } finally {
+                        setLockBusy(false);
+                      }
+                    },
+                  });
+                }}
+              >
+                锁定本月
+              </Button>
+            ) : null}
+            {monthLocked ? (
+              <Button
+                danger
+                disabled={!rows.length}
+                loading={lockBusy}
+                onClick={() => {
+                  Modal.confirm({
+                    title: `解锁 ${month} 月结？`,
+                    content:
+                      '解锁后，本月案例从「已月结」回到「已结算」。浏览页面仍不会自动改价，但管理员保存 PO 可以重算纠偏。',
+                    okText: '解锁',
+                    okButtonProps: { danger: true },
+                    cancelText: '取消',
+                    onOk: async () => {
+                      setLockBusy(true);
+                      try {
+                        const result = await unlockMonthlySettlements(month);
+                        message.success(
+                          `已解锁 ${result.unlocked} 人` +
+                            (result.unlockedCases ? `，${result.unlockedCases} 个案例回到已结算` : ''),
+                        );
+                        await load();
+                      } finally {
+                        setLockBusy(false);
+                      }
+                    },
+                  });
+                }}
+              >
+                解锁本月
+              </Button>
+            ) : null}
           </>
         )}
       </Space>

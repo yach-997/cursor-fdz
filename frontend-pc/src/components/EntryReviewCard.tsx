@@ -30,6 +30,8 @@ export type EntryReviewCardProps = {
   entry: RecordEntry;
   needRedo?: boolean;
   canConfirm?: boolean;
+  /** false=记录类：不展示 AI 角标与重新分析 */
+  showAi?: boolean;
   photoSize?: number;
   manualBusy?: 'pass' | 'fail' | null;
   retrying?: boolean;
@@ -43,6 +45,7 @@ export default function EntryReviewCard({
   entry,
   needRedo,
   canConfirm,
+  showAi = true,
   photoSize = 96,
   manualBusy,
   retrying,
@@ -51,10 +54,11 @@ export default function EntryReviewCard({
 }: EntryReviewCardProps) {
   const ai = aiTagView(entry);
   const selected = manualSelected(entry);
-  const reason = entry.aiResult?.reason?.trim();
+  const reason = showAi ? entry.aiResult?.reason?.trim() : '';
   const photos = entry.photos || [];
   const aiStatus = entry.aiResult?.status;
   const manualOverridesAi =
+    showAi &&
     selected &&
     (aiStatus === 'pass' || aiStatus === 'fail') &&
     selected !== aiStatus;
@@ -66,9 +70,13 @@ export default function EntryReviewCard({
           <span>{title}</span>
           {needRedo ? <Tag color="error">需返工</Tag> : null}
         </div>
-        <Tag color={ai.color} className="entry-review-card__ai-tag">
-          {ai.label}
-        </Tag>
+        {showAi ? (
+          <Tag color={ai.color} className="entry-review-card__ai-tag">
+            {ai.label}
+          </Tag>
+        ) : (
+          <Tag className="entry-review-card__ai-tag">记录</Tag>
+        )}
       </div>
 
       {reason ? <div className="entry-review-card__reason">{reason}</div> : null}
@@ -125,7 +133,7 @@ export default function EntryReviewCard({
               </Button>
             </div>
           </div>
-          {photos.length > 0 ? (
+          {showAi && photos.length > 0 ? (
             <Button type="link" size="small" loading={retrying} onClick={onRetry}>
               重新分析
             </Button>

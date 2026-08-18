@@ -2,7 +2,12 @@ export { User } from './user.entity';
 export { Site } from './site.entity';
 export { SiteMember } from './site-member.entity';
 export { Device } from './device.entity';
-export { InspectionTemplate, TemplateEntry, TemplateProductLine } from './inspection-template.entity';
+export {
+  InspectionTemplate,
+  TemplateEntry,
+  TemplateProductLine,
+  resolveEntryAiEnabled,
+} from './inspection-template.entity';
 export { InspectionTask } from './inspection-task.entity';
 export {
   InspectionRecord,
@@ -28,6 +33,7 @@ export { CasePerfShare } from './case-perf-share.entity';
 export { CaseExpenseClaim } from './case-expense-claim.entity';
 export { Assessment } from './assessment.entity';
 export { AssessmentEvent } from './assessment-event.entity';
+export { AssessmentScoreRule } from './assessment-score-rule.entity';
 export { MonthlySettlement } from './monthly-settlement.entity';
 export {
   AiHardRule,

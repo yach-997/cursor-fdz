@@ -16,9 +16,33 @@ export interface CaseChecklistItem {
   order: number;
 }
 
+export interface ExpenseNavShot {
+  url: string;
+  remark?: string;
+}
+
+export interface ExpenseLineItem {
+  id: string;
+  type: 'trip' | 'toll' | 'other';
+  content: string;
+  expenseDate?: string | null;
+  amount?: string | number | null;
+  note?: string | null;
+  startOdometerUrl?: string | null;
+  startMileage?: string | number | null;
+  startNavShots?: ExpenseNavShot[];
+  endOdometerUrl?: string | null;
+  endMileage?: string | number | null;
+  endNavShots?: ExpenseNavShot[];
+  mileageKm?: string | number | null;
+  voucherUrls?: string[];
+  photoUrls?: string[];
+}
+
 export interface TripExpenseClaim {
   id: string;
   workUnitId?: string | null;
+  inspectorId?: string;
   unitSeq?: number | null;
   unitTitle?: string | null;
   /** 结算/核定额 */
@@ -26,6 +50,7 @@ export interface TripExpenseClaim {
   /** 工程师申报额 */
   claimAmount?: string;
   note?: string | null;
+  lineItems?: ExpenseLineItem[];
   voucherUrls?: string[];
   startOdometerUrl?: string | null;
   startNavUrl?: string | null;
@@ -40,11 +65,11 @@ export interface TripExpenseClaim {
   tripSkipped?: boolean;
   status: string;
   reviewNote?: string | null;
-  inspectorId?: string;
   inspectorName?: string;
 }
 
 export interface TripExpensePayload {
+  lineItems?: ExpenseLineItem[];
   startOdometerUrl?: string | null;
   startNavUrl?: string | null;
   startNavUrls?: string[];
@@ -59,6 +84,8 @@ export interface TripExpensePayload {
   /** true=无行程；false=改为需要行程 */
   tripSkipped?: boolean;
   submit?: boolean;
+  /** 兼容旧数据挂台，非唯一键 */
+  workUnitId?: string;
 }
 
 export interface MobileFinanceCase {
@@ -78,6 +105,10 @@ export interface MobileFinanceCase {
   completedUnits?: number;
   expenseEnabled?: boolean;
   unitLabel?: string;
+  /** 是否已挂 PO；无 PO 完工后不计件结算 */
+  hasPo?: boolean;
+  /** 派单/改派备注 */
+  assignRemark?: string | null;
   expenses?: TripExpenseClaim[];
   expenseSummary?: {
     totalAmount: string;
@@ -155,6 +186,7 @@ export interface IncomeLedger {
   deductionReason?: string;
   perfFinal: string;
   casePerfFinal?: string;
+  caseRevenue?: string;
   myShareRatio?: string;
   myCompletedUnits?: number | null;
   plannedUnits?: number | null;
@@ -287,6 +319,17 @@ export async function saveUnitTripExpense(
     ),
   );
 }
+
+/** 本人本案例行程（推荐；不按台） */
+export async function saveMyTripExpense(caseId: string, payload: TripExpensePayload) {
+  return unwrap(
+    await request.post<ApiResponse<TripExpenseClaim>>(
+      `/cases/${caseId}/my-expense`,
+      payload,
+    ),
+  );
+}
+
 export async function ocrUnitMileage(
   caseId: string,
   unitId: string,
@@ -302,6 +345,23 @@ export async function ocrUnitMileage(
         kind: string;
       }>
     >(`/cases/${caseId}/units/${unitId}/expense/ocr-mileage`, { imageUrl, kind }),
+  );
+}
+
+export async function ocrMyMileage(
+  caseId: string,
+  imageUrl: string,
+  kind: 'start' | 'end' = 'start',
+) {
+  return unwrap(
+    await request.post<
+      ApiResponse<{
+        mileage: number | null;
+        confidence: number;
+        rawText: string;
+        kind: string;
+      }>
+    >(`/cases/${caseId}/my-expense/ocr-mileage`, { imageUrl, kind }),
   );
 }
 

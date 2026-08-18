@@ -9,13 +9,43 @@ export interface TemplateEntry {
   order: number;
   samplePhotos: string[];
   checkType: 'photo' | 'text';
+  /** 是否对该条目做 AI；文本默认关，可勾选开 */
+  aiEnabled?: boolean;
+  /** @deprecated */
+  entryKind?: 'check' | 'record';
+  /** @deprecated */
   isOptionalModule?: boolean;
+}
+
+/** 是否启用 AI（含旧数据推断） */
+export function resolveEntryAiEnabled(entry: {
+  aiEnabled?: boolean;
+  entryKind?: string;
+  checkType?: 'photo' | 'text' | string;
+}): boolean {
+  if (entry.aiEnabled === true) return true;
+  if (entry.aiEnabled === false) return false;
+  if (entry.entryKind === 'record') return false;
+  if (entry.entryKind === 'check') return true;
+  if (entry.checkType === 'text') return false;
+  return true;
+}
+
+/** @deprecated 请用 resolveEntryAiEnabled */
+export function resolveEntryKind(entry: {
+  entryKind?: string;
+  checkType?: string;
+  aiEnabled?: boolean;
+}): 'check' | 'record' {
+  return resolveEntryAiEnabled(entry) ? 'check' : 'record';
 }
 
 export interface TemplateProductLine {
   id: string;
   name: string;
   entries: TemplateEntry[];
+  /** @deprecated */
+  entryMode?: 'check' | 'record';
 }
 
 export interface TemplateItem {
@@ -30,11 +60,8 @@ export interface TemplateItem {
   unitLabel?: string;
   expenseEnabledDefault?: boolean;
   version: number;
-  /** 本次更新是否因检查内容变更而升版 */
   versionChanged?: boolean;
-  /** 保存后按精确同名自动重匹配的案例数 */
   rematchedCases?: number;
-  /** 改名后同步更新的已绑定案例数 */
   syncedCases?: number;
   createdAt: string;
 }

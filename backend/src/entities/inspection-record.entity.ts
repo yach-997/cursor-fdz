@@ -45,7 +45,8 @@ export interface AuditTrailEvent {
     | 'auto_approved'
     | 'approved'
     | 'rejected'
-    | 'reopened';
+    | 'reopened'
+    | 'manual_result';
   at: string;
   by?: string;
   byName?: string;

@@ -15,6 +15,8 @@ import type {
   FinanceAssessment,
   AssessmentEventCatalogItem,
   AssessmentEventRow,
+  AssessmentScoreRule,
+  AssessmentScoreRuleItem,
   FinanceMonthlySettlement,
   UpdateCaseProfilePayload,
   UpdatePoOrderPayload,
@@ -60,6 +62,21 @@ export async function fetchFinanceAssessments(params: {
 }
 export async function saveFinanceAssessment(payload: Record<string, unknown>) {
   return unwrap(await request.post<ApiResponse<FinanceAssessment>>('/assessments', payload));
+}
+export async function fetchAssessmentScoreRule() {
+  return unwrap(await request.get<ApiResponse<AssessmentScoreRule>>('/assessments/score-rule'));
+}
+export async function saveAssessmentScoreRule(items: AssessmentScoreRuleItem[]) {
+  return unwrap(
+    await request.post<ApiResponse<AssessmentScoreRule>>('/assessments/score-rule', { items }),
+  );
+}
+export async function saveFinanceAssessmentScore(payload: {
+  month: string;
+  userId: string;
+  items: Array<{ ruleItemId: string; score: number; remark?: string }>;
+}) {
+  return unwrap(await request.post<ApiResponse<FinanceAssessment>>('/assessments/score', payload));
 }
 export async function rankFinanceAssessments(
   month: string,
@@ -112,6 +129,13 @@ export async function correctMonthlySettlement(month: string, userId: string, am
 }
 export async function lockMonthlySettlements(month: string) {
   return unwrap(await request.post<ApiResponse<{ month: string; locked: number }>>(`/monthly-settlements/${month}/lock`));
+}
+export async function unlockMonthlySettlements(month: string) {
+  return unwrap(
+    await request.post<ApiResponse<{ month: string; unlocked: number; unlockedCases: number }>>(
+      `/monthly-settlements/${month}/unlock`,
+    ),
+  );
 }
 export async function exportMonthlySettlements(month: string, template: 'reconcile' | 'payroll') {
   const response = await request.get(`/monthly-settlements/${month}/export`, { params: { template }, responseType: 'blob' });

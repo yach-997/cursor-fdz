@@ -28,6 +28,11 @@ export class FinanceMonthlySettlementController {
   lock(@Param('month') month: string, @CurrentUser() user: CurrentUserContext) {
     return this.service.lock(month, user);
   }
+  @Post(':month/unlock')
+  @Roles(UserRole.SUPER_ADMIN)
+  unlock(@Param('month') month: string, @CurrentUser() user: CurrentUserContext) {
+    return this.service.unlock(month, user);
+  }
   @Get(':month/export')
   @Roles(UserRole.SUPER_ADMIN)
   async export(

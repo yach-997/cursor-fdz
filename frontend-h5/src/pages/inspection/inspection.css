@@ -135,18 +135,66 @@
   background: #f7faf8;
   font-size: 12px;
 }
+.inspection-photo-placeholder.is-clickable {
+  width: 100%;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.inspection-photo-placeholder.is-clickable:disabled {
+  opacity: 0.5;
+}
+.inspection-photo-placeholder strong {
+  font-size: 28px;
+  font-weight: 300;
+  color: #087b59;
+  line-height: 1;
+}
+
+/* 仅巡检网格内铺满格子；勿影响行程报销页的 72px 方块 */
+.inspection-photo-grid .trip-upload-add {
+  width: 100%;
+  aspect-ratio: 1;
+  min-height: 72px;
+  border: 1px dashed #9ec9b8;
+  border-radius: 12px;
+  background: #f7fcfa;
+  color: #087b59;
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.inspection-photo-grid .trip-upload-add:disabled {
+  opacity: 0.45;
+}
+.trip-ocr-link {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #087b59;
+  font-size: 13px;
+}
+.trip-ocr-link:disabled {
+  opacity: 0.55;
+}
 
 .inspection-photo-placeholder {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  place-items: center;
   aspect-ratio: 1;
 }
 
 .inspection-photo-placeholder strong {
-  color: #69a58f;
-  font-size: 27px;
-  font-weight: 400;
+  color: #087b59;
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1;
 }
 
 .inspection-photo-thumb {

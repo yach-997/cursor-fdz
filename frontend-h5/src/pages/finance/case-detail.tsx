@@ -1,11 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Loading, Toast } from 'react-vant';
 import {
   claimFinanceUnit,
-  completeFinanceUnit,
   fetchMyFinanceCase,
-  finishFinanceCase,
   startFinanceCase,
   type MobileFinanceCase,
 } from '../../api/finance';
@@ -49,6 +47,8 @@ export default function FinanceCaseDetailPage() {
   const navigate = useNavigate();
   const userId = useAuthStore((s) => s.user?.id);
   const [item, setItem] = useState<MobileFinanceCase>();
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
   const [unitFilter, setUnitFilter] = useState<UnitFilter>('mine');
   const [unitSearch, setUnitSearch] = useState('');
@@ -56,11 +56,13 @@ export default function FinanceCaseDetailPage() {
   const [showCompletedAll, setShowCompletedAll] = useState(false);
   /** 本地聚焦台：可在已认领多台之间切换，不必等当前台完成 */
   const [focusUnitId, setFocusUnitId] = useState<string | null>(null);
-  /** 进入页时自动补完「已提交未完结」的台，避免误显示「完成本台」 */
-  const autoCompleteTried = useRef<Set<string>>(new Set());
 
-  useEffect(() => {
-    void fetchMyFinanceCase(id).then((data) => {
+  const load = async () => {
+    if (!id) return;
+    setLoading(true);
+    setLoadError('');
+    try {
+      const data = await fetchMyFinanceCase(id);
       setItem(data);
       setFocusUnitId(data.activeUnit?.id || null);
       const planned = Math.max(1, Number(data.plannedUnits) || 1);
@@ -77,9 +79,17 @@ export default function FinanceCaseDetailPage() {
           u.status !== 'open' &&
           u.status !== 'cancelled',
       );
-      // 已有作业时默认「我的」；新人首次再看可认领
       setUnitFilter(hasMine ? 'mine' : 'open');
-    });
+    } catch {
+      setItem(undefined);
+      setLoadError('案例加载失败，请检查网络后重试');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
   }, [id, userId]);
 
   useEffect(() => {
@@ -94,56 +104,6 @@ export default function FinanceCaseDetailPage() {
       setUnitFilter('mine');
     }
   }, [item?.status]);
-
-  useEffect(() => {
-    if (!item || !id || !userId) return;
-    if (!['assigned', 'working'].includes(item.status)) return;
-    const planned = Math.max(1, Number(item.plannedUnits) || 1);
-    const unitFlow = item.assignMode === 'multi' || planned > 1;
-    let cancelled = false;
-    void (async () => {
-      if (unitFlow) {
-        const stuck = (item.units || []).filter(
-          (u) =>
-            u.inspectorId === userId &&
-            u.status === 'submitted' &&
-            !!u.inspectionTaskId &&
-            !autoCompleteTried.current.has(u.id),
-        );
-        for (const u of stuck) {
-          autoCompleteTried.current.add(u.id);
-          try {
-            const next = await completeFinanceUnit(id, u.id, { skipErrorToast: true });
-            if (cancelled) return;
-            setItem(next);
-            setFocusUnitId(next.myActiveUnits?.[0]?.id || next.activeUnit?.id || null);
-          } catch {
-            autoCompleteTried.current.delete(u.id);
-          }
-        }
-        return;
-      }
-      // 单人：报告已交且未结案时静默确认完工（与提交成功页一致）
-      const key = `case:${id}`;
-      if (autoCompleteTried.current.has(key)) return;
-      const ready =
-        item.inspectionDone ||
-        item.inspectionTaskStatus === 'submitted' ||
-        item.inspectionTaskStatus === 'approved';
-      if (!ready) return;
-      autoCompleteTried.current.add(key);
-      try {
-        const next = await finishFinanceCase(id, { skipErrorToast: true });
-        if (cancelled) return;
-        setItem(next);
-      } catch {
-        autoCompleteTried.current.delete(key);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [id, userId, item]);
 
   const isMulti = item?.assignMode === 'multi';
   const unitLabel = item?.unitLabel || '台';
@@ -252,7 +212,17 @@ export default function FinanceCaseDetailPage() {
     );
   }, [item, focusUnitId, myInProgress]);
 
-  if (!item) {
+  const myTripClaim = useMemo(() => {
+    const list = item?.expenses || [];
+    if (!userId) return list[0];
+    return (
+      list.find((e) => e.inspectorId === userId) ||
+      list.find((e) => !e.inspectorId) ||
+      undefined
+    );
+  }, [item?.expenses, userId]);
+
+  if (loading) {
     return (
       <div className="mobile-finance-page">
         <Loading vertical>加载案例...</Loading>
@@ -260,35 +230,135 @@ export default function FinanceCaseDetailPage() {
     );
   }
 
-  const tripClaim = (unitId?: string | null) =>
-    unitId ? (item.expenses || []).find((e) => e.workUnitId === unitId) : undefined;
+  if (loadError || !item) {
+    return (
+      <div className="mobile-finance-page">
+        <header className="mobile-finance-head">
+          <button type="button" onClick={() => navigate('/m/tasks')}>
+            ← 返回
+          </button>
+          <h1>作业详情</h1>
+        </header>
+        <section className="mobile-finance-card">
+          <p className="trip-reject" style={{ marginTop: 0 }}>
+            {loadError || '案例不存在'}
+          </p>
+          <button
+            type="button"
+            className="mobile-finance-primary"
+            style={{ width: '100%', marginTop: 12 }}
+            onClick={() => void load()}
+          >
+            重试
+          </button>
+        </section>
+      </div>
+    );
+  }
 
-  const isTripSkipped = (unitId?: string | null) => !!tripClaim(unitId)?.tripSkipped;
+  const isTripSkipped = false;
 
-  /** 实际填了开始里程（非无行程） */
-  const hasTripStartFilled = (unitId?: string | null) => {
-    const claim = tripClaim(unitId);
+  /** 实际填了开始里程 */
+  const hasTripStartFilled = (() => {
+    const claim = myTripClaim;
+    if (!claim || claim.tripSkipped) return false;
+    const lines = Array.isArray(claim.lineItems) ? claim.lineItems : [];
+    const trip = lines.find((l) => l.type === 'trip');
+    if (trip) {
+      return !!(
+        trip.startOdometerUrl &&
+        (trip.startNavShots || []).length &&
+        trip.startMileage != null &&
+        trip.startMileage !== ''
+      );
+    }
     const navOk =
-      (claim?.startNavUrls && claim.startNavUrls.length > 0) || !!claim?.startNavUrl;
+      (claim.startNavUrls && claim.startNavUrls.length > 0) || !!claim.startNavUrl;
     return !!(
-      claim?.startOdometerUrl &&
+      claim.startOdometerUrl &&
       navOk &&
-      claim?.startMileage != null &&
+      claim.startMileage != null &&
       claim.startMileage !== ''
     );
-  };
+  })();
 
-  const hasTripEnd = (unitId?: string | null) => {
-    const claim = tripClaim(unitId);
+  const hasTripEnd = (() => {
+    const claim = myTripClaim;
+    if (!claim || claim.tripSkipped) return false;
+    const lines = Array.isArray(claim.lineItems) ? claim.lineItems : [];
+    const trip = lines.find((l) => l.type === 'trip');
+    if (trip) {
+      return !!(
+        trip.endOdometerUrl &&
+        (trip.endNavShots || []).length &&
+        trip.endMileage != null &&
+        trip.endMileage !== ''
+      );
+    }
     const navOk =
-      (claim?.endNavUrls && claim.endNavUrls.length > 0) || !!claim?.endNavUrl;
+      (claim.endNavUrls && claim.endNavUrls.length > 0) || !!claim.endNavUrl;
     return !!(
-      claim?.endOdometerUrl &&
+      claim.endOdometerUrl &&
       navOk &&
-      claim?.endMileage != null &&
+      claim.endMileage != null &&
       claim.endMileage !== ''
     );
-  };
+  })();
+
+  const hasExpenseFilled = (() => {
+    const claim = myTripClaim;
+    if (!claim || claim.tripSkipped) return false;
+    const lines = Array.isArray(claim.lineItems) ? claim.lineItems : [];
+    if (lines.length) {
+      return lines.some(
+        (l) =>
+          Number(l.amount) > 0 ||
+          !!l.startOdometerUrl ||
+          !!l.endOdometerUrl ||
+          (l.photoUrls || []).length > 0 ||
+          (l.voucherUrls || []).length > 0,
+      );
+    }
+    return hasTripStartFilled || hasTripEnd || Number(claim.claimAmount ?? claim.amount) > 0;
+  })();
+
+  const tripStatusLabel = (() => {
+    if (myTripClaim?.status === 'submitted') return '已提交 · 待审核';
+    if (myTripClaim?.status === 'approved') return '报销已通过';
+    if (myTripClaim?.status === 'rejected') return '报销已驳回';
+    if (hasExpenseFilled) {
+      if (hasTripStartFilled && !hasTripEnd) return '行程未填完';
+      return '已填写';
+    }
+    return '未填写';
+  })();
+
+  const expenseClaimStatus = myTripClaim?.status || 'draft';
+  const expenseLocked =
+    expenseClaimStatus === 'submitted' || expenseClaimStatus === 'approved';
+  const expenseButtonLabel = (() => {
+    if (expenseClaimStatus === 'submitted') return '查看费用明细';
+    if (expenseClaimStatus === 'approved') return '查看费用明细';
+    if (expenseClaimStatus === 'rejected') return '修改后重新提交';
+    if (!hasExpenseFilled) return '填写费用明细';
+    if (hasTripStartFilled && !hasTripEnd) return '继续填写费用明细';
+    return '修改费用明细';
+  })();
+  const expenseTip = (() => {
+    if (expenseClaimStatus === 'submitted') {
+      return '已提交审核，目前只能查看，审核通过或驳回前不可修改。';
+    }
+    if (expenseClaimStatus === 'approved') {
+      return '报销已通过，费用明细仅供查看。';
+    }
+    if (expenseClaimStatus === 'rejected') {
+      return '报销已驳回，可修改明细后重新提交。';
+    }
+    if (['finished', 'settle_review'].includes(item.status)) {
+      return '案例已完工也可补填或修改费用明细；提交审核后不可再改，驳回后可改。';
+    }
+    return '需要报销再点进去填：可添加多条费用明细（行程、过路费等）。不报销可跳过。';
+  })();
 
   const goInspectUnit = async (unit: UnitItem | null | undefined, autoStart: boolean) => {
     setBusy(true);
@@ -407,17 +477,12 @@ export default function FinanceCaseDetailPage() {
       item.inspectionTaskStatus === 'submitted' ||
       item.inspectionTaskStatus === 'approved' ||
       myActive?.status === 'submitted';
-  const tripEndUnitId = useUnitFlow
-    ? finishTargetUnit?.id || null
-    : myActive?.id || item.units?.[0]?.id || null;
-  // 有开始行程却缺结束里程时才提示；完结动作由提交成功页 / 进页自动补完，不再提供「完成本台」
-  const needsTripEndAfterSubmit =
-    item.status === 'working' &&
-    !!tripEndUnitId &&
-    reportReady &&
-    hasTripStartFilled(tripEndUnitId) &&
-    !isTripSkipped(tripEndUnitId) &&
-    !hasTripEnd(tripEndUnitId);
+  // 软提示：本人已开始行程但未结束（不拦完工）
+  const needsTripEndReminder =
+    ['assigned', 'working'].includes(item.status) &&
+    hasTripStartFilled &&
+    !isTripSkipped &&
+    !hasTripEnd;
   const finished = !['assigned', 'working'].includes(item.status);
   const workType = resolveWorkTypeLabel(item);
   const multiWorking = useUnitFlow && ['assigned', 'working'].includes(item.status);
@@ -466,6 +531,7 @@ export default function FinanceCaseDetailPage() {
           <h2>{item.projectName || item.gspCaseNo}</h2>
           <span className="mobile-finance-status">
             {CASE_STATUS_LABEL[item.status] || item.status}
+            {item.hasPo === false ? ' · 不计件结算' : ''}
           </span>
         </div>
         <dl className="mobile-finance-meta">
@@ -484,6 +550,12 @@ export default function FinanceCaseDetailPage() {
             <dt>服务类型</dt>
             <dd>{item.taskTypeName || item.taskType || '未设置'}</dd>
           </div>
+          {item.assignRemark?.trim() ? (
+            <div>
+              <dt>派单备注</dt>
+              <dd>{item.assignRemark.trim()}</dd>
+            </div>
+          ) : null}
           {!useUnitFlow && item.inspectionTaskStatus && (
             <div>
               <dt>{workActionLabel(workType, 'progress')}</dt>
@@ -884,33 +956,40 @@ export default function FinanceCaseDetailPage() {
         </section>
       )}
 
-      {needsTripEndAfterSubmit && (
+      {['assigned', 'working', 'finished', 'settle_review'].includes(item.status) ? (
         <section className="mobile-finance-card">
-          <h3>报告已提交</h3>
-          <p className="mobile-finance-muted">
-            还差结束里程表和导航截图。补填保存后会自动完工，不用再点确认。
+          <h3>行程与费用（可选）</h3>
+          <p className="mobile-finance-muted">{expenseTip}</p>
+          <p style={{ marginTop: 8, fontSize: 13, color: '#1a2e24' }}>
+            当前：{tripStatusLabel}
           </p>
+          {needsTripEndReminder ? (
+            <p className="mobile-finance-muted" style={{ marginTop: 6, color: '#d48806' }}>
+              行程明细未填完，记得补齐里程与费用（不拦作业完工）。
+            </p>
+          ) : null}
           <button
             type="button"
             className="mobile-finance-primary"
             style={{ width: '100%', marginTop: 12 }}
-            onClick={() =>
-              navigate(
-                `/m/finance-cases/${id}/expense?step=end&autoFinish=1${
-                  tripEndUnitId ? `&unitId=${tripEndUnitId}` : ''
-                }`,
-              )
-            }
+            onClick={() => navigate(`/m/finance-cases/${id}/expense`)}
           >
-            去填结束里程（自动完工）
+            {expenseButtonLabel}
           </button>
+          {expenseLocked ? (
+            <p className="mobile-finance-muted" style={{ marginTop: 8, fontSize: 12 }}>
+              {expenseClaimStatus === 'submitted'
+                ? '审核中不可修改'
+                : '已通过不可修改'}
+            </p>
+          ) : null}
         </section>
-      )}
+      ) : null}
 
       {finished && (
         <section className="mobile-finance-card mobile-finance-tip">
           <h3>本单已结束</h3>
-          <p className="mobile-finance-muted">可在「我的收入」查看结算进度。</p>
+          <p className="mobile-finance-muted">可在「我的收入」查看结算进度；行程报销可在上方补填。</p>
         </section>
       )}
     </div>

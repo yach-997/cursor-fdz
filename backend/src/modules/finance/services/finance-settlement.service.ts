@@ -11,6 +11,7 @@ import ExcelJS from 'exceljs';
 import {
   Assessment,
   AssessmentEvent,
+  AssessmentScoreRule,
   CaseAssignment,
   CasePerformance,
   MonthlySettlement,
@@ -24,10 +25,16 @@ import {
   CreateAssessmentEventDto,
   RankAssessmentDto,
   SaveAssessmentDto,
+  SaveAssessmentScoreDto,
+  SaveAssessmentScoreRuleDto,
 } from '../dto/finance.dto';
 import { FinanceScopeService } from './finance-scope.service';
 import { ChangeLogService } from './change-log.service';
 import { ASSESSMENT_EVENT_CATALOG, rankRewardAmount } from './assessment-event.catalog';
+import {
+  AssessmentScoreRuleItem,
+  DEFAULT_ASSESSMENT_SCORE_RULES,
+} from './assessment-score-rule.catalog';
 import { assertFinanceClearAllowed } from '../../../common/utils/finance-clear-guard';
 
 const money = (value: number) => (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2);
@@ -53,6 +60,8 @@ export class FinanceSettlementService implements OnModuleInit {
   constructor(
     @InjectRepository(Assessment) private readonly assessments: Repository<Assessment>,
     @InjectRepository(AssessmentEvent) private readonly events: Repository<AssessmentEvent>,
+    @InjectRepository(AssessmentScoreRule)
+    private readonly scoreRules: Repository<AssessmentScoreRule>,
     @InjectRepository(MonthlySettlement) private readonly monthly: Repository<MonthlySettlement>,
     @InjectRepository(CasePerformance) private readonly ledgers: Repository<CasePerformance>,
     @InjectRepository(ServiceCase) private readonly cases: Repository<ServiceCase>,
@@ -65,6 +74,7 @@ export class FinanceSettlementService implements OnModuleInit {
 
   /** 兼容关闭 DB_SYNC 的线上库：补齐案例关联 / 网格内名次字段 */
   async onModuleInit() {
+    await this.ensureScoreSchema();
     const eventCols = (await this.dataSource.query(
       `SELECT 1
        FROM information_schema.columns
@@ -97,8 +107,188 @@ export class FinanceSettlementService implements OnModuleInit {
     }
   }
 
+  private async ensureScoreSchema() {
+    await this.dataSource.query(`
+CREATE TABLE IF NOT EXISTS assessment_score_rule (
+  id bigserial PRIMARY KEY,
+  items jsonb NOT NULL DEFAULT '[]'::jsonb,
+  version int NOT NULL DEFAULT 1,
+  updated_by uuid NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE assessment
+  ADD COLUMN IF NOT EXISTS score_detail jsonb NULL;
+`);
+  }
+
   eventCatalog() {
     return ASSESSMENT_EVENT_CATALOG;
+  }
+
+  async getScoreRule() {
+    await this.ensureScoreSchema();
+    let row = await this.scoreRules.find({ order: { id: 'ASC' }, take: 1 }).then((r) => r[0]);
+    if (!row || !Array.isArray(row.items) || !row.items.length) {
+      row = await this.scoreRules.save(
+        this.scoreRules.create({
+          items: DEFAULT_ASSESSMENT_SCORE_RULES,
+          version: 1,
+          updatedBy: null,
+        }),
+      );
+    }
+    return {
+      id: row.id,
+      version: row.version,
+      items: this.normalizeRuleItems(row.items as AssessmentScoreRuleItem[]),
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  async saveScoreRule(dto: SaveAssessmentScoreRuleDto, user: CurrentUserContext) {
+    if (user.role !== UserRole.SUPER_ADMIN) {
+      throw new ForbiddenException('仅管理员可配置打分规则');
+    }
+    await this.ensureScoreSchema();
+    const items = this.normalizeRuleItems((dto.items || []) as AssessmentScoreRuleItem[]);
+    if (!items.length) throw new BadRequestException('请至少保留一条打分规则');
+    let row = await this.scoreRules.find({ order: { id: 'ASC' }, take: 1 }).then((r) => r[0]);
+    if (!row) {
+      row = this.scoreRules.create({ items, version: 1, updatedBy: user.id });
+    } else {
+      row.items = items;
+      row.version = Number(row.version || 1) + 1;
+      row.updatedBy = user.id;
+    }
+    const saved = await this.scoreRules.save(row);
+    await this.logs.write(
+      'assessment_score_rule',
+      saved.id,
+      'score_rule',
+      null,
+      { version: saved.version, count: items.length },
+      user.id,
+      '更新考核打分规则',
+    );
+    return {
+      id: saved.id,
+      version: saved.version,
+      items,
+      updatedAt: saved.updatedAt,
+    };
+  }
+
+  async saveAssessmentScore(dto: SaveAssessmentScoreDto, user: CurrentUserContext) {
+    const target = await this.users.findOne({ where: { id: dto.userId } });
+    if (!target) throw new NotFoundException('考核人员不存在');
+    if (user.role === UserRole.SITE_MANAGER && dto.userId === user.id) {
+      throw new ForbiddenException('不能给自己打分，请由管理员录入本人考核');
+    }
+    await this.scope.assertPersonAccess(user, dto.userId);
+    const isManager =
+      !!target.roles?.includes(UserRole.SITE_MANAGER) || target.role === UserRole.SITE_MANAGER;
+    const isInspector =
+      !!target.roles?.includes(UserRole.INSPECTOR) || target.role === UserRole.INSPECTOR;
+    if (user.role === UserRole.SITE_MANAGER && !isInspector) {
+      throw new ForbiddenException('网格长只能录入本网格已聘工程师的考核');
+    }
+    const targetRole = isManager ? UserRole.SITE_MANAGER : UserRole.INSPECTOR;
+    const rankGroup = isManager ? 'station_manager' : 'inspector';
+
+    const rule = await this.getScoreRule();
+    const enabled = rule.items.filter((item) => item.enabled !== false);
+    const scoreMap = new Map(
+      (dto.items || []).map((item) => [item.ruleItemId, Number(item.score) || 0]),
+    );
+    let base = 0;
+    let bonus = 0;
+    let deduct = 0;
+    const detailItems: Array<{ ruleItemId: string; score: number; remark?: string }> = [];
+    for (const item of enabled) {
+      const raw = scoreMap.has(item.id) ? Number(scoreMap.get(item.id)) : 0;
+      if (!Number.isFinite(raw) || raw < 0) {
+        throw new BadRequestException(`${item.title}得分无效`);
+      }
+      if (raw > item.maxScore + 1e-9) {
+        throw new BadRequestException(`${item.title}不能超过满分 ${item.maxScore}`);
+      }
+      const score = Math.round((raw + Number.EPSILON) * 100) / 100;
+      detailItems.push({
+        ruleItemId: item.id,
+        score,
+        remark: (dto.items || []).find((x) => x.ruleItemId === item.id)?.remark,
+      });
+      if (item.kind === 'bonus') bonus += score;
+      else if (item.kind === 'deduct') deduct += score;
+      else base += score;
+    }
+    const total = Math.max(0, Math.round((base + bonus - deduct + Number.EPSILON) * 100) / 100);
+    if (total > 100) {
+      throw new BadRequestException('考核总分不能超过 100');
+    }
+
+    let row = await this.assessments.findOne({ where: { month: dto.month, userId: dto.userId } });
+    row ||= this.assessments.create({
+      month: dto.month,
+      userId: dto.userId,
+      userRole: targetRole,
+      rankGroup,
+      eventPenalty: '0.00',
+      toolSubsidy: '0.00',
+      otherSubsidy: '0.00',
+      rewardAmount: '0.00',
+      correctionAmount: '0.00',
+    });
+    const before = row.id ? { ...row } : null;
+    row.userRole = targetRole;
+    row.rankGroup = rankGroup;
+    row.scoreDetail = {
+      version: rule.version,
+      items: detailItems,
+      total,
+    };
+    row.internalScore = total.toFixed(2);
+    row.sungrowScore = '0.00';
+    row.totalScore = total.toFixed(2);
+    row.updatedBy = user.id;
+    const saved = await this.assessments.save(row);
+    await this.syncEventPenalty(dto.month, dto.userId);
+    await this.logs.write(
+      'assessment',
+      saved.id,
+      'score_detail',
+      before?.scoreDetail || null,
+      saved.scoreDetail,
+      user.id,
+      '月度考核分项打分',
+    );
+    await this.refreshMonth(dto.month);
+    return this.assessments.findOne({ where: { id: saved.id } });
+  }
+
+  private normalizeRuleItems(raw: AssessmentScoreRuleItem[]): AssessmentScoreRuleItem[] {
+    const list = Array.isArray(raw) ? raw : [];
+    return list
+      .map((item, index) => {
+        const kind =
+          item?.kind === 'bonus' || item?.kind === 'deduct' || item?.kind === 'base'
+            ? item.kind
+            : 'base';
+        const maxScore = Math.max(0, Number(item?.maxScore) || 0);
+        return {
+          id: String(item?.id || `rule-${index + 1}`).slice(0, 64),
+          category: String(item?.category || '未分类').trim().slice(0, 64) || '未分类',
+          title: String(item?.title || `分项${index + 1}`).trim().slice(0, 64),
+          maxScore: kind === 'deduct' ? Math.max(maxScore || 100, 1) : Math.max(maxScore, 0.01),
+          description: String(item?.description || '').trim().slice(0, 1000),
+          sort: Number.isFinite(Number(item?.sort)) ? Number(item.sort) : (index + 1) * 10,
+          kind,
+          enabled: item?.enabled !== false,
+        } as AssessmentScoreRuleItem;
+      })
+      .filter((item) => item.title)
+      .sort((a, b) => a.sort - b.sort || a.id.localeCompare(b.id));
   }
 
   async listAssessments(
@@ -177,6 +367,8 @@ export class FinanceSettlementService implements OnModuleInit {
         siteRankResult: isInspector ? siteRank : null,
         rankResult: saved?.rankResult || null,
         rewardAmount: saved?.rewardAmount || '0.00',
+        scoreDetail: saved?.scoreDetail || null,
+        scored: !!(saved?.scoreDetail && Array.isArray(saved.scoreDetail.items)),
       };
     });
   }
@@ -209,9 +401,12 @@ export class FinanceSettlementService implements OnModuleInit {
     const before = row.id ? { ...row } : null;
     row.userRole = targetRole;
     row.rankGroup = rankGroup;
-    row.internalScore = dto.internalScore.toFixed(2);
-    row.sungrowScore = '0.00';
-    row.totalScore = dto.internalScore.toFixed(2);
+    // 分数改由分项打分写入；本接口只保存补助等，避免覆盖打分结果
+    if (dto.internalScore !== undefined && dto.internalScore !== null && !row.scoreDetail) {
+      row.internalScore = dto.internalScore.toFixed(2);
+      row.sungrowScore = '0.00';
+      row.totalScore = dto.internalScore.toFixed(2);
+    }
     row.toolSubsidy = (dto.toolSubsidy || 0).toFixed(2);
     row.otherSubsidy = (dto.otherSubsidy || 0).toFixed(2);
     row.subsidyRemark = dto.subsidyRemark || null;
@@ -535,6 +730,43 @@ export class FinanceSettlementService implements OnModuleInit {
     }
     await this.logs.write('monthly_settlement', month, 'status', 'draft', 'locked', user.id, '管理员锁定月度结算');
     return { month, locked: rows.length };
+  }
+
+  async unlock(month: string, user: CurrentUserContext) {
+    if (user.role !== UserRole.SUPER_ADMIN) throw new ForbiddenException('只有管理员可以解锁月度结算');
+    const rows = await this.monthly.find({ where: { month } });
+    const lockedRows = rows.filter((row) => row.status === 'locked');
+    if (!lockedRows.length) throw new BadRequestException('该月份尚未锁定');
+    lockedRows.forEach((row) => {
+      row.status = Number(row.correctionTotal || 0) !== 0 ? 'corrected' : 'draft';
+      row.lockedBy = null;
+      row.lockedAt = null;
+    });
+    await this.monthly.save(lockedRows);
+    const ledgers = await this.ledgers.find({ where: { month, reviewStatus: 'approved' } });
+    const caseIds = ledgers.map((item) => item.serviceCaseId);
+    let unlockedCases = 0;
+    if (caseIds.length) {
+      const cases = await this.cases.find({ where: { id: In(caseIds) } });
+      const reopen = cases.filter((item) => item.status === 'month_locked');
+      reopen.forEach((item) => {
+        item.status = 'settled';
+      });
+      if (reopen.length) {
+        await this.cases.save(reopen);
+        unlockedCases = reopen.length;
+      }
+    }
+    await this.logs.write(
+      'monthly_settlement',
+      month,
+      'status',
+      'locked',
+      'draft',
+      user.id,
+      '管理员解锁月度结算',
+    );
+    return { month, unlocked: lockedRows.length, unlockedCases };
   }
 
   async export(month: string, template: 'reconcile' | 'payroll', user: CurrentUserContext) {

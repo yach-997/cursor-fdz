@@ -206,7 +206,7 @@ export class FinanceCaseController {
   ) {
     return this.multi.completeUnit(id, unitId, user);
   }
-  /** 按台保存行程报销（可选） */
+  /** 按台保存行程报销（兼容旧路径；实际按案例×工程师落库） */
   @Post(':id/units/:unitId/expense') @Roles(UserRole.INSPECTOR) saveUnitExpense(
     @Param('id') id: string,
     @Param('unitId') unitId: string,
@@ -214,6 +214,14 @@ export class FinanceCaseController {
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.multi.upsertTripExpense(id, unitId, dto, user);
+  }
+  /** 本人本案例行程报销（推荐） */
+  @Post(':id/my-expense') @Roles(UserRole.INSPECTOR) saveMyExpense(
+    @Param('id') id: string,
+    @Body() dto: SaveTripExpenseDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.multi.upsertMyTripExpense(id, dto, user);
   }
   /** 识别里程表读数 */
   @Post(':id/units/:unitId/expense/ocr-mileage')
@@ -225,6 +233,15 @@ export class FinanceCaseController {
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.multi.ocrUnitMileage(id, unitId, dto.imageUrl, dto.kind, user);
+  }
+  @Post(':id/my-expense/ocr-mileage')
+  @Roles(UserRole.INSPECTOR)
+  ocrMyMileage(
+    @Param('id') id: string,
+    @Body() dto: OcrMileageDto,
+    @CurrentUser() user: CurrentUserContext,
+  ) {
+    return this.multi.ocrMyMileage(id, dto.imageUrl, dto.kind, user);
   }
 
   /** 识别设备序列号 */

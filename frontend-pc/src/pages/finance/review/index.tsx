@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   Badge,
   Button,
   Card,
@@ -34,6 +35,7 @@ import AssessmentEventDrawer, {
 } from '../components/AssessmentEventDrawer';
 import SettlementAmountDrawer from '../components/SettlementAmountDrawer';
 import ExpenseReviewPanel from '../expenses/ExpenseReviewPanel';
+import DayDatePicker from '../../../components/DayDatePicker';
 import { formatDateTime } from '../../../utils/displayLabels';
 
 type Action = 'approve' | 'reject';
@@ -269,7 +271,7 @@ export default function FinanceReviewPage() {
             {tab === 'pending'
               ? '默认看待审核队列。通过后可到「已通过」页签查看。'
               : tab === 'approved'
-                ? '已通过的结算记录不会从系统消失，可按月份/网格继续查询。'
+                ? '已通过的结算记录不会从系统消失，可按完工日期/网格继续查询。'
                 : tab === 'rejected'
                   ? '已驳回记录可在此查看原因；工程师补齐后仍会出现在待审核队列。'
                   : '全部状态汇总；仍可用下方筛选缩小范围。网格长仅见本网格案例。'}
@@ -282,11 +284,13 @@ export default function FinanceReviewPage() {
               onChange={(event) => setKeyword(event.target.value)}
               style={{ width: 200 }}
             />
-            <Input
-              type="month"
-              value={month || ''}
-              onChange={(event) => setMonth(event.target.value || undefined)}
-              title="完工月份"
+            <DayDatePicker
+              allowClear
+              value={month}
+              onChange={setMonth}
+              placeholder="完工日期"
+              title="完工日期"
+              style={{ width: 160 }}
             />
             {isAdmin && (
               <Select
@@ -368,7 +372,7 @@ export default function FinanceReviewPage() {
                 width: 160,
                 render: (v) => formatDateTime(v),
               },
-              ...(tab === 'approved' || tab === 'all'
+              ...(tab === 'approved' || tab === 'all' || tab === 'rejected'
                 ? [
                     {
                       title: '审核时间',
@@ -376,28 +380,27 @@ export default function FinanceReviewPage() {
                       width: 160,
                       render: (v: string | null | undefined) => formatDateTime(v),
                     },
-                    {
-                      title: '审核意见',
-                      dataIndex: 'reviewComment',
-                      width: 160,
-                      ellipsis: true,
-                      render: (v: string | null | undefined, row: FinanceReviewItem) => {
-                        if (row.reviewStatus !== 'approved') return '-';
-                        if (!v?.trim()) return <span style={{ color: '#8c8c8c' }}>无</span>;
-                        return (
-                          <Button
-                            type="link"
-                            className="finance-review-comment-link"
-                            onClick={() => showReviewComment(v)}
-                            style={{ paddingInline: 0, height: 'auto', maxWidth: '100%' }}
-                          >
-                            <span className="finance-review-comment-preview">{v}</span>
-                          </Button>
-                        );
-                      },
-                    },
                   ]
                 : []),
+              {
+                title: '审核意见',
+                dataIndex: 'reviewComment',
+                width: 160,
+                ellipsis: true,
+                render: (v: string | null | undefined) => {
+                  if (!v?.trim()) return <span style={{ color: '#8c8c8c' }}>无</span>;
+                  return (
+                    <Button
+                      type="link"
+                      className="finance-review-comment-link"
+                      onClick={() => showReviewComment(v)}
+                      style={{ paddingInline: 0, height: 'auto', maxWidth: '100%' }}
+                    >
+                      <span className="finance-review-comment-preview">{v}</span>
+                    </Button>
+                  );
+                },
+              },
               {
                 title: colTip(
                   '案例收入',
@@ -489,11 +492,11 @@ export default function FinanceReviewPage() {
                         </Button>
                       </>
                     )}
-                    {row.reviewStatus === 'approved' && row.reviewComment && (
+                    {row.reviewComment?.trim() ? (
                       <Button type="link" onClick={() => showReviewComment(row.reviewComment!)}>
                         意见
                       </Button>
-                    )}
+                    ) : null}
                   </Space>
                 ),
               },
@@ -524,10 +527,13 @@ export default function FinanceReviewPage() {
               {action === 'approve' && (
                 <>
                   {Number(current?.pendingExpenseCount || 0) > 0 ? (
-                    <p style={{ marginTop: 0, color: '#b54708' }}>
-                      本案例仍有 {current?.pendingExpenseCount}{' '}
-                      条待审行程报销。通过案例结算不会自动核定报销，请稍后到「行程报销」页签处理。
-                    </p>
+                    <Alert
+                      type="warning"
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                      message={`本案例仍有 ${current?.pendingExpenseCount} 条待审报销`}
+                      description="仅提醒，不阻止通过。结算通过不会自动核定报销，请稍后到「行程报销」页签处理。"
+                    />
                   ) : null}
                   <Form.Item name="comment" label="审核意见（可选）">
                     <Input.TextArea rows={3} />

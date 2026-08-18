@@ -24,12 +24,14 @@ test('手机端英文网络与图片异常统一转换为中文提示', async ()
   assert.match(request, /chineseErrorMessage/);
 });
 
-test('定位按钮保持动作名称，现场人工结论明确标注为选填', async () => {
+test('定位按钮保持动作名称，上传改为点加号后选拍照或相册', async () => {
   const inspection = await source('src/pages/inspection/index.tsx');
 
-  assert.match(inspection, />\s*从相册选择\s*</);
-  assert.match(inspection, />\s*现场拍照\s*</);
+  assert.match(inspection, /ActionSheet/);
+  assert.match(inspection, /从相册选择（可多选）/);
+  assert.match(inspection, /name:\s*'拍照'/);
   assert.doesNotMatch(inspection, /定位通过后选择|定位通过后拍照/);
-  assert.match(inspection, /现场检查结论（选填）/);
-  assert.match(inspection, /未选择不影响提交/);
+  assert.match(inspection, /inspection-photo-placeholder is-clickable/);
+  assert.match(inspection, /aria-label=\"添加照片\"/);
+  assert.doesNotMatch(inspection, /继续添加|更换/);
 });

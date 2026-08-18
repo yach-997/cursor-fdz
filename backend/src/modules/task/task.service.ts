@@ -551,20 +551,35 @@ export class TaskService {
   }
 
   private buildDraftEntries(
-    snapshot: Array<{ id: string }>,
+    snapshot: Array<{
+      id: string;
+      entryKind?: string;
+      checkType?: string;
+    }>,
   ): RecordEntry[] {
-    return snapshot.map((entry) => ({
-      templateEntryId: entry.id,
-      photos: [],
-      aiResult: {
-        status: CheckResult.PENDING,
-        confidence: 0,
-        reason: '',
-      },
-      manualResult: CheckResult.PENDING,
-      finalResult: null,
-      remark: '',
-    }));
+    return snapshot.map((entry) => {
+      const isRecord =
+        entry.entryKind === 'record' ||
+        (entry.entryKind !== 'check' && entry.checkType === 'text');
+      return {
+        templateEntryId: entry.id,
+        photos: [],
+        aiResult: isRecord
+          ? {
+              status: CheckResult.SKIPPED,
+              confidence: 0,
+              reason: '记录项无需AI',
+            }
+          : {
+              status: CheckResult.PENDING,
+              confidence: 0,
+              reason: '',
+            },
+        manualResult: CheckResult.PENDING,
+        finalResult: null,
+        remark: '',
+      };
+    });
   }
 
   private async resolveDevice(
@@ -682,6 +697,9 @@ export class TaskService {
       return;
     }
     if (currentUser.role === UserRole.INSPECTOR) {
+      if (task.serviceCaseId) {
+        throw new BadRequestException('已绑定作业案例的任务不能删除');
+      }
       if (task.inspectorId !== currentUser.id && task.createdBy !== currentUser.id) {
         throw new ForbiddenException('只能删除自己的任务');
       }

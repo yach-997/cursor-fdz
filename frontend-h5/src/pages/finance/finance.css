@@ -951,6 +951,35 @@
   color: #163c33;
   background: #fff;
 }
+.trip-date-trigger {
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #d5e5de;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 15px;
+  color: #163c33;
+  background: #fff;
+  text-align: left;
+}
+.trip-date-trigger:disabled {
+  opacity: 0.65;
+}
+.trip-date-trigger .is-placeholder {
+  color: #9aaba4;
+}
+.trip-date-trigger .is-value {
+  color: #163c33;
+}
+.trip-date-chevron {
+  color: #8a9e96;
+  font-size: 12px;
+  line-height: 1;
+}
 .trip-unit-tag {
   margin: 10px 0 0;
   font-size: 14px;
@@ -965,31 +994,52 @@
   color: #a61d24;
   font-size: 13px;
 }
-.trip-upload-row {
+.mobile-finance-page .trip-upload-row {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 10px;
   align-items: center;
 }
-.trip-upload-btn {
-  min-height: 72px;
-  min-width: 96px;
+.mobile-finance-page .trip-upload-add {
+  box-sizing: border-box;
+  width: 72px;
+  height: 72px;
+  min-width: 72px;
+  max-width: 72px;
+  flex: 0 0 72px;
   border: 1px dashed #9ec9b8;
-  border-radius: 12px;
+  border-radius: 10px;
   background: #f7fcfa;
   color: #087b59;
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.mobile-finance-page .trip-upload-add:disabled {
+  opacity: 0.45;
+}
+.mobile-finance-page .trip-ocr-link {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #087b59;
   font-size: 13px;
-  padding: 8px 12px;
 }
-.trip-upload-btn.is-sm {
-  min-height: 44px;
-  min-width: 72px;
+.mobile-finance-page .trip-ocr-link:disabled {
+  opacity: 0.55;
 }
-.trip-thumb {
+.mobile-finance-page .trip-thumb {
   position: relative;
   width: 72px;
   height: 72px;
+  flex: 0 0 72px;
 }
 .trip-thumb-img {
   width: 72px;
@@ -1042,3 +1092,73 @@
   gap: 10px;
   margin-top: 16px;
 }
+
+.exp-line-card {
+  margin: 12px 16px;
+  padding: 14px 14px 16px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid #e4efe9;
+  box-shadow: 0 1px 2px rgba(16, 56, 44, 0.04);
+}
+.exp-line-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.exp-line-head h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #163c33;
+}
+.exp-line-actions {
+  display: flex;
+  gap: 12px;
+}
+.exp-line-actions button {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: #087b59;
+  font-size: 13px;
+  font-weight: 600;
+}
+.exp-line-actions button.is-danger {
+  color: #c0392b;
+}
+.exp-line-actions button:disabled {
+  opacity: 0.35;
+}
+.exp-line-sub {
+  margin: 16px 0 0;
+  font-size: 14px;
+  font-weight: 650;
+  color: #1f4a3e;
+}
+.exp-line-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #7a9088;
+}
+.exp-nav-shot {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #f5faf8;
+}
+.exp-add-card {
+  margin-bottom: 24px;
+}
+.exp-add-btn {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid #163c33;
+  background: #fff;
+  color: #163c33;
+  font-size: 15px;
+  font-weight: 600;
+}
+

@@ -41,6 +41,9 @@ export interface TaskItem {
     isRequired: boolean;
     samplePhotos?: string[];
     isOptionalModule?: boolean;
+    entryKind?: 'check' | 'record';
+    checkType?: 'photo' | 'text';
+    aiEnabled?: boolean;
   }>;
   record?: {
     id: string;

@@ -29,6 +29,10 @@ export interface FinanceCase {
   productLine?: string | null;
   inspectorId?: string;
   inspectorName?: string | null;
+  /** 是否已挂 PO（无 PO 的案例完工后不计件结算） */
+  hasPo?: boolean;
+  /** 派单/改派备注 */
+  assignRemark?: string | null;
   finishTime?: string;
   updatedAt: string;
   caseRevenue: string;
@@ -238,6 +242,32 @@ export interface FinanceAssessment {
   toolSubsidy?: string;
   otherSubsidy?: string;
   subsidyRemark?: string;
+  scored?: boolean;
+  scoreDetail?: {
+    version?: number;
+    items: Array<{ ruleItemId: string; score: number; remark?: string }>;
+    total: number;
+  } | null;
+}
+
+export type AssessmentScoreItemKind = 'base' | 'bonus' | 'deduct';
+
+export interface AssessmentScoreRuleItem {
+  id: string;
+  category: string;
+  title: string;
+  maxScore: number;
+  description: string;
+  sort: number;
+  kind: AssessmentScoreItemKind;
+  enabled?: boolean;
+}
+
+export interface AssessmentScoreRule {
+  id: string;
+  version: number;
+  items: AssessmentScoreRuleItem[];
+  updatedAt?: string;
 }
 export interface AssessmentEventCatalogItem {
   id: string;

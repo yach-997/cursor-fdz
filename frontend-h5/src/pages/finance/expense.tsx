@@ -1,19 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Loading, Toast } from 'react-vant';
+import { Loading, Toast, ActionSheet, DatetimePicker } from 'react-vant';
 import {
   completeFinanceUnit,
   fetchMyFinanceCase,
   finishFinanceCase,
-  ocrUnitMileage,
-  saveUnitTripExpense,
+  ocrMyMileage,
+  saveMyTripExpense,
   uploadFinanceWorkPhoto,
+  type ExpenseLineItem,
+  type ExpenseNavShot,
   type MobileFinanceCase,
   type TripExpenseClaim,
 } from '../../api/finance';
 import { useAuthStore } from '../../stores/auth';
 import PhotoViewerOverlay from '../../components/PhotoViewerOverlay';
 import { displayPhotoUrl } from '../../utils/photo-url';
+import { compressImage } from '../../utils/imageCompress';
 import './finance.css';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -23,7 +26,267 @@ const STATUS_LABEL: Record<string, string> = {
   rejected: '已驳回',
 };
 
-type Step = 'start' | 'end';
+const DATE_MIN = new Date(2020, 0, 1);
+const DATE_MAX = new Date(2035, 11, 31);
+
+/** 统一成 YYYY-MM-DD，兼容 ISO / 斜杠日期 */
+function toDateValue(raw?: string | null): string {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  const m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (m) {
+    return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  }
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
+}
+
+function parseDateValue(value: string): Date {
+  const v = toDateValue(value);
+  if (!v) return new Date();
+  const [y, m, d] = v.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function formatDateValue(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function formatDateLabel(value: string): string {
+  const v = toDateValue(value);
+  if (!v) return '';
+  const [y, m, d] = v.split('-');
+  return `${y}年${Number(m)}月${Number(d)}日`;
+}
+
+function ExpenseDateField({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  disabled?: boolean;
+  onChange: (next: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const label = formatDateLabel(value);
+
+  return (
+    <>
+      <button
+        type="button"
+        className="trip-date-trigger"
+        disabled={disabled}
+        onClick={() => {
+          if (!disabled) setOpen(true);
+        }}
+      >
+        <span className={label ? 'is-value' : 'is-placeholder'}>
+          {label || '请选择日期'}
+        </span>
+        <span className="trip-date-chevron" aria-hidden>
+          ▾
+        </span>
+      </button>
+      <DatetimePicker
+        popup={{ round: true }}
+        type="date"
+        title="选择日期"
+        visible={open}
+        value={parseDateValue(value)}
+        minDate={DATE_MIN}
+        maxDate={DATE_MAX}
+        confirmButtonText="确定"
+        cancelButtonText="取消"
+        onClose={() => setOpen(false)}
+        onCancel={() => setOpen(false)}
+        onConfirm={(date: Date) => {
+          onChange(formatDateValue(date));
+          setOpen(false);
+        }}
+      />
+    </>
+  );
+}
+
+type LineType = 'trip' | 'toll' | 'other';
+
+type DraftLine = {
+  id: string;
+  type: LineType;
+  content: string;
+  expenseDate: string;
+  amount: string;
+  note: string;
+  startOdometerUrl: string;
+  startMileage: string;
+  startNavShots: ExpenseNavShot[];
+  endOdometerUrl: string;
+  endMileage: string;
+  endNavShots: ExpenseNavShot[];
+  voucherUrls: string[];
+  photoUrls: string[];
+};
+
+const newId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `line-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const emptyLine = (type: LineType = 'toll'): DraftLine => ({
+  id: newId(),
+  type,
+  content: type === 'trip' ? '行程' : type === 'toll' ? '过路费' : '',
+  expenseDate: '',
+  amount: '',
+  note: '',
+  startOdometerUrl: '',
+  startMileage: '',
+  startNavShots: [],
+  endOdometerUrl: '',
+  endMileage: '',
+  endNavShots: [],
+  voucherUrls: [],
+  photoUrls: [],
+});
+
+const shotsFromUrls = (urls: string[], remarks?: string[]): ExpenseNavShot[] =>
+  (urls || []).filter(Boolean).map((url, i) => ({
+    url,
+    remark: remarks?.[i] || '',
+  }));
+
+function claimToLines(claim?: TripExpenseClaim | null): DraftLine[] {
+  if (!claim) return [emptyLine('trip')];
+  const raw = Array.isArray(claim.lineItems) ? claim.lineItems : [];
+  if (raw.length) {
+    return raw.map((item) => lineFromApi(item));
+  }
+  // 兼容旧数据：合成一条行程明细
+  const hasTrip =
+    !!claim.startOdometerUrl ||
+    !!claim.endOdometerUrl ||
+    (claim.startNavUrls && claim.startNavUrls.length > 0) ||
+    !!claim.startNavUrl ||
+    Number(claim.claimAmount ?? claim.amount) > 0;
+  if (!hasTrip || claim.tripSkipped) return [emptyLine('trip')];
+  return [
+    {
+      ...emptyLine('trip'),
+      startOdometerUrl: claim.startOdometerUrl || '',
+      startMileage: claim.startMileage != null ? String(claim.startMileage) : '',
+      startNavShots: shotsFromUrls(
+        claim.startNavUrls?.length
+          ? claim.startNavUrls
+          : claim.startNavUrl
+            ? [claim.startNavUrl]
+            : [],
+      ),
+      endOdometerUrl: claim.endOdometerUrl || '',
+      endMileage: claim.endMileage != null ? String(claim.endMileage) : '',
+      endNavShots: shotsFromUrls(
+        claim.endNavUrls?.length
+          ? claim.endNavUrls
+          : claim.endNavUrl
+            ? [claim.endNavUrl]
+            : [],
+      ),
+      voucherUrls: claim.voucherUrls || [],
+      amount:
+        claim.claimAmount != null || claim.amount != null
+          ? String(Number(claim.claimAmount ?? claim.amount) || '')
+          : '',
+      note: claim.note || '',
+    },
+  ];
+}
+
+function lineFromApi(item: ExpenseLineItem): DraftLine {
+  const type: LineType =
+    item.type === 'trip' || item.type === 'toll' || item.type === 'other'
+      ? item.type
+      : 'other';
+  return {
+    id: item.id || newId(),
+    type,
+    content:
+      type === 'trip'
+        ? '行程'
+        : type === 'toll'
+          ? '过路费'
+          : String(item.content || ''),
+    expenseDate: toDateValue(item.expenseDate),
+    amount:
+      item.amount != null && item.amount !== ''
+        ? String(Number(item.amount) || '')
+        : '',
+    note: item.note || '',
+    startOdometerUrl: item.startOdometerUrl || '',
+    startMileage:
+      item.startMileage != null && item.startMileage !== ''
+        ? String(item.startMileage)
+        : '',
+    startNavShots: Array.isArray(item.startNavShots)
+      ? item.startNavShots.map((s) => ({ url: s.url, remark: s.remark || '' }))
+      : [],
+    endOdometerUrl: item.endOdometerUrl || '',
+    endMileage:
+      item.endMileage != null && item.endMileage !== ''
+        ? String(item.endMileage)
+        : '',
+    endNavShots: Array.isArray(item.endNavShots)
+      ? item.endNavShots.map((s) => ({ url: s.url, remark: s.remark || '' }))
+      : [],
+    voucherUrls: item.voucherUrls || [],
+    photoUrls: item.photoUrls || [],
+  };
+}
+
+function toPayloadLines(lines: DraftLine[]): ExpenseLineItem[] {
+  return lines.map((line) => {
+    const startM = line.startMileage === '' ? null : Number(line.startMileage);
+    const endM = line.endMileage === '' ? null : Number(line.endMileage);
+    let mileageKm: number | null = null;
+    if (
+      startM != null &&
+      endM != null &&
+      Number.isFinite(startM) &&
+      Number.isFinite(endM) &&
+      endM >= startM
+    ) {
+      mileageKm = Math.round((endM - startM) * 10) / 10;
+    }
+    return {
+      id: line.id,
+      type: line.type,
+      content:
+        line.type === 'trip'
+          ? '行程'
+          : line.type === 'toll'
+            ? '过路费'
+            : line.content.trim(),
+      expenseDate: toDateValue(line.expenseDate) || null,
+      amount: Number(line.amount) || 0,
+      note: line.note.trim() || null,
+      startOdometerUrl: line.startOdometerUrl || null,
+      startMileage: startM,
+      startNavShots: line.startNavShots,
+      endOdometerUrl: line.endOdometerUrl || null,
+      endMileage: endM,
+      endNavShots: line.endNavShots,
+      mileageKm,
+      voucherUrls: line.voucherUrls,
+      photoUrls: line.photoUrls,
+    };
+  });
+}
 
 export default function FinanceExpensePage() {
   const { id = '' } = useParams();
@@ -31,32 +294,22 @@ export default function FinanceExpensePage() {
   const navigate = useNavigate();
   const userId = useAuthStore((s) => s.user?.id);
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const [pickTarget, setPickTarget] = useState<string | null>(null);
-  const [multiPick, setMultiPick] = useState(false);
+  const [pickMulti, setPickMulti] = useState(false);
+  const [pickSheetOpen, setPickSheetOpen] = useState(false);
 
   const [item, setItem] = useState<MobileFinanceCase>();
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [retryTick, setRetryTick] = useState(0);
   const [unitId, setUnitId] = useState(search.get('unitId') || '');
-  const [step, setStep] = useState<Step>(
-    search.get('step') === 'end' ? 'end' : 'start',
-  );
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [viewer, setViewer] = useState<{ urls: string[]; index: number } | null>(null);
 
-  const [tripSkipped, setTripSkipped] = useState(false);
-  /** 开始页：先选有行程/无行程；fix=1 或点「改为填写」时进入表单 */
-  const [showStartForm, setShowStartForm] = useState(search.get('fix') === '1');
-
-  const [startOdometerUrl, setStartOdometerUrl] = useState('');
-  const [startNavUrls, setStartNavUrls] = useState<string[]>([]);
-  const [startMileage, setStartMileage] = useState('');
-  const [endOdometerUrl, setEndOdometerUrl] = useState('');
-  const [endNavUrls, setEndNavUrls] = useState<string[]>([]);
-  const [endMileage, setEndMileage] = useState('');
-  const [amount, setAmount] = useState('');
-  const [voucherUrls, setVoucherUrls] = useState<string[]>([]);
-  const [note, setNote] = useState('');
+  const [lines, setLines] = useState<DraftLine[]>([emptyLine('trip')]);
   const [status, setStatus] = useState('draft');
   const [reviewNote, setReviewNote] = useState<string | null>(null);
   const [claimAmount, setClaimAmount] = useState<string | null>(null);
@@ -64,188 +317,144 @@ export default function FinanceExpensePage() {
 
   const unitLabel = item?.unitLabel || '台';
   const isMulti = item?.assignMode === 'multi';
-  const afterInspect = search.get('after') === 'inspect';
-  const forceFix = search.get('fix') === '1';
-
-  const myUnits = useMemo(() => {
-    const units = item?.units || [];
-    if (!userId) return units;
-    const mine = units.filter(
-      (u) =>
-        u.inspectorId === userId &&
-        ['claimed', 'submitted', 'completed'].includes(u.status),
-    );
-    if (mine.length) return mine;
-    return !isMulti && units[0] ? [units[0]] : mine;
-  }, [item?.units, userId, isMulti]);
 
   const applyClaim = (claim?: TripExpenseClaim | null) => {
-    if (!claim) {
-      setTripSkipped(false);
-      if (!forceFix) setShowStartForm(false);
-      return;
-    }
-    setTripSkipped(!!claim.tripSkipped);
-    setStartOdometerUrl(claim.startOdometerUrl || '');
-    setStartNavUrls(
-      Array.isArray(claim.startNavUrls) && claim.startNavUrls.length
-        ? claim.startNavUrls.filter(Boolean)
-        : claim.startNavUrl
-          ? [claim.startNavUrl]
-          : [],
-    );
-    setStartMileage(claim.startMileage != null ? String(claim.startMileage) : '');
-    setEndOdometerUrl(claim.endOdometerUrl || '');
-    setEndNavUrls(
-      Array.isArray(claim.endNavUrls) && claim.endNavUrls.length
-        ? claim.endNavUrls.filter(Boolean)
-        : claim.endNavUrl
-          ? [claim.endNavUrl]
-          : [],
-    );
-    setEndMileage(claim.endMileage != null ? String(claim.endMileage) : '');
-    const declared = claim.claimAmount ?? claim.amount;
-    setAmount(declared != null && Number(declared) ? String(Number(declared)) : '');
-    setVoucherUrls(claim.voucherUrls || []);
-    setNote(claim.note || '');
-    setStatus(claim.status || 'draft');
-    setReviewNote(claim.reviewNote || null);
-    setClaimAmount(claim.claimAmount ?? null);
-    setApprovedAmount(claim.status === 'approved' ? claim.amount : null);
-    const hasStart = !!(
-      claim.startOdometerUrl &&
-      ((claim.startNavUrls && claim.startNavUrls.length) || claim.startNavUrl) &&
-      claim.startMileage != null &&
-      claim.startMileage !== ''
-    );
-    if (forceFix || hasStart) setShowStartForm(true);
-    else if (claim.tripSkipped) setShowStartForm(false);
-  };
-
-  useEffect(() => {
-    void fetchMyFinanceCase(id).then((data) => {
-      setItem(data);
-      const units = data.units || [];
-      const qUnit = search.get('unitId');
-      let nextUnit = qUnit || '';
-      if (!nextUnit) {
-        const mine = units.filter(
-          (u) =>
-            u.inspectorId === userId &&
-            ['claimed', 'submitted', 'completed'].includes(u.status),
-        );
-        nextUnit = mine[0]?.id || units[0]?.id || '';
-      }
-      setUnitId(nextUnit);
-      if (search.get('step') === 'end') setStep('end');
-      applyClaim((data.expenses || []).find((e) => e.workUnitId === nextUnit));
-    });
-  }, [id, search, userId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!item || !unitId) return;
-    const claim = (item.expenses || []).find((e) => e.workUnitId === unitId);
-    if (claim) applyClaim(claim);
-    else {
-      setTripSkipped(false);
-      setStartOdometerUrl('');
-      setStartNavUrls([]);
-      setStartMileage('');
-      setEndOdometerUrl('');
-      setEndNavUrls([]);
-      setEndMileage('');
-      setAmount('');
-      setVoucherUrls([]);
-      setNote('');
+    setLines(claimToLines(claim));
+    if (!claim || claim.tripSkipped) {
       setStatus('draft');
       setReviewNote(null);
       setClaimAmount(null);
       setApprovedAmount(null);
-      setShowStartForm(forceFix);
+      return;
     }
-  }, [unitId]); // eslint-disable-line react-hooks/exhaustive-deps
+    setStatus(claim.status || 'draft');
+    setReviewNote(claim.reviewNote || null);
+    setClaimAmount(claim.claimAmount ?? null);
+    setApprovedAmount(claim.status === 'approved' ? claim.amount : null);
+  };
+
+  useEffect(() => {
+    void (async () => {
+      setLoading(true);
+      setLoadError('');
+      try {
+        const data = await fetchMyFinanceCase(id);
+        setItem(data);
+        const units = data.units || [];
+        const qUnit = search.get('unitId');
+        let nextUnit = qUnit || '';
+        if (!nextUnit) {
+          const mine = units.filter(
+            (u) =>
+              u.inspectorId === userId &&
+              ['claimed', 'submitted', 'completed'].includes(u.status),
+          );
+          nextUnit = mine[0]?.id || units[0]?.id || '';
+        }
+        setUnitId(nextUnit);
+        const myClaim =
+          (data.expenses || []).find((e) => e.inspectorId === userId) ||
+          (data.expenses || []).find((e) => e.workUnitId === nextUnit);
+        applyClaim(myClaim);
+      } catch {
+        setItem(undefined);
+        setLoadError('费用明细加载失败，请检查网络后重试');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [id, search, userId, retryTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const readonly = status === 'submitted' || status === 'approved';
-  const currentUnit =
-    myUnits.find((u) => u.id === unitId) || item?.units?.find((u) => u.id === unitId);
-  const mileageDiff = useMemo(() => {
-    const s = Number(startMileage);
-    const e = Number(endMileage);
-    if (!Number.isFinite(s) || !Number.isFinite(e) || e < s) return null;
-    return Math.round((e - s) * 10) / 10;
-  }, [startMileage, endMileage]);
+  const totalAmount = useMemo(
+    () => lines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0),
+    [lines],
+  );
 
-  if (!item) {
-    return (
-      <div className="mobile-finance-page">
-        <Loading vertical>加载中...</Loading>
-      </div>
+  const updateLine = (lineId: string, patch: Partial<DraftLine>) => {
+    setLines((prev) =>
+      prev.map((line) => (line.id === lineId ? { ...line, ...patch } : line)),
     );
-  }
+  };
 
-  const goAfterStart = () => {
-    if (afterInspect) {
-      const taskId =
-        currentUnit?.inspectionTaskId ||
-        item.activeUnit?.inspectionTaskId ||
-        item.inspectionTaskId;
-      if (taskId) {
-        navigate(`/m/inspection/${taskId}`, { replace: true });
-        return;
-      }
-    }
-    navigate(`/m/finance-cases/${id}`, { replace: true });
+  const setLineType = (lineId: string, type: LineType) => {
+    setLines((prev) =>
+      prev.map((line) => {
+        if (line.id !== lineId) return line;
+        return {
+          ...line,
+          type,
+          content:
+            type === 'trip' ? '行程' : type === 'toll' ? '过路费' : '',
+        };
+      }),
+    );
+  };
+
+  const addLine = (type: LineType = 'toll') => {
+    setLines((prev) => [...prev, emptyLine(type)]);
+  };
+
+  const copyLine = (lineId: string) => {
+    setLines((prev) => {
+      const src = prev.find((l) => l.id === lineId);
+      if (!src) return prev;
+      return [
+        ...prev,
+        {
+          ...src,
+          id: newId(),
+          // 复制时不带图，避免误交旧凭证；字段可改
+          startOdometerUrl: '',
+          startMileage: '',
+          startNavShots: [],
+          endOdometerUrl: '',
+          endMileage: '',
+          endNavShots: [],
+          voucherUrls: [],
+          photoUrls: [],
+        },
+      ];
+    });
+  };
+
+  const removeLine = (lineId: string) => {
+    setLines((prev) => (prev.length <= 1 ? prev : prev.filter((l) => l.id !== lineId)));
   };
 
   const openPick = (target: string, multi = false) => {
-    if (readonly) return;
+    if (readonly || uploading) return;
     setPickTarget(target);
-    setMultiPick(multi);
-    fileRef.current?.click();
+    setPickMulti(multi);
+    setPickSheetOpen(true);
   };
 
-  const onPick = async (files: FileList | null) => {
-    if (!files?.length || !pickTarget || readonly) return;
-    setUploading(true);
-    try {
-      const list = multiPick ? Array.from(files).slice(0, 12) : [files[0]];
-      for (const file of list) {
-        const res = await uploadFinanceWorkPhoto(id, file);
-        const url = res?.url;
-        if (!url) continue;
-        if (pickTarget === 'startOdo') {
-          setStartOdometerUrl(url);
-          await runOcr(url, 'start');
-        } else if (pickTarget === 'startNav') {
-          setStartNavUrls((p) => [...p, url].slice(0, 12));
-        } else if (pickTarget === 'endOdo') {
-          setEndOdometerUrl(url);
-          await runOcr(url, 'end');
-        } else if (pickTarget === 'endNav') {
-          setEndNavUrls((p) => [...p, url].slice(0, 12));
-        } else if (pickTarget === 'voucher') {
-          setVoucherUrls((p) => [...p, url].slice(0, 20));
-        }
+  const runFilePick = (mode: 'camera' | 'gallery') => {
+    const multi = pickMulti && mode === 'gallery';
+    if (mode === 'camera') {
+      if (cameraRef.current) {
+        cameraRef.current.multiple = false;
+        setTimeout(() => cameraRef.current?.click(), 0);
       }
-      Toast.success('已上传');
-    } catch {
-      /* */
-    } finally {
-      setUploading(false);
-      setPickTarget(null);
-      setMultiPick(false);
-      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
+    if (fileRef.current) {
+      fileRef.current.multiple = multi;
+      setTimeout(() => fileRef.current?.click(), 0);
     }
   };
 
-  const runOcr = async (imageUrl: string, kind: 'start' | 'end') => {
-    if (!unitId) return;
+  const runOcr = async (lineId: string, imageUrl: string, kind: 'start' | 'end') => {
     setOcrBusy(true);
     try {
-      const res = await ocrUnitMileage(id, unitId, imageUrl, kind);
+      const res = await ocrMyMileage(id, imageUrl, kind);
       if (res.mileage != null) {
-        if (kind === 'start') setStartMileage(String(res.mileage));
-        else setEndMileage(String(res.mileage));
+        updateLine(
+          lineId,
+          kind === 'start'
+            ? { startMileage: String(res.mileage) }
+            : { endMileage: String(res.mileage) },
+        );
         Toast.success(`识别里程 ${res.mileage} km`);
       } else {
         Toast.info('未识别到里程数字，请在下方手填');
@@ -257,120 +466,208 @@ export default function FinanceExpensePage() {
     }
   };
 
-  const payload = (extra?: { tripSkipped?: boolean }) => ({
-    startOdometerUrl: startOdometerUrl || null,
-    startNavUrls,
-    startNavUrl: startNavUrls[0] || null,
-    startMileage: startMileage === '' ? null : Number(startMileage),
-    endOdometerUrl: endOdometerUrl || null,
-    endNavUrls,
-    endNavUrl: endNavUrls[0] || null,
-    endMileage: endMileage === '' ? null : Number(endMileage),
-    amount: Number(amount) || 0,
-    voucherUrls,
-    note,
-    ...extra,
-  });
-
-  const saveSkip = async () => {
-    if (!unitId) return Toast.fail(`请先选择${unitLabel}`);
-    setBusy(true);
+  const onPick = async (files: FileList | null) => {
+    if (!files?.length || !pickTarget || readonly) return;
+    const multi = pickMulti;
+    setUploading(true);
     try {
-      const saved = await saveUnitTripExpense(id, unitId, {
-        tripSkipped: true,
-        amount: 0,
-        voucherUrls: [],
-      });
-      setStatus(saved.status);
-      setTripSkipped(true);
-      setShowStartForm(false);
-      Toast.success('已标记无行程，可直接开工');
-      goAfterStart();
+      const list = multi ? Array.from(files).slice(0, 12) : [files[0]];
+      const uploaded: string[] = [];
+      for (let i = 0; i < list.length; i += 1) {
+        const compressed = await compressImage(list[i]);
+        const res = await uploadFinanceWorkPhoto(id, compressed);
+        const url = res?.url;
+        if (!url) continue;
+        uploaded.push(url);
+      }
+      if (!uploaded.length) {
+        Toast.fail('上传失败');
+        return;
+      }
+
+      const [kind, lineId] = pickTarget.split(':');
+      if (!lineId) return;
+
+      if (kind === 'startOdo') {
+        updateLine(lineId, { startOdometerUrl: uploaded[0], startMileage: '' });
+        await runOcr(lineId, uploaded[0], 'start');
+      } else if (kind === 'endOdo') {
+        updateLine(lineId, { endOdometerUrl: uploaded[0], endMileage: '' });
+        await runOcr(lineId, uploaded[0], 'end');
+      } else if (kind === 'startNav') {
+        setLines((prev) =>
+          prev.map((line) =>
+            line.id === lineId
+              ? {
+                  ...line,
+                  startNavShots: [
+                    ...line.startNavShots,
+                    ...uploaded.map((url) => ({ url, remark: '' })),
+                  ].slice(0, 12),
+                }
+              : line,
+          ),
+        );
+        Toast.success(uploaded.length > 1 ? `已上传 ${uploaded.length} 张` : '已上传');
+      } else if (kind === 'endNav') {
+        setLines((prev) =>
+          prev.map((line) =>
+            line.id === lineId
+              ? {
+                  ...line,
+                  endNavShots: [
+                    ...line.endNavShots,
+                    ...uploaded.map((url) => ({ url, remark: '' })),
+                  ].slice(0, 12),
+                }
+              : line,
+          ),
+        );
+        Toast.success(uploaded.length > 1 ? `已上传 ${uploaded.length} 张` : '已上传');
+      } else if (kind === 'voucher') {
+        setLines((prev) =>
+          prev.map((line) =>
+            line.id === lineId
+              ? {
+                  ...line,
+                  voucherUrls: [...line.voucherUrls, ...uploaded].slice(0, 20),
+                }
+              : line,
+          ),
+        );
+        Toast.success(uploaded.length > 1 ? `已上传 ${uploaded.length} 张` : '已上传');
+      } else if (kind === 'photo') {
+        setLines((prev) =>
+          prev.map((line) =>
+            line.id === lineId
+              ? {
+                  ...line,
+                  photoUrls: [...line.photoUrls, ...uploaded].slice(0, 20),
+                }
+              : line,
+          ),
+        );
+        Toast.success(uploaded.length > 1 ? `已上传 ${uploaded.length} 张` : '已上传');
+      }
     } catch {
-      /* */
+      Toast.fail('上传失败');
     } finally {
-      setBusy(false);
+      setUploading(false);
+      setPickTarget(null);
+      setPickMulti(false);
+      if (fileRef.current) {
+        fileRef.current.value = '';
+        fileRef.current.multiple = false;
+      }
+      if (cameraRef.current) {
+        cameraRef.current.value = '';
+      }
     }
   };
 
-  const saveStart = async () => {
-    if (!unitId) return Toast.fail(`请先选择${unitLabel}`);
-    if (!startOdometerUrl || !startNavUrls.length) {
-      return Toast.fail('请上传开始里程表和导航截图');
+  const validateDraft = (forSubmit: boolean) => {
+    if (!lines.length) {
+      Toast.fail('请至少添加一条费用明细');
+      return false;
     }
-    if (startMileage === '' || !Number.isFinite(Number(startMileage))) {
-      return Toast.fail('请填写开始里程');
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      const n = i + 1;
+      if (line.type === 'other' && !line.content.trim()) {
+        Toast.fail(`费用明细 ${n}：请填写内容`);
+        return false;
+      }
+      if (forSubmit && !line.expenseDate) {
+        Toast.fail(`费用明细 ${n}：请选择日期`);
+        return false;
+      }
+      if (line.type === 'trip') {
+        if (forSubmit) {
+          if (!line.startOdometerUrl || !line.startNavShots.length) {
+            Toast.fail(`费用明细 ${n}：请上传开始里程图和导航截图`);
+            return false;
+          }
+          if (line.startMileage === '' || !Number.isFinite(Number(line.startMileage))) {
+            Toast.fail(`费用明细 ${n}：请填写开始里程`);
+            return false;
+          }
+          if (!line.endOdometerUrl || !line.endNavShots.length) {
+            Toast.fail(`费用明细 ${n}：请上传结束里程图和导航截图`);
+            return false;
+          }
+          if (line.endMileage === '' || !Number.isFinite(Number(line.endMileage))) {
+            Toast.fail(`费用明细 ${n}：请填写结束里程`);
+            return false;
+          }
+          if (Number(line.endMileage) < Number(line.startMileage)) {
+            Toast.fail(`费用明细 ${n}：结束里程不能小于开始里程`);
+            return false;
+          }
+          // 行程已有里程/导航作依据，费用凭证可选
+        }
+      } else if (forSubmit) {
+        if (!(Number(line.amount) > 0)) {
+          Toast.fail(`费用明细 ${n}：请填写金额`);
+          return false;
+        }
+        if (!line.photoUrls.length) {
+          Toast.fail(`费用明细 ${n}：请上传照片`);
+          return false;
+        }
+      }
     }
-    setBusy(true);
-    try {
-      const saved = await saveUnitTripExpense(id, unitId, {
-        ...payload({ tripSkipped: false }),
+    if (forSubmit) {
+      const rangeIndex = new Map<string, number[]>();
+      lines.forEach((line, i) => {
+        if (line.type !== 'trip') return;
+        if (line.startMileage === '' || line.endMileage === '') return;
+        const startM = Number(line.startMileage);
+        const endM = Number(line.endMileage);
+        if (!Number.isFinite(startM) || !Number.isFinite(endM)) return;
+        const key = `${startM.toFixed(1)}->${endM.toFixed(1)}`;
+        const list = rangeIndex.get(key) || [];
+        list.push(i + 1);
+        rangeIndex.set(key, list);
       });
-      setStatus(saved.status);
-      setTripSkipped(false);
-      Toast.success('开始行程已保存，可以开工');
-      goAfterStart();
-    } catch {
-      /* */
-    } finally {
-      setBusy(false);
+      for (const [key, idxs] of rangeIndex) {
+        if (idxs.length < 2) continue;
+        const [start, end] = key.split('->');
+        Toast.fail(
+          `行程明细 ${idxs.join('、')} 起止里程完全相同（${start} → ${end}），请核对是否重复填写`,
+        );
+        return false;
+      }
     }
+    return true;
   };
 
-  const saveEnd = async (submitFee: boolean) => {
-    if (!unitId) return Toast.fail(`请先选择${unitLabel}`);
-    if (!endOdometerUrl || !endNavUrls.length) {
-      return Toast.fail('请上传结束里程表和导航截图');
-    }
-    if (endMileage === '' || !Number.isFinite(Number(endMileage))) {
-      return Toast.fail('请填写结束里程');
-    }
-    if (submitFee && Number(amount) > 0 && !voucherUrls.length) {
-      return Toast.fail('有报销金额时请上传费用凭证');
-    }
+  const save = async (submit: boolean) => {
+    if (!validateDraft(submit)) return;
     const autoFinish = search.get('autoFinish') === '1';
     setBusy(true);
     try {
-      // 与 trip-steps.persistTripEnd 一致：结束保存只带非空开始字段，避免空数组冲掉开工导航图
-      const saved = await saveUnitTripExpense(id, unitId, {
-        tripSkipped: false,
-        ...(startOdometerUrl ? { startOdometerUrl } : {}),
-        ...(startNavUrls.length
-          ? { startNavUrls, startNavUrl: startNavUrls[0] }
-          : {}),
-        ...(startMileage !== '' ? { startMileage: Number(startMileage) } : {}),
-        endOdometerUrl: endOdometerUrl || null,
-        endNavUrls,
-        endNavUrl: endNavUrls[0] || null,
-        endMileage: endMileage === '' ? null : Number(endMileage),
-        amount: Number(amount) || 0,
-        voucherUrls,
-        note,
-        submit: submitFee && Number(amount) > 0,
+      const saved = await saveMyTripExpense(id, {
+        lineItems: toPayloadLines(lines),
+        submit,
+        ...(unitId ? { workUnitId: unitId } : {}),
       });
-      setStatus(saved.status);
-
-      if (autoFinish || item.status === 'working') {
+      applyClaim(saved);
+      if (autoFinish && submit) {
         try {
-          if (isMulti && unitId) {
+          const planned = Math.max(1, Number(item?.plannedUnits) || 1);
+          const unitFlow = isMulti || planned > 1;
+          if (unitId) {
             await completeFinanceUnit(id, unitId, { skipErrorToast: true });
-          } else {
+          } else if (!unitFlow) {
             await finishFinanceCase(id, { skipErrorToast: true });
           }
-          Toast.success(
-            submitFee && Number(amount) > 0 ? '费用已提交，本单已自动完工' : '本单已自动完工',
-          );
-          navigate('/m/tasks', { replace: true });
+          Toast.success(submit ? '费用已提交，本单已自动完工' : '已保存');
           return;
         } catch {
-          /* 报告未提交等情况：仅保存行程 */
+          /* 仅保存费用 */
         }
       }
-
-      Toast.success(
-        submitFee && Number(amount) > 0 ? '已提交费用审核' : '结束行程与费用已保存',
-      );
-      navigate(`/m/finance-cases/${id}`, { replace: true });
+      Toast.success(submit ? '已提交费用审核' : '费用明细已保存');
     } catch {
       /* */
     } finally {
@@ -395,7 +692,58 @@ export default function FinanceExpensePage() {
     </div>
   );
 
-  const needChoice = step === 'start' && !showStartForm && !readonly;
+  const uploadAdd = (target: string, multi = false) => (
+    <button
+      type="button"
+      className="trip-upload-add"
+      disabled={readonly || uploading}
+      aria-label="添加照片"
+      onClick={() => openPick(target, multi)}
+    >
+      {uploading && pickTarget === target ? '…' : '+'}
+    </button>
+  );
+
+  const mileageDiff = (line: DraftLine) => {
+    const s = Number(line.startMileage);
+    const e = Number(line.endMileage);
+    if (!Number.isFinite(s) || !Number.isFinite(e) || e < s) return null;
+    return Math.round((e - s) * 10) / 10;
+  };
+
+  if (loading) {
+    return (
+      <div className="mobile-finance-page">
+        <Loading vertical>加载中...</Loading>
+      </div>
+    );
+  }
+
+  if (loadError || !item) {
+    return (
+      <div className="mobile-finance-page">
+        <header className="mobile-finance-head">
+          <button type="button" onClick={() => navigate(`/m/finance-cases/${id}`)}>
+            ← 返回
+          </button>
+          <h1>费用明细</h1>
+        </header>
+        <section className="mobile-finance-card">
+          <p className="trip-reject" style={{ marginTop: 0 }}>
+            {loadError || '案例不存在'}
+          </p>
+          <button
+            type="button"
+            className="mobile-finance-primary"
+            style={{ width: '100%', marginTop: 12 }}
+            onClick={() => setRetryTick((n) => n + 1)}
+          >
+            重试
+          </button>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="mobile-finance-page">
@@ -403,7 +751,7 @@ export default function FinanceExpensePage() {
         <button type="button" onClick={() => navigate(`/m/finance-cases/${id}`)}>
           ← 返回
         </button>
-        <h1>行程补填 / 查看</h1>
+        <h1>费用明细</h1>
       </header>
 
       <section className="mobile-finance-card">
@@ -412,301 +760,324 @@ export default function FinanceExpensePage() {
           <span className="mobile-finance-status">{STATUS_LABEL[status] || status}</span>
         </div>
         <div className="trip-remind-banner" style={{ marginTop: 10 }}>
-          <strong>异常补填入口</strong>
+          <strong>按需填写</strong>
           <p>
-            正常请在作业产品线步骤里完成开始/结束行程。本页仅用于卡住补填或查看审核结果。
+            可添加多条费用明细。行程需填里程与导航；过路费等上传凭证即可。不报销直接返回。
           </p>
         </div>
-        {tripSkipped && !showStartForm && (
-          <p className="trip-skip-tag">已标记：无行程（管理员可见）</p>
-        )}
         {status === 'approved' && approvedAmount != null && (
           <p className="trip-diff" style={{ marginTop: 10 }}>
-            申报 ¥{Number(claimAmount || amount || 0).toFixed(2)} · 核定报销{' '}
+            申报 ¥{Number(claimAmount || totalAmount || 0).toFixed(2)} · 核定报销{' '}
             <strong>¥{Number(approvedAmount).toFixed(2)}</strong>
           </p>
         )}
         {reviewNote && status === 'rejected' && (
           <p className="trip-reject">驳回原因：{reviewNote}</p>
         )}
-        {myUnits.length > 1 && (
-          <label className="trip-field" style={{ marginTop: 12 }}>
-            <span>选择{unitLabel}</span>
-            <select
-              value={unitId}
-              disabled={readonly}
-              onChange={(e) => setUnitId(e.target.value)}
-            >
-              {myUnits.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {unitLabel} #{u.seq}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {currentUnit && myUnits.length <= 1 && (
+        {isMulti && unitId ? (
           <p className="trip-unit-tag">
-            {unitLabel} #{currentUnit.seq}
+            关联{unitLabel} · 可选
           </p>
-        )}
+        ) : null}
       </section>
 
-      {!needChoice && (
-        <div className="trip-steps">
+      {lines.map((line, index) => {
+        const diff = mileageDiff(line);
+        return (
+          <section className="exp-line-card" key={line.id}>
+            <div className="exp-line-head">
+              <h3>费用明细 {index + 1}</h3>
+              {!readonly && (
+                <div className="exp-line-actions">
+                  <button type="button" onClick={() => copyLine(line.id)}>
+                    复制
+                  </button>
+                  <button
+                    type="button"
+                    className="is-danger"
+                    disabled={lines.length <= 1}
+                    onClick={() => removeLine(line.id)}
+                  >
+                    删除
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <label className="trip-field">
+              <span>类型 *</span>
+              <select
+                value={line.type}
+                disabled={readonly}
+                onChange={(e) => setLineType(line.id, e.target.value as LineType)}
+              >
+                <option value="trip">行程</option>
+                <option value="toll">过路费</option>
+                <option value="other">其他</option>
+              </select>
+            </label>
+
+            <label className="trip-field">
+              <span>内容 *</span>
+              <input
+                value={line.content}
+                disabled={readonly || line.type !== 'other'}
+                placeholder={line.type === 'other' ? '请填写内容' : undefined}
+                onChange={(e) => updateLine(line.id, { content: e.target.value })}
+              />
+            </label>
+
+            {line.type === 'trip' ? (
+              <>
+                <h4 className="exp-line-sub">开始里程表</h4>
+                <div className="trip-upload-row">
+                  {line.startOdometerUrl
+                    ? thumb(line.startOdometerUrl, () =>
+                        updateLine(line.id, { startOdometerUrl: '', startMileage: '' }),
+                      )
+                    : uploadAdd(`startOdo:${line.id}`)}
+                </div>
+                <label className="trip-field">
+                  <span>开始里程（km）</span>
+                  <input
+                    inputMode="decimal"
+                    value={line.startMileage}
+                    disabled={readonly}
+                    placeholder="识别后可改"
+                    onChange={(e) => updateLine(line.id, { startMileage: e.target.value })}
+                  />
+                </label>
+                {line.startOdometerUrl && !readonly && (
+                  <button
+                    type="button"
+                    className="trip-ocr-link"
+                    disabled={ocrBusy}
+                    onClick={() => void runOcr(line.id, line.startOdometerUrl, 'start')}
+                  >
+                    {ocrBusy ? '识别中…' : '重新识别里程'}
+                  </button>
+                )}
+
+                <h4 className="exp-line-sub">开始导航截图</h4>
+                <p className="exp-line-hint">可多张；每张填一条备注</p>
+                {line.startNavShots.map((shot, idx) => (
+                  <div className="exp-nav-shot" key={`${shot.url}-${idx}`}>
+                    <div className="trip-upload-row">
+                      {thumb(
+                        shot.url,
+                        () =>
+                          updateLine(line.id, {
+                            startNavShots: line.startNavShots.filter((_, i) => i !== idx),
+                          }),
+                        line.startNavShots.map((s) => s.url),
+                        idx,
+                      )}
+                    </div>
+                    <label className="trip-field">
+                      <span>备注（图 {idx + 1}）</span>
+                      <input
+                        value={shot.remark || ''}
+                        disabled={readonly}
+                        placeholder="工程师自填"
+                        onChange={(e) => {
+                          const next = line.startNavShots.map((s, i) =>
+                            i === idx ? { ...s, remark: e.target.value } : s,
+                          );
+                          updateLine(line.id, { startNavShots: next });
+                        }}
+                      />
+                    </label>
+                  </div>
+                ))}
+                {!readonly && line.startNavShots.length < 12 && (
+                  <div className="trip-upload-row">
+                    {uploadAdd(`startNav:${line.id}`, true)}
+                  </div>
+                )}
+
+                <h4 className="exp-line-sub">结束导航截图</h4>
+                <p className="exp-line-hint">可多张；每张填一条备注</p>
+                {line.endNavShots.map((shot, idx) => (
+                  <div className="exp-nav-shot" key={`${shot.url}-${idx}`}>
+                    <div className="trip-upload-row">
+                      {thumb(
+                        shot.url,
+                        () =>
+                          updateLine(line.id, {
+                            endNavShots: line.endNavShots.filter((_, i) => i !== idx),
+                          }),
+                        line.endNavShots.map((s) => s.url),
+                        idx,
+                      )}
+                    </div>
+                    <label className="trip-field">
+                      <span>备注（图 {idx + 1}）</span>
+                      <input
+                        value={shot.remark || ''}
+                        disabled={readonly}
+                        placeholder="工程师自填"
+                        onChange={(e) => {
+                          const next = line.endNavShots.map((s, i) =>
+                            i === idx ? { ...s, remark: e.target.value } : s,
+                          );
+                          updateLine(line.id, { endNavShots: next });
+                        }}
+                      />
+                    </label>
+                  </div>
+                ))}
+                {!readonly && line.endNavShots.length < 12 && (
+                  <div className="trip-upload-row">
+                    {uploadAdd(`endNav:${line.id}`, true)}
+                  </div>
+                )}
+
+                <h4 className="exp-line-sub">结束里程表</h4>
+                <div className="trip-upload-row">
+                  {line.endOdometerUrl
+                    ? thumb(line.endOdometerUrl, () =>
+                        updateLine(line.id, { endOdometerUrl: '', endMileage: '' }),
+                      )
+                    : uploadAdd(`endOdo:${line.id}`)}
+                </div>
+                <label className="trip-field">
+                  <span>结束里程（km）</span>
+                  <input
+                    inputMode="decimal"
+                    value={line.endMileage}
+                    disabled={readonly}
+                    placeholder="识别后可改"
+                    onChange={(e) => updateLine(line.id, { endMileage: e.target.value })}
+                  />
+                </label>
+                {line.endOdometerUrl && !readonly && (
+                  <button
+                    type="button"
+                    className="trip-ocr-link"
+                    disabled={ocrBusy}
+                    onClick={() => void runOcr(line.id, line.endOdometerUrl, 'end')}
+                  >
+                    {ocrBusy ? '识别中…' : '重新识别里程'}
+                  </button>
+                )}
+                {diff != null && (
+                  <p className="trip-diff">
+                    里程差 <strong>{diff}</strong> km（审核参考）
+                  </p>
+                )}
+
+                <label className="trip-field">
+                  <span>日期 *</span>
+                  <ExpenseDateField
+                    value={line.expenseDate}
+                    disabled={readonly}
+                    onChange={(next) => updateLine(line.id, { expenseDate: next })}
+                  />
+                </label>
+                <label className="trip-field">
+                  <span>金额（元）</span>
+                  <input
+                    inputMode="decimal"
+                    value={line.amount}
+                    disabled={readonly}
+                    placeholder="没有费用填 0"
+                    onChange={(e) => updateLine(line.id, { amount: e.target.value })}
+                  />
+                </label>
+                <h4 className="exp-line-sub">费用凭证（可选）</h4>
+                <div className="trip-upload-row">
+                  {line.voucherUrls.map((u, idx) =>
+                    thumb(
+                      u,
+                      () =>
+                        updateLine(line.id, {
+                          voucherUrls: line.voucherUrls.filter((_, i) => i !== idx),
+                        }),
+                      line.voucherUrls,
+                      idx,
+                    ),
+                  )}
+                  {!readonly && line.voucherUrls.length < 20 && uploadAdd(`voucher:${line.id}`, true)}
+                </div>
+              </>
+            ) : (
+              <>
+                <h4 className="exp-line-sub">照片</h4>
+                <div className="trip-upload-row">
+                  {line.photoUrls.map((u, idx) =>
+                    thumb(
+                      u,
+                      () =>
+                        updateLine(line.id, {
+                          photoUrls: line.photoUrls.filter((_, i) => i !== idx),
+                        }),
+                      line.photoUrls,
+                      idx,
+                    ),
+                  )}
+                  {!readonly && line.photoUrls.length < 20 && uploadAdd(`photo:${line.id}`, true)}
+                </div>
+                <label className="trip-field">
+                  <span>日期 *</span>
+                  <ExpenseDateField
+                    value={line.expenseDate}
+                    disabled={readonly}
+                    onChange={(next) => updateLine(line.id, { expenseDate: next })}
+                  />
+                </label>
+                <label className="trip-field">
+                  <span>金额（元）*</span>
+                  <input
+                    inputMode="decimal"
+                    value={line.amount}
+                    disabled={readonly}
+                    placeholder="请输入"
+                    onChange={(e) => updateLine(line.id, { amount: e.target.value })}
+                  />
+                </label>
+              </>
+            )}
+
+            <label className="trip-field">
+              <span>备注（可选）</span>
+              <textarea
+                rows={2}
+                value={line.note}
+                disabled={readonly}
+                placeholder="可选"
+                onChange={(e) => updateLine(line.id, { note: e.target.value })}
+              />
+            </label>
+          </section>
+        );
+      })}
+
+      {!readonly && (
+        <section className="mobile-finance-card exp-add-card">
+          <button type="button" className="exp-add-btn" onClick={() => addLine('toll')}>
+            + 添加明细
+          </button>
+          <p className="exp-line-hint" style={{ marginTop: 8 }}>
+            合计申报 ¥{totalAmount.toFixed(2)}
+          </p>
           <button
             type="button"
-            className={step === 'start' ? 'is-active' : ''}
-            onClick={() => setStep('start')}
+            className="mobile-finance-secondary"
+            style={{ width: '100%', marginTop: 12 }}
+            disabled={busy}
+            onClick={() => void save(false)}
           >
-            1. 开始
+            保存草稿
           </button>
           <button
             type="button"
-            className={step === 'end' ? 'is-active' : ''}
-            onClick={() => {
-              if (tripSkipped && !showStartForm) {
-                Toast.info('无行程无需填写结束里程');
-                return;
-              }
-              setStep('end');
-            }}
+            className="mobile-finance-primary"
+            style={{ width: '100%', marginTop: 10 }}
+            disabled={busy}
+            onClick={() => void save(true)}
           >
-            2. 结束与费用
+            提交费用审核
           </button>
-        </div>
-      )}
-
-      {needChoice && (
-        <section className="mobile-finance-card">
-          <h3>补选行程</h3>
-          <div className="trip-choice-grid">
-            <button
-              type="button"
-              className="trip-choice-btn is-primary"
-              disabled={busy}
-              onClick={() => {
-                setShowStartForm(true);
-                setTripSkipped(false);
-              }}
-            >
-              <strong>有行程</strong>
-              <span>补填开始里程</span>
-            </button>
-            <button
-              type="button"
-              className="trip-choice-btn"
-              disabled={busy}
-              onClick={() => void saveSkip()}
-            >
-              <strong>无行程</strong>
-              <span>标记后返回</span>
-            </button>
-          </div>
-        </section>
-      )}
-
-      {step === 'start' && showStartForm && (
-        <section className="mobile-finance-card">
-          <h3>开始里程表</h3>
-          <div className="trip-upload-row">
-            {startOdometerUrl ? (
-              thumb(startOdometerUrl, () => {
-                setStartOdometerUrl('');
-                setStartMileage('');
-              })
-            ) : (
-              <button
-                type="button"
-                className="trip-upload-btn"
-                disabled={readonly || uploading}
-                onClick={() => openPick('startOdo')}
-              >
-                拍照/上传里程表
-              </button>
-            )}
-            {startOdometerUrl && !readonly && (
-              <button
-                type="button"
-                className="mobile-finance-secondary"
-                disabled={ocrBusy}
-                onClick={() => void runOcr(startOdometerUrl, 'start')}
-              >
-                {ocrBusy ? '识别中…' : '重新识别'}
-              </button>
-            )}
-          </div>
-          <label className="trip-field">
-            <span>开始里程（km）</span>
-            <input
-              inputMode="decimal"
-              value={startMileage}
-              disabled={readonly}
-              placeholder="识别后可改"
-              onChange={(e) => setStartMileage(e.target.value)}
-            />
-          </label>
-          <h3 style={{ marginTop: 16 }}>导航截图（可多张）</h3>
-          <div className="trip-upload-row">
-            {startNavUrls.map((u, idx) =>
-              thumb(
-                u,
-                () => setStartNavUrls(startNavUrls.filter((_, i) => i !== idx)),
-                startNavUrls,
-                idx,
-              ),
-            )}
-            {!readonly && startNavUrls.length < 12 && (
-              <button
-                type="button"
-                className="trip-upload-btn"
-                disabled={uploading}
-                onClick={() => openPick('startNav', true)}
-              >
-                批量上传导航
-              </button>
-            )}
-          </div>
-          {!readonly && (
-            <button
-              type="button"
-              className="mobile-finance-primary"
-              style={{ width: '100%', marginTop: 16 }}
-              disabled={busy}
-              onClick={() => void saveStart()}
-            >
-              保存开始行程
-            </button>
-          )}
-        </section>
-      )}
-
-      {step === 'end' && (
-        <section className="mobile-finance-card">
-          <div className="trip-remind-banner" style={{ marginBottom: 12 }}>
-            <strong>结束里程与费用同屏</strong>
-            <p>里程表 + 导航必填；费用自己加总填一个数，凭证可批量上传。</p>
-          </div>
-          <h3>结束里程表</h3>
-          <div className="trip-upload-row">
-            {endOdometerUrl ? (
-              thumb(endOdometerUrl, () => {
-                setEndOdometerUrl('');
-                setEndMileage('');
-              })
-            ) : (
-              <button
-                type="button"
-                className="trip-upload-btn"
-                disabled={readonly || uploading}
-                onClick={() => openPick('endOdo')}
-              >
-                拍照/上传里程表
-              </button>
-            )}
-            {endOdometerUrl && !readonly && (
-              <button
-                type="button"
-                className="mobile-finance-secondary"
-                disabled={ocrBusy}
-                onClick={() => void runOcr(endOdometerUrl, 'end')}
-              >
-                {ocrBusy ? '识别中…' : '重新识别'}
-              </button>
-            )}
-          </div>
-          <label className="trip-field">
-            <span>结束里程（km）</span>
-            <input
-              inputMode="decimal"
-              value={endMileage}
-              disabled={readonly}
-              placeholder="识别后可改"
-              onChange={(e) => setEndMileage(e.target.value)}
-            />
-          </label>
-          {mileageDiff != null && (
-            <p className="trip-diff">
-              里程差 <strong>{mileageDiff}</strong> km（审核参考）
-            </p>
-          )}
-          <h3 style={{ marginTop: 16 }}>导航截图（可多张）</h3>
-          <div className="trip-upload-row">
-            {endNavUrls.map((u, idx) =>
-              thumb(
-                u,
-                () => setEndNavUrls(endNavUrls.filter((_, i) => i !== idx)),
-                endNavUrls,
-                idx,
-              ),
-            )}
-            {!readonly && endNavUrls.length < 12 && (
-              <button
-                type="button"
-                className="trip-upload-btn"
-                disabled={uploading}
-                onClick={() => openPick('endNav', true)}
-              >
-                批量上传导航
-              </button>
-            )}
-          </div>
-
-          <h3 style={{ marginTop: 16 }}>报销费用</h3>
-          <label className="trip-field">
-            <span>申报金额（元）</span>
-            <input
-              inputMode="decimal"
-              value={amount}
-              disabled={readonly}
-              placeholder="没有费用填 0"
-              onChange={(e) => setAmount(e.target.value)}
-            />
-          </label>
-          <div className="trip-upload-row">
-            {voucherUrls.map((u, idx) =>
-              thumb(
-                u,
-                () => setVoucherUrls(voucherUrls.filter((_, i) => i !== idx)),
-                voucherUrls,
-                idx,
-              ),
-            )}
-            {!readonly && voucherUrls.length < 20 && (
-              <button
-                type="button"
-                className="trip-upload-btn"
-                disabled={uploading}
-                onClick={() => openPick('voucher', true)}
-              >
-                批量上传凭证
-              </button>
-            )}
-          </div>
-          <label className="trip-field">
-            <span>备注</span>
-            <textarea
-              rows={2}
-              value={note}
-              disabled={readonly}
-              placeholder="可选"
-              onChange={(e) => setNote(e.target.value)}
-            />
-          </label>
-
-          {!readonly && (
-            <button
-              type="button"
-              className="mobile-finance-primary"
-              style={{ width: '100%', marginTop: 16 }}
-              disabled={busy}
-              onClick={() => void saveEnd(true)}
-            >
-              {Number(amount) > 0
-                ? '保存结束里程并提交费用'
-                : '保存结束里程（无费用）'}
-            </button>
-          )}
         </section>
       )}
 
@@ -714,10 +1085,35 @@ export default function FinanceExpensePage() {
         ref={fileRef}
         type="file"
         accept="image/*"
-        capture={multiPick ? undefined : 'environment'}
-        multiple={multiPick}
         hidden
         onChange={(e) => void onPick(e.target.files)}
+      />
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        hidden
+        onChange={(e) => void onPick(e.target.files)}
+      />
+
+      <ActionSheet
+        visible={pickSheetOpen}
+        onCancel={() => {
+          setPickSheetOpen(false);
+          setPickTarget(null);
+        }}
+        cancelText="取消"
+        actions={[
+          { name: '拍照' },
+          {
+            name: pickMulti ? '从相册选择（可多选）' : '从相册选择',
+          },
+        ]}
+        onSelect={(action) => {
+          setPickSheetOpen(false);
+          runFilePick(action.name === '拍照' ? 'camera' : 'gallery');
+        }}
       />
 
       {viewer && (

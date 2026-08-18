@@ -236,7 +236,38 @@ export class SaveExpenseClaimDto {
   @IsOptional() @IsArray() @IsString({ each: true }) otherVoucherUrls?: string[];
 }
 
+export class ExpenseNavShotDto {
+  @IsString() @IsNotEmpty() url!: string;
+  @IsOptional() @IsString() @MaxLength(500) remark?: string;
+}
+
+export class ExpenseLineItemDto {
+  @IsOptional() @IsString() @MaxLength(64) id?: string;
+  @IsIn(['trip', 'toll', 'other']) type!: 'trip' | 'toll' | 'other';
+  @IsString() @MaxLength(100) content!: string;
+  @IsOptional() @IsString() @MaxLength(32) expenseDate?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) amount?: number;
+  @IsOptional() @IsString() @MaxLength(1000) note?: string;
+  @IsOptional() @IsString() startOdometerUrl?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) startMileage?: number;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => ExpenseNavShotDto)
+  startNavShots?: ExpenseNavShotDto[];
+  @IsOptional() @IsString() endOdometerUrl?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) endMileage?: number;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => ExpenseNavShotDto)
+  endNavShots?: ExpenseNavShotDto[];
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) mileageKm?: number;
+  @IsOptional() @IsArray() @IsString({ each: true }) voucherUrls?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) photoUrls?: string[];
+}
+
 export class SaveTripExpenseDto {
+  /** 新流程：多条费用明细 */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ExpenseLineItemDto)
+  lineItems?: ExpenseLineItemDto[];
   @IsOptional() @IsString() startOdometerUrl?: string;
   /** @deprecated 用 startNavUrls；仍接受单张 */
   @IsOptional() @IsString() startNavUrl?: string;
@@ -254,6 +285,7 @@ export class SaveTripExpenseDto {
   @IsOptional() @IsBoolean() submit?: boolean;
   /** 开工选择无行程；可再改为 false 并补开始里程 */
   @IsOptional() @IsBoolean() tripSkipped?: boolean;
+  @IsOptional() @IsString() workUnitId?: string;
 }
 
 export class OcrMileageDto {
@@ -324,13 +356,47 @@ export class RankAssessmentDto {
 export class SaveAssessmentDto {
   @IsString() month: string;
   @IsPostgresUuid({ message: '用户ID格式不正确' }) userId: string;
-  @Type(() => Number) @IsNumber() @Min(0) @Max(100) internalScore: number;
+  /** 已改为分项打分写入；保留兼容，不传则不改分数 */
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(100) internalScore?: number;
   /** 已取消阳光加权，保留字段兼容旧客户端，写入时忽略 */
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(100) sungrowScore?: number;
   @IsOptional() @Type(() => Number) @IsNumber() rewardAmount?: number;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) toolSubsidy?: number;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) otherSubsidy?: number;
   @IsOptional() @IsString() @MaxLength(500) subsidyRemark?: string;
+}
+
+export class AssessmentScoreRuleItemDto {
+  @IsString() @MaxLength(64) id!: string;
+  @IsString() @MaxLength(64) category!: string;
+  @IsString() @MaxLength(64) title!: string;
+  @Type(() => Number) @IsNumber() @Min(0) maxScore!: number;
+  @IsOptional() @IsString() @MaxLength(1000) description?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() sort?: number;
+  @IsIn(['base', 'bonus', 'deduct']) kind!: 'base' | 'bonus' | 'deduct';
+  @IsOptional() @IsBoolean() enabled?: boolean;
+}
+
+export class SaveAssessmentScoreRuleDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AssessmentScoreRuleItemDto)
+  items!: AssessmentScoreRuleItemDto[];
+}
+
+export class AssessmentScoreItemDto {
+  @IsString() @MaxLength(64) ruleItemId!: string;
+  @Type(() => Number) @IsNumber() @Min(0) score!: number;
+  @IsOptional() @IsString() @MaxLength(500) remark?: string;
+}
+
+export class SaveAssessmentScoreDto {
+  @IsString() month: string;
+  @IsPostgresUuid({ message: '用户ID格式不正确' }) userId: string;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AssessmentScoreItemDto)
+  items!: AssessmentScoreItemDto[];
 }
 
 export class CreateAssessmentEventDto {

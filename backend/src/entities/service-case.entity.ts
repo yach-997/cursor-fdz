@@ -53,6 +53,8 @@ export class ServiceCase {
   @Column({ name: 'inspector_id', type: 'uuid', nullable: true }) inspectorId: string | null;
   @Column({ name: 'assign_by', type: 'uuid', nullable: true }) assignBy: string | null;
   @Column({ name: 'assign_time', type: 'timestamptz', nullable: true }) assignTime: Date | null;
+  /** 派单/改派备注（网格长填写，PC/H5 可见） */
+  @Column({ name: 'assign_remark', type: 'text', nullable: true }) assignRemark: string | null;
   @Column({ name: 'finish_time', type: 'timestamptz', nullable: true }) finishTime: Date | null;
   @Column({ name: 'import_batch_id', type: 'bigint', nullable: true }) importBatchId: string | null;
   @Column({ type: 'int', default: 1 }) version: number;

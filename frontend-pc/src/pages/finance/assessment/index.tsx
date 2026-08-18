@@ -14,6 +14,8 @@ import type { SiteItem } from '../../../types';
 import { useAuthStore } from '../../../stores/auth';
 import { canUseDangerousClear, confirmDangerousClear } from '../../../utils/finance-clear';
 import AssessmentEventDrawer from '../components/AssessmentEventDrawer';
+import AssessmentScoreRuleDrawer from '../components/AssessmentScoreRuleDrawer';
+import AssessmentScoreDrawer from '../components/AssessmentScoreDrawer';
 
 const colTip = (title: string, tip: string) => (
   <span>
@@ -37,6 +39,8 @@ export default function FinanceAssessmentPage() {
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [eventTarget, setEventTarget] = useState<FinanceAssessment>();
+  const [scoreTarget, setScoreTarget] = useState<FinanceAssessment>();
+  const [ruleOpen, setRuleOpen] = useState(false);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -78,13 +82,12 @@ export default function FinanceAssessmentPage() {
     await saveFinanceAssessment({
       month,
       userId: row.userId,
-      internalScore: Number(row.internalScore || 0),
       rewardAmount: Number(row.rewardAmount || 0),
       toolSubsidy: Number(row.toolSubsidy || 0),
       otherSubsidy: Number(row.otherSubsidy || 0),
       subsidyRemark: row.subsidyRemark,
     });
-    message.success('考核与补助已保存');
+    message.success('补助已保存');
     await load();
   };
 
@@ -174,8 +177,8 @@ export default function FinanceAssessmentPage() {
     <Card className="finance-card" title="月度考核与补助">
       <div className="finance-review-tip">
         {isManager
-          ? '本页给本网格已聘工程师打分（含自己兼工程师且已聘网格）。不能改自己的分数，本人考核由管理员录入。网格内名次仅参考；全司奖罚：兼岗只进网格长池。事件扣罚可在本页「事件」补录或查看，计入月结。列表为空请先「聘用到网格」。'
-          : '网格内名次按各网格；全司工程师优/劣各3±300，网格长优/劣各1±500。网格长兼工程师只参加网格长全司排名。事件扣罚与结算审核共用同一数据：审单时登记最顺手，本页可补录或查看，最终都进月度结算。'}
+          ? '本页给本网格已聘工程师打分（含自己兼工程师且已聘网格）。不能改自己的分数，本人考核由管理员录入。点「打分」按规则填分项，总分自动汇总。网格内名次仅参考；全司奖罚：兼岗只进网格长池。'
+          : '点「打分」按规则录入分项，内部考核总分自动计算。网格内名次按各网格；全司工程师优/劣各3±300，网格长优/劣各1±500。'}
       </div>
       <Space className="finance-toolbar" wrap>
         <Input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
@@ -226,6 +229,7 @@ export default function FinanceAssessmentPage() {
             <Button type="primary" onClick={() => void rank('company_managers')}>
               一键排名全公司网格长
             </Button>
+            <Button onClick={() => setRuleOpen(true)}>打分规则配置</Button>
             {canUseDangerousClear() && (
               <Button
                 danger
@@ -265,9 +269,18 @@ export default function FinanceAssessmentPage() {
             render: (v) => v || '未挂网格',
           },
           {
-            title: '内部考核总分',
+            title: colTip('内部考核总分', '由「打分」分项自动汇总，不可手改'),
             width: 130,
-            render: (_, row) => input(row, 'internalScore', 100, isSelfRow(row)),
+            render: (_, row) => (
+              <span>
+                {Number(row.internalScore || row.totalScore || 0).toFixed(2)}
+                {row.scored ? (
+                  <Tag color="green" style={{ marginLeft: 6 }}>
+                    已打分
+                  </Tag>
+                ) : null}
+              </span>
+            ),
           },
           {
             title: '网格内名次',
@@ -320,12 +333,15 @@ export default function FinanceAssessmentPage() {
           {
             title: '操作',
             fixed: 'right',
-            width: 150,
+            width: 210,
             render: (_, row) =>
               isSelfRow(row) ? (
                 <Tag>管理员录入</Tag>
               ) : (
                 <Space size={0}>
+                  <Button type="link" onClick={() => setScoreTarget(row)}>
+                    打分
+                  </Button>
                   <Button type="link" onClick={() => void save(row)}>
                     保存
                   </Button>
@@ -344,6 +360,14 @@ export default function FinanceAssessmentPage() {
         userId={eventTarget?.userId}
         userName={eventTarget?.realName}
         onChanged={() => void load()}
+      />
+      <AssessmentScoreRuleDrawer open={ruleOpen} onClose={() => setRuleOpen(false)} />
+      <AssessmentScoreDrawer
+        open={!!scoreTarget}
+        month={month}
+        target={scoreTarget}
+        onClose={() => setScoreTarget(undefined)}
+        onSaved={() => void load()}
       />
     </Card>
   );

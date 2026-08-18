@@ -7,7 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
-import { InspectionTemplate, TemplateEntry, TemplateProductLine, Site, ServiceCase } from '../../entities';
+import { InspectionTemplate, TemplateEntry, TemplateProductLine, Site, ServiceCase, resolveEntryAiEnabled } from '../../entities';
 import { UserRole, CommonStatus, CheckType, DeviceType } from '../../common/enums';
 import { CurrentUserContext } from '../../common/interfaces';
 import {
@@ -317,20 +317,31 @@ export class TemplateService {
       order: number;
       samplePhotos: string[];
       checkType: CheckType;
+      aiEnabled?: boolean;
+      entryKind?: 'check' | 'record';
       isOptionalModule?: boolean;
     }>,
   ): TemplateEntry[] {
     return entries
-      .map((e, index) => ({
-        id: e.id || uuidv4(),
-        name: e.name,
-        description: e.description || '',
-        isRequired: !!e.isRequired,
-        order: e.order ?? index,
-        samplePhotos: e.samplePhotos || [],
-        checkType: e.checkType || CheckType.PHOTO,
-        isOptionalModule: e.isOptionalModule,
-      }))
+      .map((e, index) => {
+        const checkType =
+          e.checkType === CheckType.TEXT ? CheckType.TEXT : CheckType.PHOTO;
+        const aiEnabled = resolveEntryAiEnabled({
+          aiEnabled: e.aiEnabled,
+          entryKind: e.entryKind,
+          checkType,
+        });
+        return {
+          id: e.id || uuidv4(),
+          name: e.name,
+          description: e.description || '',
+          isRequired: !!e.isRequired,
+          order: e.order ?? index,
+          samplePhotos: checkType === CheckType.PHOTO && aiEnabled ? e.samplePhotos || [] : [],
+          checkType,
+          aiEnabled,
+        };
+      })
       .sort((a, b) => a.order - b.order);
   }
 
@@ -338,6 +349,7 @@ export class TemplateService {
     lines: Array<{
       id?: string;
       name: string;
+      entryMode?: 'check' | 'record';
       entries?: Array<{
         id?: string;
         name: string;
@@ -346,6 +358,8 @@ export class TemplateService {
         order: number;
         samplePhotos: string[];
         checkType: CheckType;
+        aiEnabled?: boolean;
+        entryKind?: 'check' | 'record';
         isOptionalModule?: boolean;
       }>;
     }>,
@@ -360,14 +374,11 @@ export class TemplateService {
         throw new BadRequestException(`产品线「${name}」重复`);
       }
       seen.add(key);
-      const entries = this.normalizeEntries(line.entries || []);
-      if (!entries.length) {
-        throw new BadRequestException(`产品线「${name}」至少需要一个检查条目`);
-      }
       result.push({
         id: line.id || uuidv4(),
         name: name.slice(0, 64),
-        entries,
+        // 允许 0 条：仅序列号打卡类流程
+        entries: this.normalizeEntries(line.entries || []),
       });
     }
     return result;
@@ -380,7 +391,6 @@ export class TemplateService {
     if (!productLines.length) {
       throw new BadRequestException('请至少配置一条产品线（如地面-组串式）');
     }
-    // entries 仅作兼容旧数据回退，可不填
     void entries;
   }
 
@@ -397,7 +407,7 @@ export class TemplateService {
       order: e.order ?? 0,
       samplePhotos: [...(e.samplePhotos || [])].map(String).sort(),
       checkType: e.checkType || CheckType.PHOTO,
-      isOptionalModule: !!e.isOptionalModule,
+      aiEnabled: resolveEntryAiEnabled(e),
     });
     const payload = {
       productLines: (productLines || [])

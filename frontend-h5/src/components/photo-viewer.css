@@ -3,7 +3,7 @@
   inset: 0;
   z-index: 2000;
   width: 100%;
-  max-width: 640px;
+  max-width: var(--h5-shell-max);
   margin: 0 auto;
   display: grid;
   grid-template-rows: auto 1fr auto;

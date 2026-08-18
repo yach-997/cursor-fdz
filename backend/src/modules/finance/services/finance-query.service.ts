@@ -197,6 +197,7 @@ export class FinanceQueryService {
         'c.expense_enabled AS "expenseEnabled"',
         'COALESCE(c.unit_label, tpl.unit_label, \'台\') AS "unitLabel"',
         'c.inspector_id AS "inspectorId"',
+        'c.assign_remark AS "assignRemark"',
         `COALESCE(
           (
             SELECT string_agg(u.real_name, '、' ORDER BY ca.assign_time NULLS LAST, ca.id)
@@ -209,6 +210,7 @@ export class FinanceQueryService {
         'c.finish_time AS "finishTime"',
         'c.updated_at AS "updatedAt"',
         'COALESCE(p.case_revenue,0) AS "caseRevenue"',
+        `EXISTS (SELECT 1 FROM po_order po WHERE po.service_case_id = c.id) AS "hasPo"`,
       ]);
     // 网格长：仅看已挂到自己管辖网格的案例（未分配只给管理员）
     if (user.role === UserRole.SITE_MANAGER) {
@@ -267,7 +269,20 @@ export class FinanceQueryService {
       .offset((page - 1) * limit)
       .limit(limit)
       .getRawMany();
-    return { list, total, page, limit };
+    return {
+      list: list.map((row) => ({
+        ...row,
+        hasPo:
+          row.hasPo === true ||
+          row.hasPo === 't' ||
+          row.hasPo === 'true' ||
+          row.hasPo === 1 ||
+          row.hasPo === '1',
+      })),
+      total,
+      page,
+      limit,
+    };
   }
 
   /** 案例列表筛选用：已有省份/城市去重选项 */
@@ -313,15 +328,47 @@ export class FinanceQueryService {
       where: { serviceCaseId: id },
       order: { demandDate: 'DESC' },
     });
-    const poItems = orders.length
+    let poItems = orders.length
       ? await this.items.find({
           where: orders.map((po) => ({ poId: po.id })),
           order: { sourceRow: 'ASC' },
         })
       : [];
-    const ledger = await this.performance.findOne({ where: { serviceCaseId: id } });
+    let ledger = await this.performance.findOne({ where: { serviceCaseId: id } });
     const poTotal = orders.reduce((sum, order) => sum + Number(order.poTotalAmount), 0);
-    const revenue = Number(ledger?.caseRevenue || 0);
+    // 条目已定价时以条目收入为准；台账滞后（常见于先导 PO、后匹配价）则自动重算回写
+    let itemRevenueSum = poItems
+      .filter((entry) => entry.priceStatus !== 'ignored')
+      .reduce((sum, entry) => sum + Number(entry.itemRevenue || 0), 0);
+    let itemPerfSum = poItems
+      .filter((entry) => entry.priceStatus !== 'ignored')
+      .reduce((sum, entry) => sum + Number(entry.itemPerf || 0), 0);
+    // 有结算收入但绩效为 0：后补价库时自动重匹配；已通过结算不改
+    if (itemRevenueSum > 0.009 && itemPerfSum < 0.009 && orders.length) {
+      await this.mappings.repriceByPoIds(
+        orders.map((o) => o.id),
+        { ignoreFreeze: false },
+      );
+      poItems = await this.items.find({
+        where: orders.map((po) => ({ poId: po.id })),
+        order: { sourceRow: 'ASC' },
+      });
+      itemRevenueSum = poItems
+        .filter((entry) => entry.priceStatus !== 'ignored')
+        .reduce((sum, entry) => sum + Number(entry.itemRevenue || 0), 0);
+      itemPerfSum = poItems
+        .filter((entry) => entry.priceStatus !== 'ignored')
+        .reduce((sum, entry) => sum + Number(entry.itemPerf || 0), 0);
+    }
+    let revenue = Number(ledger?.caseRevenue || 0);
+    if (
+      Math.abs(revenue - itemRevenueSum) > 0.009 ||
+      Math.abs(Number(ledger?.perfBase || 0) - itemPerfSum) > 0.009
+    ) {
+      await this.recalculateCase(id);
+      ledger = await this.performance.findOne({ where: { serviceCaseId: id } });
+      revenue = Number(ledger?.caseRevenue || itemRevenueSum);
+    }
     const varianceRate = poTotal ? Math.abs(revenue - poTotal) / poTotal : 0;
     const visibleItems = poItems.map((entry) => {
       if (user.role === UserRole.SUPER_ADMIN) return entry;
@@ -385,6 +432,9 @@ export class FinanceQueryService {
         ...order,
         items: visibleItems.filter((entry) => entry.poId === order.id),
       })),
+      /** 详情页「案例收入」读此字段；与 ledger / 条目合计对齐 */
+      caseRevenue: revenue.toFixed(2),
+      hasPo: orders.length > 0,
       ledger,
       reconciliation: {
         poTotal: poTotal.toFixed(2),
@@ -820,7 +870,10 @@ export class FinanceQueryService {
         select: ['id'],
       });
       if (linkedPos.length) {
-        reprice = await this.mappings.repriceByPoIds(linkedPos.map((row) => row.id));
+        reprice = await this.mappings.repriceByPoIds(
+          linkedPos.map((row) => row.id),
+          { ignoreFreeze: true },
+        );
       }
     }
     await this.logs.write(
@@ -922,7 +975,7 @@ export class FinanceQueryService {
       }
     }
 
-    const reprice = await this.mappings.repriceByPoIds([id]);
+    const reprice = await this.mappings.repriceByPoIds([id], { ignoreFreeze: true });
     const items = await this.items.find({
       where: { poId: id },
       order: { sourceRow: 'ASC', id: 'ASC' },

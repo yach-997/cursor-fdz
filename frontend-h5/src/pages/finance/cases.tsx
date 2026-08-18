@@ -17,7 +17,13 @@ export default function FinanceCasesPage() {
       <header className="mobile-finance-head"><button onClick={() => navigate('/m/my')}>← 返回</button><h1>费用案例</h1></header>
       {loading ? <div style={{ textAlign: 'center', paddingTop: 100 }}><Loading vertical>加载中...</Loading></div> : !list.length ? <Empty description="暂无派给你的费用案例" /> : list.map((item) => (
         <button key={item.id} className="mobile-finance-card mobile-finance-list-item" onClick={() => navigate(`/m/finance-cases/${item.id}`)}>
-          <div className="mobile-finance-row"><h3>{item.projectName}</h3><span className="mobile-finance-status">{labels[item.status] || item.status}</span></div>
+          <div className="mobile-finance-row">
+            <h3>{item.projectName}</h3>
+            <span className="mobile-finance-status">
+              {labels[item.status] || item.status}
+              {item.hasPo === false ? ' · 不计件结算' : ''}
+            </span>
+          </div>
           <div className="mobile-finance-muted">{item.gspCaseNo} · {item.taskTypeName || item.taskType || '未设类型'} · {item.province || '未填写省份'}</div>
         </button>
       ))}

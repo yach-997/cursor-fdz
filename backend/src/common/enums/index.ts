@@ -70,6 +70,8 @@ export enum CheckResult {
   FAIL = 'fail',
   PENDING = 'pending',
   ERROR = 'error',
+  /** 记录类条目：不走 AI */
+  SKIPPED = 'skipped',
 }
 
 /** 任务/案例业务类型 */

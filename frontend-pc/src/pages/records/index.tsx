@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Button,
@@ -28,6 +28,7 @@ import {
   type RecordItem,
   type RecordEntry,
   type AuditTrailEvent,
+  resolveEntryKind,
 } from '../../api/record';
 import { fetchSites, fetchSiteMembers } from '../../api/site';
 import { fetchDevices } from '../../api/device';
@@ -118,7 +119,7 @@ function withEntryAnalyzing(record: RecordItem, templateEntryId: string): Record
 
 /** 历史查询：按案例聚合 → 全部单元报告 → 详情 */
 export default function RecordsPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const role = useAuthStore((s) => s.user?.role);
   const canManualConfirm = role === 'super_admin' || role === 'site_manager';
   const [loading, setLoading] = useState(false);
@@ -130,7 +131,14 @@ export default function RecordsPage() {
   );
   const [deviceId, setDeviceId] = useState<string>();
   const [status, setStatus] = useState<string>();
-  const [keyword, setKeyword] = useState('');
+  const [keyword, setKeyword] = useState(() =>
+    String(searchParams.get('keyword') || '').trim(),
+  );
+  const deepLinkCaseId = useRef(
+    String(searchParams.get('caseId') || '').trim() || null,
+  );
+  const openGroupOnce = useRef(searchParams.get('openGroup') === '1');
+  const [listReady, setListReady] = useState(false);
   const [region, setRegion] = useState('');
   const [serialNumber, setSerialNumber] = useState('');
   const [inspectorId, setInspectorId] = useState<string>();
@@ -208,6 +216,7 @@ export default function RecordsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setListReady(false);
     try {
       const res = await fetchRecordCaseGroups({
         ...filterParams(),
@@ -218,6 +227,7 @@ export default function RecordsPage() {
       setTotal(res.total);
     } finally {
       setLoading(false);
+      setListReady(true);
     }
   }, [page, filterParams]);
 
@@ -232,7 +242,7 @@ export default function RecordsPage() {
     setSelectedRowKeys([]);
     try {
       const res = await fetchRecordsByCase(group.groupKey, {
-        ...filterParams(),
+        scope: 'history',
         limit: 100,
       });
       setUnits(res.list);
@@ -240,6 +250,107 @@ export default function RecordsPage() {
       setUnitsLoading(false);
     }
   };
+
+  // 从费用案例跳转：优先 caseId 直开；否则等列表加载完再按案例号匹配（避免未加载完就提示未找到）
+  useEffect(() => {
+    if (!openGroupOnce.current) return;
+
+    const clearOpenFlag = () => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('openGroup');
+          next.delete('caseId');
+          return next;
+        },
+        { replace: true },
+      );
+    };
+
+    const caseId = deepLinkCaseId.current;
+    if (caseId) {
+      openGroupOnce.current = false;
+      deepLinkCaseId.current = null;
+      clearOpenFlag();
+      void (async () => {
+        const groupKey = `case-${caseId}`;
+        setActiveGroup({
+          groupKey,
+          serviceCaseId: caseId,
+          gspCaseNo: keyword || null,
+          projectName: null,
+          unitLabel: null,
+          assignMode: null,
+          siteId: null,
+          plannedUnits: null,
+          completedUnits: null,
+          caseStatus: null,
+          recordCount: 0,
+          pendingCount: 0,
+          approvedCount: 0,
+          rejectedCount: 0,
+          latestSubmittedAt: null,
+        });
+        setUnitsOpen(true);
+        setUnitsLoading(true);
+        setSelectedRowKeys([]);
+        try {
+          const res = await fetchRecordsByCase(groupKey, {
+            scope: 'history',
+            limit: 100,
+          });
+          setUnits(res.list);
+          if (!res.list.length) {
+            message.info('该案例暂无已提交的巡检报告');
+          } else {
+            const first = res.list[0];
+            setActiveGroup((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    gspCaseNo: first.gspCaseNo || prev.gspCaseNo,
+                    projectName: first.projectName || prev.projectName,
+                    unitLabel: first.unitLabel || prev.unitLabel,
+                    plannedUnits: first.plannedUnits ?? prev.plannedUnits,
+                    completedUnits: first.completedUnits ?? prev.completedUnits,
+                    caseStatus: first.caseStatus || prev.caseStatus,
+                    recordCount: res.list.length,
+                  }
+                : prev,
+            );
+          }
+        } catch {
+          message.warning('打开案例报告失败，请稍后重试');
+          setUnitsOpen(false);
+        } finally {
+          setUnitsLoading(false);
+        }
+      })();
+      return;
+    }
+
+    if (!listReady || loading) return;
+    const want = keyword.trim();
+    if (!want) {
+      openGroupOnce.current = false;
+      clearOpenFlag();
+      return;
+    }
+    if (!groups.length) {
+      openGroupOnce.current = false;
+      clearOpenFlag();
+      message.info('未找到该案例的巡检报告');
+      return;
+    }
+    const hit =
+      groups.find((g) => String(g.gspCaseNo || '').trim() === want) ||
+      groups.find((g) => String(g.gspCaseNo || '').includes(want)) ||
+      groups[0];
+    openGroupOnce.current = false;
+    clearOpenFlag();
+    void openGroup(hit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅深链入参触发一次
+  }, [listReady, loading, groups, keyword, setSearchParams]);
 
   const openDetail = async (id: string) => {
     const rec = await fetchRecord(id);
@@ -282,15 +393,19 @@ export default function RecordsPage() {
       message.warning('该检查项没有现场照片，无法重新分析');
       return;
     }
+    const template = detail.task?.templateSnapshot?.find(
+      (item) => item.id === entry.templateEntryId,
+    );
+    if (resolveEntryKind(template || {}) === 'record') {
+      message.info('记录类条目不需要 AI 分析');
+      return;
+    }
     setRetryingEntryId(entry.templateEntryId);
     const analyzing = withEntryAnalyzing(detail, entry.templateEntryId);
     setDetail(analyzing);
     setUnits((rows) => rows.map((row) => (row.id === analyzing.id ? analyzing : row)));
     message.info('已开始重新分析，结果会自动刷新');
     try {
-      const template = detail.task?.templateSnapshot?.find(
-        (item) => item.id === entry.templateEntryId,
-      );
       await analyzeAi({
         recordId: detail.id,
         templateEntryId: entry.templateEntryId,
@@ -804,12 +919,18 @@ export default function RecordsPage() {
             )}
 
             <div style={{ fontWeight: 600, marginBottom: 12 }}>检查项</div>
-            {detail.entries?.map((entry) => (
+            {detail.entries?.map((entry) => {
+              const tpl = detail.task?.templateSnapshot?.find(
+                (item) => item.id === entry.templateEntryId,
+              );
+              const isRecord = resolveEntryKind(tpl || {}) === 'record';
+              return (
               <EntryReviewCard
                 key={entry.templateEntryId}
                 title={tplName(detail, entry.templateEntryId)}
                 entry={entry}
                 photoSize={104}
+                showAi={!isRecord}
                 canConfirm={
                   canManualConfirm &&
                   ['submitted', 'approved', 'rejected'].includes(detail.status)
@@ -825,7 +946,8 @@ export default function RecordsPage() {
                 onConfirm={(result) => handleManualConfirm(entry, result)}
                 onRetry={() => void retryAnalysis(entry)}
               />
-            ))}
+              );
+            })}
           </>
         ) : null}
       </Drawer>

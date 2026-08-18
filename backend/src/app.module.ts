@@ -29,6 +29,7 @@ import {
   Assessment,
   MonthlySettlement,
   AssessmentEvent,
+  AssessmentScoreRule,
   AiHardRule,
   SystemBranding,
 } from './entities';
@@ -112,6 +113,7 @@ import { HealthController } from './modules/health/health.controller';
               Assessment,
               MonthlySettlement,
               AssessmentEvent,
+              AssessmentScoreRule,
             AiHardRule,
             SystemBranding,
           ],

@@ -127,7 +127,8 @@ ALTER TABLE case_expense_claim
   ADD COLUMN IF NOT EXISTS claim_amount numeric(12, 2) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS trip_skipped boolean NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS start_nav_urls jsonb NOT NULL DEFAULT '[]'::jsonb,
-  ADD COLUMN IF NOT EXISTS end_nav_urls jsonb NOT NULL DEFAULT '[]'::jsonb;
+  ADD COLUMN IF NOT EXISTS end_nav_urls jsonb NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS line_items jsonb NOT NULL DEFAULT '[]'::jsonb;
 UPDATE case_expense_claim SET claim_amount = amount WHERE claim_amount = 0 AND amount > 0;
 UPDATE case_expense_claim
 SET start_nav_urls = jsonb_build_array(start_nav_url)
@@ -139,9 +140,37 @@ SET end_nav_urls = jsonb_build_array(end_nav_url)
 WHERE end_nav_url IS NOT NULL
   AND end_nav_url <> ''
   AND (end_nav_urls IS NULL OR end_nav_urls = '[]'::jsonb);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_case_expense_work_unit
-  ON case_expense_claim (work_unit_id)
-  WHERE work_unit_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_case_expense_case_inspector
+  ON case_expense_claim (service_case_id, inspector_id);
+`);
+
+      // 行程唯一约束迁移：一台一单 → 案例×工程师一单
+      await this.dataSource.query(`
+WITH ranked AS (
+  SELECT
+    id,
+    ROW_NUMBER() OVER (
+      PARTITION BY service_case_id, inspector_id
+      ORDER BY
+        CASE
+          WHEN COALESCE(start_odometer_url, '') <> '' THEN 0
+          WHEN trip_skipped THEN 2
+          ELSE 1
+        END,
+        updated_at DESC NULLS LAST,
+        created_at DESC NULLS LAST,
+        id DESC
+    ) AS rn
+  FROM case_expense_claim
+)
+DELETE FROM case_expense_claim c
+USING ranked r
+WHERE c.id = r.id AND r.rn > 1;
+`);
+      await this.dataSource.query(`DROP INDEX IF EXISTS uq_case_expense_work_unit`);
+      await this.dataSource.query(`
+CREATE UNIQUE INDEX IF NOT EXISTS uq_case_expense_case_inspector
+  ON case_expense_claim (service_case_id, inspector_id);
 `);
 
       // 轻量回填：有 inspector 但无 assignment 的案例
@@ -346,6 +375,11 @@ WHERE sc.task_template_id IS NULL
   AND t.name = TRIM(sc.service_type)
   AND t.is_global = true
   AND t.site_id IS NULL
+`);
+
+    await this.dataSource.query(`
+ALTER TABLE service_case
+  ADD COLUMN IF NOT EXISTS assign_remark text NULL;
 `);
   }
 }

@@ -14,6 +14,20 @@ function isAllowedVercelPreviewOrigin(origin: string): boolean {
   }
 }
 
+/** Cloudflare Quick Tunnel：演示时 H5/PC 临时公网域名 */
+function isAllowedCloudflareTunnelOrigin(origin: string): boolean {
+  try {
+    const { hostname, protocol } = new URL(origin);
+    if (protocol !== 'https:') return false;
+    return (
+      hostname.endsWith('.trycloudflare.com') ||
+      hostname.endsWith('.cfargotunnel.com')
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function configureApp(app: INestApplication) {
   app.setGlobalPrefix('api');
   const allowedOrigins = (
@@ -28,7 +42,8 @@ export function configureApp(app: INestApplication) {
       if (
         !origin ||
         allowedOrigins.includes(origin) ||
-        isAllowedVercelPreviewOrigin(origin)
+        isAllowedVercelPreviewOrigin(origin) ||
+        isAllowedCloudflareTunnelOrigin(origin)
       ) {
         callback(null, true);
         return;

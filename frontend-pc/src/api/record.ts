@@ -62,6 +62,9 @@ export interface RecordItem {
   projectName?: string | null;
   unitLabel?: string | null;
   assignMode?: string | null;
+  plannedUnits?: number | null;
+  completedUnits?: number | null;
+  caseStatus?: string | null;
   workUnit?: { id: string; seq: number; title: string | null } | null;
   inspectorName?: string | null;
   task?: {
@@ -79,8 +82,34 @@ export interface RecordItem {
       name: string;
       description: string;
       samplePhotos?: string[];
+      entryKind?: 'check' | 'record';
+      checkType?: 'photo' | 'text';
+      aiEnabled?: boolean;
     }>;
   };
+}
+
+/** 条目是否启用 AI（含旧数据推断） */
+export function resolveEntryAiEnabled(entry: {
+  aiEnabled?: boolean;
+  entryKind?: 'check' | 'record' | string;
+  checkType?: 'photo' | 'text' | string;
+}): boolean {
+  if (entry.aiEnabled === true) return true;
+  if (entry.aiEnabled === false) return false;
+  if (entry.entryKind === 'record') return false;
+  if (entry.entryKind === 'check') return true;
+  if (entry.checkType === 'text') return false;
+  return true;
+}
+
+/** @deprecated 请用 resolveEntryAiEnabled；false≈原 record */
+export function resolveEntryKind(entry: {
+  entryKind?: 'check' | 'record' | string;
+  checkType?: 'photo' | 'text' | string;
+  aiEnabled?: boolean;
+}): 'check' | 'record' {
+  return resolveEntryAiEnabled(entry) ? 'check' : 'record';
 }
 
 export interface RecordCaseGroup {
