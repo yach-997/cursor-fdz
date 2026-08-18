@@ -31,7 +31,7 @@ type ParseCacheEntry = { expires: number; data: unknown };
 
 type UploadNameOpts = { clientFilename?: string | null };
 
-const PLAN_SAMPLE = 8;
+const PLAN_SAMPLE = 200;
 
 type ImportDupPlan = {
   createCount: number;
@@ -918,7 +918,7 @@ export class FinanceImportService {
       frozenSkipCount: frozenKeys.length,
       createSamples: sample(createKeys),
       updateSamples: sample(updateKeys),
-      fileDupSamples: sample(fileDupKeys),
+      fileDupSamples: sample(fileDupKeys.map((k) => `${k}（${counts.get(k)}次）`)),
       frozenSkipSamples: sample(frozenKeys),
     };
   }

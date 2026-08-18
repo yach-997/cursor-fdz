@@ -4,84 +4,61 @@ import { DownloadOutlined, InboxOutlined } from '@ant-design/icons';
 import { downloadFinanceImportTemplate, uploadFinanceExcel } from '../../../api/finance';
 import type { ImportResult } from '../../../types/finance';
 
-function sampleText(items?: string[]) {
-  if (!items?.length) return '';
-  return `例如：${items.slice(0, 5).join('、')}${items.length > 5 ? '…' : ''}`;
-}
-
-function consequenceLines(
-  kind: 'gsp' | 'po' | 'price' | 'perf-price',
-  plan: NonNullable<ImportResult['dupPlan']>,
-) {
-  const unit = kind === 'po' ? '张' : '条';
-  const lines: string[] = [];
-  if (kind === 'gsp') {
-    if (plan.createCount > 0) {
-      lines.push(`新建 ${plan.createCount} 条：系统里会出现新案例，还没派网格和工程师。`);
-    }
-    if (plan.updateCount > 0) {
-      lines.push(
-        `更新 ${plan.updateCount} 条：会改项目名、服务类型、产品线、现场描述。已派的网格、工程师、作业进度和结算状态不会动。${sampleText(plan.updateSamples)}`,
-      );
-    }
-  } else if (kind === 'po') {
-    if (plan.createCount > 0) {
-      lines.push(
-        `新建 ${plan.createCount} 张：按案例号挂上；找不到对应案例会进「待匹配」，不会自动派工。`,
-      );
-    }
-    if (plan.updateCount > 0) {
-      lines.push(
-        `更新 ${plan.updateCount} 张：条目和金额会被这张表整份换掉，未结算案例的钱会变。已完工但还没结算的，可能回到「待结算审核」。${sampleText(plan.updateSamples)}`,
-      );
-    }
-    if (plan.frozenSkipCount > 0) {
-      lines.push(
-        `跳过 ${plan.frozenSkipCount} 张：已结算或已月结，点确认也不会改金额、不会改账。${sampleText(plan.frozenSkipSamples)}`,
-      );
-    }
-  } else if (kind === 'price') {
-    if (plan.createCount > 0) {
-      lines.push(`新建 ${plan.createCount} 条：写入今天的甲方结算单价。`);
-    }
-    if (plan.updateCount > 0) {
-      lines.push(
-        `更新 ${plan.updateCount} 条：今天已有的单价会改成表里的数。还没结算的 PO 会按新价重算；已经结算或月结的金额不会跟着变。${sampleText(plan.updateSamples)}`,
-      );
-    }
-  } else {
-    if (plan.createCount > 0) {
-      lines.push(`新建 ${plan.createCount} 条：写入内部绩效单价。`);
-    }
-    if (plan.updateCount > 0) {
-      lines.push(
-        `更新 ${plan.updateCount} 条：同一生效日的绩效单价会改成表里的数。还没结算的作业绩效会按新价重算；已经结算或月结的不会跟着变。${sampleText(plan.updateSamples)}`,
-      );
-    }
-  }
-  if (!lines.length) {
-    lines.push(`没有需要新建或更新的${unit}。`);
-  }
-  if (plan.fileDupCount > 0) {
-    lines.push(
-      `这张表里同一号写了多次，多出来 ${plan.fileDupCount} 行，点确认后只认最后一次，前面的作废。${sampleText(plan.fileDupSamples)}`,
-    );
-  }
-  return lines;
+function KeyList({ items, moreCount }: { items?: string[]; moreCount?: number }) {
+  if (!items?.length) return null;
+  return (
+    <div
+      style={{
+        marginTop: 6,
+        maxHeight: 160,
+        overflow: 'auto',
+        lineHeight: 1.8,
+        wordBreak: 'break-all',
+      }}
+    >
+      {items.join('、')}
+      {moreCount && moreCount > 0 ? ` …等共 ${items.length + moreCount} 个` : ''}
+    </div>
+  );
 }
 
 function DupPlanAlert({
   kind,
   plan,
+  failCount,
 }: {
   kind: 'gsp' | 'po' | 'price' | 'perf-price';
   plan: NonNullable<ImportResult['dupPlan']>;
+  failCount: number;
 }) {
-  const lines = consequenceLines(kind, plan);
+  const unit = kind === 'po' ? '张' : '条';
+  const noName = kind === 'gsp' ? '案例号' : kind === 'po' ? 'PO单号' : '条目';
   const warn =
     plan.updateCount > 0 ||
     plan.fileDupCount > 0 ||
+    failCount > 0 ||
     (kind === 'po' && plan.frozenSkipCount > 0);
+
+  const effect =
+    kind === 'gsp'
+      ? '会改项目名、服务类型、产品线、现场描述；已派网格、工程师、作业进度和结算状态不动。'
+      : kind === 'po'
+        ? '条目和金额会被这张表整份换掉，未结算的钱会变；已完工但还没结算的，可能回到「待结算审核」。'
+        : kind === 'price'
+          ? '今天已有的甲方结算单价会改成表里的数；还没结算的 PO 会按新价重算，已结算/已月结的金额不会跟着变。'
+          : '同一生效日的绩效单价会改成表里的数；还没结算的会按新价重算，已结算/已月结的不会跟着变。';
+
+  const createEffect =
+    kind === 'gsp'
+      ? '系统里会出现新案例，还没派网格和工程师。'
+      : kind === 'po'
+        ? '按案例号挂上；找不到对应案例会进「待匹配」，不会自动派工。'
+        : kind === 'price'
+          ? '写入今天的甲方结算单价。'
+          : '写入内部绩效单价。';
+
+  const more = (count: number, shown: number) => Math.max(0, count - shown);
+
   return (
     <Alert
       showIcon
@@ -89,11 +66,56 @@ function DupPlanAlert({
       message="点「确认入库」之后会怎样"
       description={
         <div>
-          {lines.map((line) => (
-            <div key={line} style={{ marginTop: 4 }}>
-              {line}
+          {plan.updateCount > 0 ? (
+            <div style={{ marginTop: 4 }}>
+              <b>
+                重复 {plan.updateCount} {unit}
+              </b>
+              （系统里已有这些{noName}，不会变成两条，会按表更新）。{effect}
+              <KeyList
+                items={plan.updateSamples}
+                moreCount={more(plan.updateCount, plan.updateSamples.length)}
+              />
             </div>
-          ))}
+          ) : (
+            <div style={{ marginTop: 4 }}>没有与系统里已有{noName}重复的记录。</div>
+          )}
+          {plan.createCount > 0 ? (
+            <div style={{ marginTop: 10 }}>
+              <b>
+                新建 {plan.createCount} {unit}
+              </b>
+              （这些{noName}系统里还没有）。{createEffect}
+              <KeyList
+                items={plan.createSamples}
+                moreCount={more(plan.createCount, plan.createSamples.length)}
+              />
+            </div>
+          ) : null}
+          {plan.fileDupCount > 0 ? (
+            <div style={{ marginTop: 10 }}>
+              <b>表内重复</b>
+              ：这张表里同一号写了多次，多出来 {plan.fileDupCount} 行，只认最后一次。
+              <KeyList items={plan.fileDupSamples} />
+            </div>
+          ) : (
+            <div style={{ marginTop: 10 }}>这张表里没有同一号写两遍的情况。</div>
+          )}
+          {kind === 'po' && plan.frozenSkipCount > 0 ? (
+            <div style={{ marginTop: 10 }}>
+              <b>跳过 {plan.frozenSkipCount} 张</b>
+              ：已结算或已月结，点确认也不会改金额。
+              <KeyList
+                items={plan.frozenSkipSamples}
+                moreCount={more(plan.frozenSkipCount, plan.frozenSkipSamples.length)}
+              />
+            </div>
+          ) : null}
+          <div style={{ marginTop: 10 }}>
+            {failCount > 0
+              ? `格式问题 ${failCount} 条，见下方明细，这些行不会入库。`
+              : '格式问题 0 条。'}
+          </div>
         </div>
       }
     />
@@ -370,7 +392,13 @@ export default function ImportDialog({
       )}
       {preview && (
         <div style={{ marginTop: 16 }}>
-          {preview.dupPlan ? <DupPlanAlert kind={kind} plan={preview.dupPlan} /> : null}
+          {preview.dupPlan ? (
+            <DupPlanAlert
+              kind={kind}
+              plan={preview.dupPlan}
+              failCount={preview.failures?.length || 0}
+            />
+          ) : null}
           <Alert
             style={{ marginTop: preview.dupPlan ? 12 : 0 }}
             showIcon
