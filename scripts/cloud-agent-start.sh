@@ -29,7 +29,9 @@ start_dev_server() {
     return 0
   fi
   log "启动 ${name} (端口 ${port})"
-  ( cd "$REPO_ROOT/$dir" && nohup bash -lc "$cmd" >"/tmp/${name}.log" 2>&1 & )
+  # 用 setsid 建立独立会话/进程组，使服务在 start 阶段退出后仍存活（不被进程组清理）
+  setsid bash -lc "cd '$REPO_ROOT/$dir' && exec ${cmd}" </dev/null >"/tmp/${name}.log" 2>&1 &
+  disown 2>/dev/null || true
 }
 
 DB_USER="${POSTGRES_USER:-inspection}"
