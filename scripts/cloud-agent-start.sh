@@ -1,9 +1,36 @@
 #!/usr/bin/env bash
-# Cloud Agent 每次启动执行：拉起基础设施服务并保证数据库/桶存在（幂等）。
-# 应用进程（后端 API、PC/H5 前端）由 environment.json 的 terminals 负责。
+# Cloud Agent 每次启动执行（幂等）：
+#   1) 拉起基础设施（PostgreSQL / Redis / MinIO）并保证数据库角色/桶存在；
+#   2) 后台启动三个应用开发服务（后端 API + PC 前端 + H5 前端）。
+# 幂等：已在运行的服务不会重复启动。
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+# 载入根目录 .env（若存在），供本脚本内的默认值使用
+if [ -f "$REPO_ROOT/.env" ]; then
+  set -a; . "$REPO_ROOT/.env"; set +a
+fi
+
 log() { echo "[start] $*"; }
+
+# 端口是否已有进程监听（curl 不带 -f：拿到任何 HTTP 响应即视为占用，
+# 连接被拒绝时退出码非 0。localhost 会同时覆盖 IPv4/IPv6）。
+port_in_use() {
+  curl -s -o /dev/null --max-time 2 "http://localhost:$1/" 2>/dev/null
+}
+
+# 端口空闲则在后台启动一个开发服务
+start_dev_server() {
+  local name="$1" dir="$2" port="$3" cmd="$4"
+  if port_in_use "$port"; then
+    log "${name} 已在端口 ${port} 运行，跳过"
+    return 0
+  fi
+  log "启动 ${name} (端口 ${port})"
+  ( cd "$REPO_ROOT/$dir" && nohup bash -lc "$cmd" >"/tmp/${name}.log" 2>&1 & )
+}
 
 DB_USER="${POSTGRES_USER:-inspection}"
 DB_PASS="${POSTGRES_PASSWORD:-inspection123}"
@@ -50,3 +77,10 @@ if command -v mc >/dev/null 2>&1; then
 fi
 
 log "基础设施就绪 (PostgreSQL / Redis / MinIO)"
+
+# 4. 应用开发服务（后台常驻，幂等）
+start_dev_server "backend"     "backend"     3000 "npm run start:dev"
+start_dev_server "frontend-pc" "frontend-pc" 5173 "npm run dev"
+start_dev_server "frontend-h5" "frontend-h5" 5175 "npm run dev"
+
+log "开发服务已启动：后端 http://localhost:3000/api ，PC http://localhost:5173 ，H5 http://localhost:5175/m/login"
